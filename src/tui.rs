@@ -741,13 +741,22 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                 frame.render_widget(no_providers, chunks[2]);
             } else {
                 // We render Header + Separator + Table rows
+                // Constrain the horizontal width of the list to exactly 107 characters (left-aligned)
+                let horizontal_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Length(107),
+                        Constraint::Min(0),
+                    ])
+                    .split(chunks[2]);
+
                 let layout = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
                         Constraint::Length(2), // Header + Separator
                         Constraint::Min(1),    // Scrollable Table body
                     ])
-                    .split(chunks[2]);
+                    .split(horizontal_chunks[0]);
 
                 // Header & Separator Table
                 let header_table = Table::new(
@@ -765,7 +774,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                             Cell::from("────────────────"),
                             Cell::from("────────────────────────────────────────"),
                             Cell::from("────────────────────"),
-                            Cell::from("──────────"),
+                            Cell::from("────────────"),
                             Cell::from("────────────"),
                         ]).style(Style::default().fg(theme.dim)),
                     ],
