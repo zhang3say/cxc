@@ -358,6 +358,21 @@ func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.addForm.cursor = len([]rune(m.addForm.values[m.addForm.field]))
 		}
 
+	case "up":
+		if m.addForm.field > fieldName {
+			m.addForm.field--
+			m.addForm.cursor = len([]rune(m.addForm.values[m.addForm.field]))
+		}
+
+	case "down":
+		if m.addForm.field < fieldRemark {
+			m.addForm.field++
+			m.addForm.cursor = len([]rune(m.addForm.values[m.addForm.field]))
+		}
+
+	case "ctrl+s":
+		return m, submitAdd(m.addForm.values)
+
 	case "left":
 		if m.addForm.cursor > 0 {
 			m.addForm.cursor--
@@ -408,6 +423,21 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.editForm.cursor = len([]rune(m.editForm.values[m.editForm.field]))
 		}
+
+	case "up":
+		if m.editForm.field > editFieldName {
+			m.editForm.field--
+			m.editForm.cursor = len([]rune(m.editForm.values[m.editForm.field]))
+		}
+
+	case "down":
+		if m.editForm.field < editFieldRemark {
+			m.editForm.field++
+			m.editForm.cursor = len([]rune(m.editForm.values[m.editForm.field]))
+		}
+
+	case "ctrl+s":
+		return m, submitEdit(m.editForm.oldName, m.editForm.values)
 
 	case "left":
 		if m.editForm.cursor > 0 {
@@ -608,7 +638,7 @@ func (m model) viewAdd() string {
 		}
 	}
 
-	sb.WriteString("\n" + styleDim.Render("  [Enter] next field/submit  [Esc] cancel"))
+	sb.WriteString("\n" + styleDim.Render("  [Enter] next  [↑/↓] navigate  [Ctrl+S] save  [Esc] cancel"))
 	return sb.String()
 }
 
@@ -646,7 +676,7 @@ func (m model) viewEdit() string {
 		}
 	}
 
-	sb.WriteString("\n" + styleDim.Render("  [Enter] next field/submit  [Esc] cancel"))
+	sb.WriteString("\n" + styleDim.Render("  [Enter] next  [↑/↓] navigate  [Ctrl+S] save  [Esc] cancel"))
 	return sb.String()
 }
 
