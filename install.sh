@@ -5,20 +5,28 @@ set -e
 OWNER="zhang3say"
 REPO="cxc"
 
-# Detect OS
+# Detect OS and Architecture to form target triple
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-case "$OS" in
-  darwin)  OS="darwin" ;;
-  linux)   OS="linux" ;;
-  *)       echo "Unsupported OS: $OS"; exit 1 ;;
-esac
-
-# Detect Architecture
 ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64)  ARCH="amd64" ;;
-  arm64|aarch64) ARCH="arm64" ;;
-  *)       echo "Unsupported Architecture: $ARCH"; exit 1 ;;
+
+case "$OS" in
+  darwin)
+    case "$ARCH" in
+      x86_64)  TARGET="x86_64-apple-darwin" ;;
+      arm64)   TARGET="aarch64-apple-darwin" ;;
+      *)       echo "Unsupported Architecture: $ARCH"; exit 1 ;;
+    esac
+    ;;
+  linux)
+    case "$ARCH" in
+      x86_64)  TARGET="x86_64-unknown-linux-gnu" ;;
+      arm64|aarch64) TARGET="aarch64-unknown-linux-gnu" ;;
+      *)       echo "Unsupported Architecture: $ARCH"; exit 1 ;;
+    esac
+    ;;
+  *)
+    echo "Unsupported OS: $OS"; exit 1
+    ;;
 esac
 
 # Fetch latest release tag from GitHub API
@@ -38,7 +46,7 @@ fi
 echo "Latest release: $LATEST_RELEASE"
 
 # Construct download URL
-TARBALL="${REPO}_${OS}_${ARCH}.tar.gz"
+TARBALL="${REPO}-${TARGET}.tar.xz"
 URL="https://github.com/$OWNER/$REPO/releases/download/$LATEST_RELEASE/$TARBALL"
 
 # Temporary directory
@@ -53,7 +61,7 @@ curl -sSL -o "$TMP_DIR/$TARBALL" "$URL"
 
 # Extract
 echo "Extracting..."
-tar -xzf "$TMP_DIR/$TARBALL" -C "$TMP_DIR"
+tar -xf "$TMP_DIR/$TARBALL" -C "$TMP_DIR"
 
 # Determine install directory
 if [ -w "/usr/local/bin" ]; then
