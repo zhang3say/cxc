@@ -236,6 +236,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editForm = editFormState{}
 		return m, reloadConfig()
 
+	case tickMsg:
+		if m.mode == modeAdd || m.mode == modeEdit {
+			return m, tick()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeList:
@@ -272,6 +278,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		m.mode = modeAdd
 		m.addForm = addFormState{}
+		return m, tick()
 
 	case "e":
 		if len(providers) == 0 {
@@ -290,6 +297,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				p.Remark,
 			},
 		}
+		return m, tick()
 
 	case "t":
 		if len(providers) == 0 {
@@ -535,13 +543,13 @@ func (m model) viewAdd() string {
 		prefix := "  "
 		if f == m.addForm.field {
 			prefix = "> "
+			cursor := "█"
+			if time.Now().UnixMilli()%1000 < 500 {
+				cursor = " "
+			}
 			if val == "" {
-				sb.WriteString(styleWarn.Render(prefix+label+": ") + styleDim.Render(placeholders[i]) + "\n")
+				sb.WriteString(styleWarn.Render(prefix+label+": ") + cursor + styleDim.Render(placeholders[i]) + "\n")
 			} else {
-				cursor := "█"
-				if time.Now().UnixMilli()%1000 < 500 {
-					cursor = " "
-				}
 				sb.WriteString(styleWarn.Render(prefix+label+": ") + val + cursor + "\n")
 			}
 		} else if f < m.addForm.field {
@@ -735,6 +743,14 @@ func submitEdit(oldName string, values [5]string) tea.Cmd {
 
 		return editDoneMsg{}
 	}
+}
+
+type tickMsg time.Time
+
+func tick() tea.Cmd {
+	return tea.Tick(time.Millisecond*250, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
 }
 
 func reloadConfig() tea.Cmd {
