@@ -146,6 +146,7 @@ type model struct {
 	status    string
 	statusErr bool
 	testing   string // provider name being tested, "" if none
+	testQueue []string
 	width     int
 	height    int
 }
@@ -178,12 +179,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.testing = ""
 		_ = config.UpdateTestResult(m.cfg, msg.name, msg.result.LatencyMS, msg.result.OK)
 		if msg.result.OK {
-			m.status = fmt.Sprintf("✓ %s: connected in %dms — %q", msg.name, msg.result.LatencyMS, msg.result.Response)
+			m.status = fmt.Sprintf("✓ %s: connected in %dms", msg.name, msg.result.LatencyMS)
 			m.statusErr = false
 		} else {
 			m.status = fmt.Sprintf("✗ %s: %s", msg.name, msg.result.Error)
 			m.statusErr = true
 		}
+
+		if len(m.testQueue) > 0 {
+			nextName := m.testQueue[0]
+			m.testQueue = m.testQueue[1:]
+			m.testing = nextName
+
+			var nextP config.Provider
+			for _, p := range m.cfg.Providers {
+				if p.Name == nextName {
+					nextP = p
+					break
+				}
+			}
+
+			m.status = fmt.Sprintf("Testing all (%d remaining)…", len(m.testQueue)+1)
+			return m, tea.Batch(
+				reloadConfig(),
+				runTest(nextName, nextP.BaseURL, nextP.APIKey, nextP.Model),
+			)
+		}
+
 		return m, reloadConfig()
 
 	case configReloadedMsg:
@@ -313,6 +335,22 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Testing %q…", p.Name)
 		m.statusErr = false
 		return m, runTest(p.Name, p.BaseURL, p.APIKey, p.Model)
+
+	case "T":
+		if len(providers) == 0 {
+			break
+		}
+		m.testQueue = make([]string, len(providers))
+		for i, p := range providers {
+			m.testQueue[i] = p.Name
+		}
+		first := m.testQueue[0]
+		m.testQueue = m.testQueue[1:]
+		m.testing = first
+		m.status = fmt.Sprintf("Testing all (%d remaining)…", len(m.testQueue)+1)
+		m.statusErr = false
+		p := providers[0]
+		return m, runTest(first, p.BaseURL, p.APIKey, p.Model)
 
 	case "enter", "s":
 		if len(providers) == 0 {
@@ -716,6 +754,7 @@ func (m model) viewHelp() string {
 		"a add",
 		"e edit",
 		"t test",
+		"T test all",
 		"Enter/s switch",
 		"d/Del remove",
 		"q quit",

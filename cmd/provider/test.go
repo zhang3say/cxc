@@ -9,16 +9,58 @@ import (
 )
 
 func newTestCmd() *cobra.Command {
-	return &cobra.Command{
+	var all bool
+
+	cmd := &cobra.Command{
 		Use:   "test [name]",
 		Short: "Test a provider's connectivity",
 		Long: `Test a provider by sending a real chat completion request.
-If no name is given, the active provider is tested.`,
+If no name is given, the active provider is tested.
+Use the --all flag to test all saved providers sequentially.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return err
+			}
+
+			if all {
+				if len(args) > 0 {
+					return fmt.Errorf("cannot specify a provider name when using --all")
+				}
+				if len(cfg.Providers) == 0 {
+					fmt.Println("No providers saved. Run `cxc provider add` to add one.")
+					return nil
+				}
+
+				anyFailed := false
+				tester := connectivity.New(nil)
+
+				for i, p := range cfg.Providers {
+					if i > 0 {
+						fmt.Println()
+					}
+					fmt.Printf("Testing provider %q (%s, model: %s)…\n", p.Name, p.BaseURL, p.Model)
+					result := tester.Test(p.BaseURL, p.APIKey, p.Model)
+
+					if result.OK {
+						fmt.Printf("✓ Connected in %dms\n", result.LatencyMS)
+						if result.Response != "" {
+							fmt.Printf("  Model response: %q\n", result.Response)
+						}
+					} else {
+						fmt.Printf("✗ Failed: %s\n", result.Error)
+						anyFailed = true
+					}
+
+					// Persist result
+					_ = config.UpdateTestResult(cfg, p.Name, result.LatencyMS, result.OK)
+				}
+
+				if anyFailed {
+					return fmt.Errorf("one or more connectivity tests failed")
+				}
+				return nil
 			}
 
 			var p *config.Provider
@@ -59,4 +101,8 @@ If no name is given, the active provider is tested.`,
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "Test all saved providers sequentially")
+
+	return cmd
 }
