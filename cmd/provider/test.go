@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/zhang3say/cxc/internal/config"
@@ -16,7 +17,7 @@ func newTestCmd() *cobra.Command {
 		Short: "Test a provider's connectivity",
 		Long: `Test a provider by sending a real chat completion request.
 If no name is given, the active provider is tested.
-Use the --all flag to test all saved providers sequentially.`,
+Use the --all flag to test all saved providers concurrently.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -33,28 +34,54 @@ Use the --all flag to test all saved providers sequentially.`,
 					return nil
 				}
 
-				anyFailed := false
-				tester := connectivity.New(nil)
+				type testResult struct {
+					p      config.Provider
+					result connectivity.Result
+				}
 
+				resultsChan := make(chan testResult, len(cfg.Providers))
+				var wg sync.WaitGroup
+
+				fmt.Printf("Testing all %d providers concurrently…\n", len(cfg.Providers))
+
+				for _, p := range cfg.Providers {
+					wg.Add(1)
+					go func(prov config.Provider) {
+						defer wg.Done()
+						tester := connectivity.New(nil)
+						res := tester.Test(prov.BaseURL, prov.APIKey, prov.Model)
+						resultsChan <- testResult{p: prov, result: res}
+					}(p)
+				}
+
+				wg.Wait()
+				close(resultsChan)
+
+				// Map results by provider name to print them in the original order
+				resultsMap := make(map[string]connectivity.Result)
+				for res := range resultsChan {
+					resultsMap[res.p.Name] = res.result
+				}
+
+				anyFailed := false
 				for i, p := range cfg.Providers {
 					if i > 0 {
 						fmt.Println()
 					}
+					res := resultsMap[p.Name]
 					fmt.Printf("Testing provider %q (%s, model: %s)…\n", p.Name, p.BaseURL, p.Model)
-					result := tester.Test(p.BaseURL, p.APIKey, p.Model)
-
-					if result.OK {
-						fmt.Printf("✓ Connected in %dms\n", result.LatencyMS)
-						if result.Response != "" {
-							fmt.Printf("  Model response: %q\n", result.Response)
+					if res.OK {
+						fmt.Printf("✓ Connected in %dms\n", res.LatencyMS)
+						if res.Response != "" {
+							fmt.Printf("  Model response: %q\n", res.Response)
 						}
 					} else {
-						fmt.Printf("✗ Failed: %s\n", result.Error)
+						fmt.Printf("✗ Failed: %s\n", res.Error)
 						anyFailed = true
 					}
 
 					// Persist result
-					_ = config.UpdateTestResult(cfg, p.Name, result.LatencyMS, result.OK)
+					_ = config.UpdateTestResult(cfg, p.Name, res.LatencyMS, res.OK)
 				}
 
 				if anyFailed {
@@ -102,7 +129,7 @@ Use the --all flag to test all saved providers sequentially.`,
 		},
 	}
 
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "Test all saved providers sequentially")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "Test all saved providers concurrently")
 
 	return cmd
 }

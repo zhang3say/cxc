@@ -145,8 +145,7 @@ type model struct {
 	confirm   confirmState
 	status    string
 	statusErr bool
-	testing   string // provider name being tested, "" if none
-	testQueue []string
+	testing   map[string]bool // maps provider name to true if currently being tested
 	width     int
 	height    int
 }
@@ -156,7 +155,7 @@ func initialModel() (model, error) {
 	if err != nil {
 		return model{}, err
 	}
-	return model{cfg: cfg}, nil
+	return model{cfg: cfg, testing: make(map[string]bool)}, nil
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -176,7 +175,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case testResultMsg:
-		m.testing = ""
+		delete(m.testing, msg.name)
 		_ = config.UpdateTestResult(m.cfg, msg.name, msg.result.LatencyMS, msg.result.OK)
 		if msg.result.OK {
 			m.status = fmt.Sprintf("✓ %s: connected in %dms", msg.name, msg.result.LatencyMS)
@@ -186,24 +185,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusErr = true
 		}
 
-		if len(m.testQueue) > 0 {
-			nextName := m.testQueue[0]
-			m.testQueue = m.testQueue[1:]
-			m.testing = nextName
-
-			var nextP config.Provider
-			for _, p := range m.cfg.Providers {
-				if p.Name == nextName {
-					nextP = p
-					break
-				}
-			}
-
-			m.status = fmt.Sprintf("Testing all (%d remaining)…", len(m.testQueue)+1)
-			return m, tea.Batch(
-				reloadConfig(),
-				runTest(nextName, nextP.BaseURL, nextP.APIKey, nextP.Model),
-			)
+		if len(m.testing) == 0 {
+			m.status = "✓ All tests completed"
 		}
 
 		return m, reloadConfig()
@@ -331,7 +314,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		p := providers[m.cursor]
-		m.testing = p.Name
+		m.testing[p.Name] = true
 		m.status = fmt.Sprintf("Testing %q…", p.Name)
 		m.statusErr = false
 		return m, runTest(p.Name, p.BaseURL, p.APIKey, p.Model)
@@ -340,17 +323,14 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(providers) == 0 {
 			break
 		}
-		m.testQueue = make([]string, len(providers))
+		cmds := make([]tea.Cmd, len(providers))
 		for i, p := range providers {
-			m.testQueue[i] = p.Name
+			m.testing[p.Name] = true
+			cmds[i] = runTest(p.Name, p.BaseURL, p.APIKey, p.Model)
 		}
-		first := m.testQueue[0]
-		m.testQueue = m.testQueue[1:]
-		m.testing = first
-		m.status = fmt.Sprintf("Testing all (%d remaining)…", len(m.testQueue)+1)
+		m.status = fmt.Sprintf("Testing all %d providers concurrently…", len(providers))
 		m.statusErr = false
-		p := providers[0]
-		return m, runTest(first, p.BaseURL, p.APIKey, p.Model)
+		return m, tea.Batch(cmds...)
 
 	case "enter", "s":
 		if len(providers) == 0 {
@@ -604,7 +584,7 @@ func (m model) viewList() string {
 				latency = styleError.Render("✗ " + lat)
 			}
 		}
-		if m.testing == p.Name {
+		if m.testing[p.Name] {
 			latency = styleWarn.Render("⟳ testing…")
 		}
 
