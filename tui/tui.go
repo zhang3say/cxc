@@ -51,6 +51,10 @@ var (
 	styleHeader = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#81A1C1")).
 			Bold(true)
+
+	styleRemark = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B48EAD")).
+			Italic(true)
 )
 
 // ── View modes ───────────────────────────────────────────────────────────────
@@ -596,7 +600,7 @@ func (m model) viewList() string {
 		if remarkText == "" {
 			remarkText = "(none)"
 		}
-		sb.WriteString(styleHeader.Render("  Remark: ") + styleWarn.Render(remarkText) + "\n")
+		sb.WriteString(styleHeader.Render("  Remark: ") + styleRemark.Render(remarkText) + "\n")
 	}
 
 	return sb.String()
