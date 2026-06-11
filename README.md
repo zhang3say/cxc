@@ -2,7 +2,7 @@
 
 > Quickly switch API relay endpoints for AI coding tools like Codex and Claude.
 
-[![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://golang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.96%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ![CXC TUI Preview](docs/images/tui-preview.png)
@@ -23,13 +23,13 @@ CXC is a CLI/TUI tool for managing multiple API relay endpoint configurations fo
 ### One-click Installer (Linux / macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhang3say/cxc/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zhang3say/cxc/main/install.sh | sh
 ```
 
-### Go Install
+### Cargo Install
 
 ```bash
-go install github.com/zhang3say/cxc@latest
+cargo install --git https://github.com/zhang3say/cxc.git
 ```
 
 ### Build from source
@@ -37,7 +37,7 @@ go install github.com/zhang3say/cxc@latest
 ```bash
 git clone https://github.com/zhang3say/cxc
 cd cxc
-go build -o cxc .
+cargo build --release
 ```
 
 ## Usage
@@ -111,10 +111,10 @@ providers:
 
 ## Architecture
 
-- **CLI**: [Cobra](https://github.com/spf13/cobra) — subcommand routing
-- **TUI**: [Bubble Tea](https://github.com/charmbracelet/bubbletea) — Elm-architecture TUI
-- **TOML**: [pelletier/go-toml](https://github.com/pelletier/go-toml) — structure-preserving mutation
-- **Config**: YAML via [gopkg.in/yaml.v3](https://gopkg.in/yaml.v3)
+- **CLI**: [Clap](https://github.com/clap-rs/clap) (derive interface) — subcommand routing
+- **TUI**: [Ratatui](https://github.com/ratatui-org/ratatui) (with [crossterm](https://github.com/crossterm-rs/crossterm) backend) — async event loop TUI
+- **TOML**: [toml_edit](https://github.com/toml-rs/toml) — format-preserving AST mutation
+- **Config**: YAML serialization via [serde_yaml](https://github.com/dtolnay/serde-yaml)
 
 See [docs/adr/](docs/adr/) for architectural decision records.
 
