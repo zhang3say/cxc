@@ -5,6 +5,8 @@
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://golang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
+![CXC TUI Preview](docs/images/tui-preview.png)
+
 CXC is a CLI/TUI tool for managing multiple API relay endpoint configurations for AI coding tools. Instead of manually editing TOML and JSON config files, use `cxc` to add, test, and switch between providers in seconds.
 
 ## Features
