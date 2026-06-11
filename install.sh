@@ -63,6 +63,13 @@ curl -sSL -o "$TMP_DIR/$TARBALL" "$URL"
 echo "Extracting..."
 tar -xf "$TMP_DIR/$TARBALL" -C "$TMP_DIR"
 
+# Find binary recursively inside temporary directory
+BINARY_PATH=$(find "$TMP_DIR" -type f -name "cxc" | head -n 1)
+if [ -z "$BINARY_PATH" ]; then
+  echo "Error: cxc binary not found in the extracted archive."
+  exit 1
+fi
+
 # Determine install directory
 if [ -w "/usr/local/bin" ]; then
   INSTALL_DIR="/usr/local/bin"
@@ -81,7 +88,7 @@ if [ ! -w "$INSTALL_DIR" ]; then
 fi
 
 echo "Installing to $INSTALL_DIR/cxc..."
-$SUDO cp "$TMP_DIR/cxc" "$INSTALL_DIR/cxc"
+$SUDO cp "$BINARY_PATH" "$INSTALL_DIR/cxc"
 $SUDO chmod +x "$INSTALL_DIR/cxc"
 
 echo "✓ cxc installed successfully to $INSTALL_DIR/cxc"
