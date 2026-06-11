@@ -113,6 +113,7 @@ type editFormState struct {
 	field   editField
 	values  [5]string
 	oldName string
+	cursor  int
 }
 
 // ── Confirm state ─────────────────────────────────────────────────────────────
@@ -335,6 +336,12 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	idx := int(m.addForm.field)
+	valRunes := []rune("")
+	if idx < 5 {
+		valRunes = []rune(m.addForm.values[idx])
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
@@ -348,18 +355,31 @@ func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// All fields collected — submit
 				return m, submitAdd(m.addForm.values)
 			}
+			m.addForm.cursor = len([]rune(m.addForm.values[m.addForm.field]))
 		}
 
+	case "left":
+		if m.addForm.cursor > 0 {
+			m.addForm.cursor--
+		}
+	case "right":
+		if m.addForm.cursor < len(valRunes) {
+			m.addForm.cursor++
+		}
+	case "home", "ctrl+a":
+		m.addForm.cursor = 0
+	case "end", "ctrl+e":
+		m.addForm.cursor = len(valRunes)
+
 	case "backspace":
-		idx := int(m.addForm.field)
-		if idx < 5 && len(m.addForm.values[idx]) > 0 {
-			m.addForm.values[idx] = m.addForm.values[idx][:len(m.addForm.values[idx])-1]
+		if idx < 5 {
+			m.addForm.values[idx], m.addForm.cursor = deleteAtRune(m.addForm.values[idx], m.addForm.cursor)
 		}
 
 	default:
-		idx := int(m.addForm.field)
 		if idx < 5 && len(msg.Runes) > 0 {
-			m.addForm.values[idx] += string(msg.Runes)
+			m.addForm.values[idx] = insertAtRune(m.addForm.values[idx], m.addForm.cursor, string(msg.Runes))
+			m.addForm.cursor += len(msg.Runes)
 		}
 	}
 
@@ -367,6 +387,12 @@ func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	idx := int(m.editForm.field)
+	valRunes := []rune("")
+	if idx < 5 {
+		valRunes = []rune(m.editForm.values[idx])
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
@@ -380,18 +406,31 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// All fields collected — submit
 				return m, submitEdit(m.editForm.oldName, m.editForm.values)
 			}
+			m.editForm.cursor = len([]rune(m.editForm.values[m.editForm.field]))
 		}
 
+	case "left":
+		if m.editForm.cursor > 0 {
+			m.editForm.cursor--
+		}
+	case "right":
+		if m.editForm.cursor < len(valRunes) {
+			m.editForm.cursor++
+		}
+	case "home", "ctrl+a":
+		m.editForm.cursor = 0
+	case "end", "ctrl+e":
+		m.editForm.cursor = len(valRunes)
+
 	case "backspace":
-		idx := int(m.editForm.field)
-		if idx < 5 && len(m.editForm.values[idx]) > 0 {
-			m.editForm.values[idx] = m.editForm.values[idx][:len(m.editForm.values[idx])-1]
+		if idx < 5 {
+			m.editForm.values[idx], m.editForm.cursor = deleteAtRune(m.editForm.values[idx], m.editForm.cursor)
 		}
 
 	default:
-		idx := int(m.editForm.field)
 		if idx < 5 && len(msg.Runes) > 0 {
-			m.editForm.values[idx] += string(msg.Runes)
+			m.editForm.values[idx] = insertAtRune(m.editForm.values[idx], m.editForm.cursor, string(msg.Runes))
+			m.editForm.cursor += len(msg.Runes)
 		}
 	}
 
@@ -547,10 +586,20 @@ func (m model) viewAdd() string {
 			if time.Now().UnixMilli()%1000 < 500 {
 				cursor = " "
 			}
+			runes := []rune(val)
+			cursorIdx := m.addForm.cursor
+			if cursorIdx < 0 {
+				cursorIdx = 0
+			}
+			if cursorIdx > len(runes) {
+				cursorIdx = len(runes)
+			}
+			left := string(runes[:cursorIdx])
+			right := string(runes[cursorIdx:])
 			if val == "" {
 				sb.WriteString(styleWarn.Render(prefix+label+": ") + cursor + styleDim.Render(placeholders[i]) + "\n")
 			} else {
-				sb.WriteString(styleWarn.Render(prefix+label+": ") + val + cursor + "\n")
+				sb.WriteString(styleWarn.Render(prefix+label+": ") + left + cursor + right + "\n")
 			}
 		} else if f < m.addForm.field {
 			sb.WriteString(styleDim.Render(prefix+label+": ") + styleSuccess.Render(val) + "\n")
@@ -579,7 +628,17 @@ func (m model) viewEdit() string {
 			if time.Now().UnixMilli()%1000 < 500 {
 				cursor = " "
 			}
-			sb.WriteString(styleWarn.Render(prefix+label+": ") + val + cursor + "\n")
+			runes := []rune(val)
+			cursorIdx := m.editForm.cursor
+			if cursorIdx < 0 {
+				cursorIdx = 0
+			}
+			if cursorIdx > len(runes) {
+				cursorIdx = len(runes)
+			}
+			left := string(runes[:cursorIdx])
+			right := string(runes[cursorIdx:])
+			sb.WriteString(styleWarn.Render(prefix+label+": ") + left + cursor + right + "\n")
 		} else if f < m.editForm.field {
 			sb.WriteString(styleDim.Render(prefix+label+": ") + styleSuccess.Render(val) + "\n")
 		} else {
@@ -764,6 +823,37 @@ func reloadConfig() tea.Cmd {
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
+
+// insertAtRune inserts a string into an existing string at rune index idx.
+func insertAtRune(s string, idx int, insert string) string {
+	runes := []rune(s)
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > len(runes) {
+		idx = len(runes)
+	}
+	result := make([]rune, 0, len(runes)+len([]rune(insert)))
+	result = append(result, runes[:idx]...)
+	result = append(result, []rune(insert)...)
+	result = append(result, runes[idx:]...)
+	return string(result)
+}
+
+// deleteAtRune deletes the character immediately before rune index idx (backspace).
+func deleteAtRune(s string, idx int) (string, int) {
+	runes := []rune(s)
+	if idx <= 0 {
+		return s, 0
+	}
+	if idx > len(runes) {
+		idx = len(runes)
+	}
+	result := make([]rune, 0, len(runes)-1)
+	result = append(result, runes[:idx-1]...)
+	result = append(result, runes[idx:]...)
+	return string(result), idx - 1
+}
 
 func truncate(s string, n int) string {
 	if len(s) <= n {
