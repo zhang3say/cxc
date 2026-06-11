@@ -137,17 +137,18 @@ type confirmState struct {
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 type model struct {
-	cfg       *config.Config
-	cursor    int
-	mode      viewMode
-	addForm   addFormState
-	editForm  editFormState
-	confirm   confirmState
-	status    string
-	statusErr bool
-	testing   map[string]bool // maps provider name to true if currently being tested
-	width     int
-	height    int
+	cfg           *config.Config
+	cursor        int
+	mode          viewMode
+	addForm       addFormState
+	editForm      editFormState
+	confirm       confirmState
+	status        string
+	statusErr     bool
+	testing       map[string]bool // maps provider name to true if currently being tested
+	testAllActive bool            // true if the active batch was triggered via Test All (T)
+	width         int
+	height        int
 }
 
 func initialModel() (model, error) {
@@ -185,8 +186,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusErr = true
 		}
 
-		if len(m.testing) == 0 {
+		if len(m.testing) == 0 && m.testAllActive {
 			m.status = "✓ All tests completed"
+			m.testAllActive = false
 		}
 
 		return m, reloadConfig()
@@ -330,6 +332,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.status = fmt.Sprintf("Testing all %d providers concurrently…", len(providers))
 		m.statusErr = false
+		m.testAllActive = true
 		return m, tea.Batch(cmds...)
 
 	case "enter", "s":
