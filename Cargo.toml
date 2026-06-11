@@ -1,6 +1,6 @@
 [package]
 name = "cxc"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 repository = "https://github.com/zhang3say/cxc"
 homepage = "https://github.com/zhang3say/cxc"

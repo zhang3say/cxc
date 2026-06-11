@@ -662,15 +662,6 @@ fn delete_char(s: &str, idx: usize) -> (String, usize) {
     (chars.into_iter().collect(), delete_idx)
 }
 
-fn pad_right(s: &str, width: usize) -> String {
-    let w = unicode_width::UnicodeWidthStr::width(s);
-    if w >= width {
-        s.to_string()
-    } else {
-        format!("{}{}", s, " ".repeat(width - w))
-    }
-}
-
 fn truncate(s: &str, n: usize) -> String {
     let w = unicode_width::UnicodeWidthStr::width(s);
     if w <= n {
@@ -743,33 +734,42 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                 let layout = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
-                        Constraint::Length(1), // Header
-                        Constraint::Length(1), // Separator
+                        Constraint::Length(2), // Header + Separator
                         Constraint::Min(1),    // Scrollable Table body
                     ])
                     .split(chunks[2]);
 
-                // Header
-                let header_line = Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(pad_right("NAME", 16), Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
-                    Span::raw(" "),
-                    Span::styled(pad_right("BASE URL", 40), Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
-                    Span::raw(" "),
-                    Span::styled(pad_right("MODEL", 20), Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
-                    Span::raw(" "),
-                    Span::styled(pad_right("LATENCY", 10), Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
-                    Span::raw(" "),
-                    Span::styled(pad_right("LAST TEST", 12), Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
-                ]);
-                frame.render_widget(Paragraph::new(header_line), layout[0]);
-
-                // Separator
-                let separator_line = Line::from(Span::styled(
-                    format!("  {}", "─".repeat(100)),
-                    Style::default().fg(theme.dim)
-                ));
-                frame.render_widget(Paragraph::new(separator_line), layout[1]);
+                // Header & Separator Table
+                let header_table = Table::new(
+                    vec![
+                        Row::new(vec![
+                            Cell::from(""),
+                            Cell::from("NAME").style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
+                            Cell::from("BASE URL").style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
+                            Cell::from("MODEL").style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
+                            Cell::from("LATENCY").style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
+                            Cell::from("LAST TEST").style(Style::default().fg(theme.header).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Row::new(vec![
+                            Cell::from(""),
+                            Cell::from("────────────────"),
+                            Cell::from("────────────────────────────────────────"),
+                            Cell::from("────────────────────"),
+                            Cell::from("──────────"),
+                            Cell::from("────────────"),
+                        ]).style(Style::default().fg(theme.dim)),
+                    ],
+                    [
+                        Constraint::Length(2),  // Active star
+                        Constraint::Length(16), // Name
+                        Constraint::Length(40), // Base URL
+                        Constraint::Length(20), // Model
+                        Constraint::Length(12), // Latency
+                        Constraint::Length(12), // Last Test
+                    ]
+                )
+                .column_spacing(1);
+                frame.render_widget(header_table, layout[0]);
 
                 // Table rows
                 let rows: Vec<Row> = providers.iter().map(|p| {
@@ -832,11 +832,12 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                     Constraint::Length(12), // Latency
                     Constraint::Length(12), // Last Test
                 ])
+                .column_spacing(1)
                 .highlight_style(Style::default().bg(theme.selected_bg).fg(theme.selected_fg));
 
                 let mut table_state = TableState::default();
                 table_state.select(Some(app.cursor));
-                frame.render_stateful_widget(table, layout[2], &mut table_state);
+                frame.render_stateful_widget(table, layout[1], &mut table_state);
             }
         }
         ViewMode::Add => {
