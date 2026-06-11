@@ -531,8 +531,12 @@ func (m model) viewList() string {
 	}
 
 	// Header
-	header := fmt.Sprintf("  %-16s %-40s %-20s %-10s %-12s",
-		"NAME", "BASE URL", "MODEL", "LATENCY", "LAST TEST")
+	hName := padRightCell("NAME", 16)
+	hBaseURL := padRightCell("BASE URL", 40)
+	hModel := padRightCell("MODEL", 20)
+	hLatency := padRightCell("LATENCY", 10)
+	hLastTest := padRightCell("LAST TEST", 12)
+	header := fmt.Sprintf("  %s %s %s %s %s", hName, hBaseURL, hModel, hLatency, hLastTest)
 	sb.WriteString(styleHeader.Render(header))
 	sb.WriteString("\n")
 	sb.WriteString(styleDim.Render("  " + strings.Repeat("─", 100)))
@@ -567,8 +571,14 @@ func (m model) viewList() string {
 			lastTest = p.LastTest.Format("15:04:05")
 		}
 
-		row := fmt.Sprintf("%s%-16s %-40s %-20s %-10s %-12s",
-			active, name, baseURL, model, latency, lastTest)
+		rName := padRightCell(name, 16)
+		rBaseURL := padRightCell(baseURL, 40)
+		rModel := padRightCell(model, 20)
+		rLatency := padRightCell(latency, 10)
+		rLastTest := padRightCell(lastTest, 12)
+
+		row := fmt.Sprintf("%s%s %s %s %s %s",
+			active, rName, rBaseURL, rModel, rLatency, rLastTest)
 
 		if i == m.cursor {
 			sb.WriteString(styleSelected.Render(row))
@@ -885,11 +895,32 @@ func deleteAtRune(s string, idx int) (string, int) {
 	return string(result), idx - 1
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
+// padRightCell pads a string s with spaces on the right to reach the target cell width.
+// It correctly handles ANSI escape codes (ignoring their width) and wide characters.
+func padRightCell(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
 		return s
 	}
-	return s[:n-1] + "…"
+	return s + strings.Repeat(" ", width-w)
+}
+
+func truncate(s string, n int) string {
+	if lipgloss.Width(s) <= n {
+		return s
+	}
+	runes := []rune(s)
+	width := 0
+	idx := 0
+	for i, r := range runes {
+		w := lipgloss.Width(string(r))
+		if width+w > n-1 {
+			break
+		}
+		width += w
+		idx = i + 1
+	}
+	return string(runes[:idx]) + "…"
 }
 
 // Run launches the Bubble Tea TUI.
