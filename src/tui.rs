@@ -717,8 +717,18 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
         .split(frame.size());
 
     // 1. Title bar
-    let title = Paragraph::new("  CXC — Codex Cross-Connect  ")
-        .style(Style::default().fg(theme.title_fg).bg(theme.title_bg).add_modifier(Modifier::BOLD));
+    let title_spans = vec![
+        Span::styled(
+            "  CXC — Codex Cross-Connect  ",
+            Style::default().fg(theme.title_fg).bg(theme.title_bg).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            format!("v{}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(theme.dim),
+        ),
+    ];
+    let title = Paragraph::new(Line::from(title_spans));
     frame.render_widget(title, chunks[0]);
 
     // 2. Main content area

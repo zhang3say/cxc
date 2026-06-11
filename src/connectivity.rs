@@ -24,7 +24,7 @@ impl Default for Tester {
 impl Tester {
     pub fn new() -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(10))
             .build()
             .unwrap_or_else(|_| Client::new());
         Self { client }
@@ -198,7 +198,7 @@ fn categorize_network_error(err: reqwest::Error) -> String {
     if msg.contains("dns") || msg.contains("resolve") || msg.contains("unreachable") {
         "unreachable — DNS failure or connection refused".to_string()
     } else if err.is_timeout() || msg.contains("timeout") || msg.contains("deadline") {
-        "timeout — server did not respond within 30s".to_string()
+        "timeout — server did not respond within 10s".to_string()
     } else if msg.contains("connection refused") {
         "connection refused".to_string()
     } else {
