@@ -219,3 +219,63 @@ func TestRemarkPersistence(t *testing.T) {
 		t.Errorf("expected remark 'My backup endpoint', got %q", loaded.Providers[0].Remark)
 	}
 }
+
+func TestEditProvider(t *testing.T) {
+	setupTestConfig(t)
+
+	cfg := &Config{}
+	_ = AddProvider(cfg, Provider{Name: "a", BaseURL: "https://a.com", APIKey: "k1", Model: "m1", Remark: "old"})
+
+	updated := Provider{Name: "a", BaseURL: "https://new-a.com", APIKey: "new-k1", Model: "new-m1", Remark: "new"}
+	if err := EditProvider(cfg, "a", updated); err != nil {
+		t.Fatalf("EditProvider: %v", err)
+	}
+
+	p, ok := GetProvider(cfg, "a")
+	if !ok {
+		t.Fatal("provider not found")
+	}
+	if p.BaseURL != "https://new-a.com" || p.APIKey != "new-k1" || p.Model != "new-m1" || p.Remark != "new" {
+		t.Errorf("unexpected updated fields: %+v", p)
+	}
+}
+
+func TestEditProviderRenameActive(t *testing.T) {
+	setupTestConfig(t)
+
+	cfg := &Config{}
+	_ = AddProvider(cfg, Provider{Name: "a", BaseURL: "https://a.com", APIKey: "k1", Model: "m1"})
+	_ = AddProvider(cfg, Provider{Name: "b", BaseURL: "https://b.com", APIKey: "k2", Model: "m2"})
+	_ = SetActive(cfg, "a")
+
+	updated := Provider{Name: "new-a", BaseURL: "https://a.com", APIKey: "k1", Model: "m1"}
+	if err := EditProvider(cfg, "a", updated); err != nil {
+		t.Fatalf("EditProvider: %v", err)
+	}
+
+	if cfg.Active != "new-a" {
+		t.Errorf("expected active provider to be renamed to 'new-a', got %q", cfg.Active)
+	}
+	_, foundOld := GetProvider(cfg, "a")
+	if foundOld {
+		t.Error("old provider 'a' should not exist")
+	}
+	_, foundNew := GetProvider(cfg, "new-a")
+	if !foundNew {
+		t.Error("new provider 'new-a' should exist")
+	}
+}
+
+func TestEditProviderDuplicateName(t *testing.T) {
+	setupTestConfig(t)
+
+	cfg := &Config{}
+	_ = AddProvider(cfg, Provider{Name: "a", BaseURL: "https://a.com", APIKey: "k1", Model: "m1"})
+	_ = AddProvider(cfg, Provider{Name: "b", BaseURL: "https://b.com", APIKey: "k2", Model: "m2"})
+
+	updated := Provider{Name: "b", BaseURL: "https://a.com", APIKey: "k1", Model: "m1"}
+	err := EditProvider(cfg, "a", updated)
+	if err == nil {
+		t.Fatal("expected error when renaming to an existing name")
+	}
+}

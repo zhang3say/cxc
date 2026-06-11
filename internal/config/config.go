@@ -96,6 +96,55 @@ func AddProvider(cfg *Config, p Provider) error {
 	return Save(cfg)
 }
 
+// EditProvider updates an existing provider's fields by oldName.
+// If the name is changed, it checks for duplicate names and updates the Active reference if needed.
+func EditProvider(cfg *Config, oldName string, updated Provider) error {
+	var index = -1
+	for i, p := range cfg.Providers {
+		if p.Name == oldName {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return fmt.Errorf("provider %q not found", oldName)
+	}
+
+	// If name changed, check duplicate
+	if updated.Name != oldName {
+		for _, p := range cfg.Providers {
+			if p.Name == updated.Name {
+				return fmt.Errorf("provider %q already exists", updated.Name)
+			}
+		}
+	}
+
+	if updated.WireAPI == "" {
+		updated.WireAPI = "responses"
+	}
+
+	// Preserve test metadata from existing provider unless explicitly updated
+	existing := cfg.Providers[index]
+	if updated.LastTest == nil {
+		updated.LastTest = existing.LastTest
+	}
+	if updated.LatencyMS == nil {
+		updated.LatencyMS = existing.LatencyMS
+	}
+	if updated.LastOK == nil {
+		updated.LastOK = existing.LastOK
+	}
+
+	cfg.Providers[index] = updated
+
+	// Update active provider reference if name changed
+	if cfg.Active == oldName {
+		cfg.Active = updated.Name
+	}
+
+	return Save(cfg)
+}
+
 // RemoveProvider removes a Provider by name.
 // Returns an error if it's the Active Provider.
 func RemoveProvider(cfg *Config, name string) error {

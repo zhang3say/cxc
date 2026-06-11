@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -60,6 +61,7 @@ const (
 	modeList    viewMode = iota
 	modeAdd              // sequential add form
 	modeConfirm          // confirm switch/remove
+	modeEdit             // sequential edit form
 )
 
 // ── Messages ─────────────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ type testResultMsg struct {
 type switchDoneMsg struct{ err error }
 type removeDoneMsg struct{ err error }
 type addDoneMsg struct{ err error }
+type editDoneMsg struct{ err error }
 type configReloadedMsg struct{ cfg *config.Config }
 
 // ── Add form state ────────────────────────────────────────────────────────────
@@ -91,6 +94,25 @@ type addFormState struct {
 	field  addField
 	values [5]string
 	cursor int
+}
+
+// ── Edit form state ───────────────────────────────────────────────────────────
+
+type editField int
+
+const (
+	editFieldName editField = iota
+	editFieldBaseURL
+	editFieldAPIKey
+	editFieldModel
+	editFieldRemark
+	editFieldDone
+)
+
+type editFormState struct {
+	field   editField
+	values  [5]string
+	oldName string
 }
 
 // ── Confirm state ─────────────────────────────────────────────────────────────
@@ -114,6 +136,7 @@ type model struct {
 	cursor    int
 	mode      viewMode
 	addForm   addFormState
+	editForm  editFormState
 	confirm   confirmState
 	status    string
 	statusErr bool
@@ -201,6 +224,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addForm = addFormState{}
 		return m, reloadConfig()
 
+	case editDoneMsg:
+		if msg.err != nil {
+			m.status = "✗ Edit failed: " + msg.err.Error()
+			m.statusErr = true
+		} else {
+			m.status = "✓ Provider updated"
+			m.statusErr = false
+		}
+		m.mode = modeList
+		m.editForm = editFormState{}
+		return m, reloadConfig()
+
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeList:
@@ -209,6 +244,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAdd(msg)
 		case modeConfirm:
 			return m.updateConfirm(msg)
+		case modeEdit:
+			return m.updateEdit(msg)
 		}
 	}
 
@@ -235,6 +272,24 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		m.mode = modeAdd
 		m.addForm = addFormState{}
+
+	case "e":
+		if len(providers) == 0 {
+			break
+		}
+		p := providers[m.cursor]
+		m.mode = modeEdit
+		m.editForm = editFormState{
+			field:   editFieldName,
+			oldName: p.Name,
+			values: [5]string{
+				p.Name,
+				p.BaseURL,
+				p.APIKey,
+				p.Model,
+				p.Remark,
+			},
+		}
 
 	case "t":
 		if len(providers) == 0 {
@@ -303,6 +358,38 @@ func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		m.editForm = editFormState{}
+		return m, nil
+
+	case "enter":
+		if m.editForm.field < editFieldDone {
+			m.editForm.field++
+			if m.editForm.field == editFieldDone {
+				// All fields collected — submit
+				return m, submitEdit(m.editForm.oldName, m.editForm.values)
+			}
+		}
+
+	case "backspace":
+		idx := int(m.editForm.field)
+		if idx < 5 && len(m.editForm.values[idx]) > 0 {
+			m.editForm.values[idx] = m.editForm.values[idx][:len(m.editForm.values[idx])-1]
+		}
+
+	default:
+		idx := int(m.editForm.field)
+		if idx < 5 && len(msg.Runes) > 0 {
+			m.editForm.values[idx] += string(msg.Runes)
+		}
+	}
+
+	return m, nil
+}
+
 func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
@@ -336,6 +423,8 @@ func (m model) View() string {
 		sb.WriteString(m.viewAdd())
 	case modeConfirm:
 		sb.WriteString(m.viewConfirm())
+	case modeEdit:
+		sb.WriteString(m.viewEdit())
 	}
 
 	// Status line
@@ -466,6 +555,34 @@ func (m model) viewAdd() string {
 	return sb.String()
 }
 
+func (m model) viewEdit() string {
+	labels := []string{"Name", "Base URL", "API Key", "Model", "Remark"}
+	var sb strings.Builder
+	sb.WriteString(styleHeader.Render(fmt.Sprintf("  Edit Provider: %s", m.editForm.oldName)) + "\n\n")
+
+	for i, label := range labels {
+		f := editField(i)
+		val := m.editForm.values[i]
+
+		prefix := "  "
+		if f == m.editForm.field {
+			prefix = "> "
+			cursor := "█"
+			if time.Now().UnixMilli()%1000 < 500 {
+				cursor = " "
+			}
+			sb.WriteString(styleWarn.Render(prefix+label+": ") + val + cursor + "\n")
+		} else if f < m.editForm.field {
+			sb.WriteString(styleDim.Render(prefix+label+": ") + styleSuccess.Render(val) + "\n")
+		} else {
+			sb.WriteString(styleDim.Render(prefix+label+": ") + styleDim.Render(val) + "\n")
+		}
+	}
+
+	sb.WriteString("\n" + styleDim.Render("  [Enter] next field/submit  [Esc] cancel"))
+	return sb.String()
+}
+
 func (m model) viewConfirm() string {
 	var action string
 	switch m.confirm.action {
@@ -486,6 +603,7 @@ func (m model) viewHelp() string {
 	keys := []string{
 		"↑/↓ navigate",
 		"a add",
+		"e edit",
 		"t test",
 		"Enter/s switch",
 		"d/Del remove",
@@ -558,6 +676,64 @@ func submitAdd(values [5]string) tea.Cmd {
 			return addDoneMsg{err: err}
 		}
 		return addDoneMsg{}
+	}
+}
+
+func submitEdit(oldName string, values [5]string) tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := config.Load()
+		if err != nil {
+			return editDoneMsg{err: err}
+		}
+
+		name := strings.TrimSpace(values[0])
+		baseURL := strings.TrimSpace(values[1])
+		apiKey := strings.TrimSpace(values[2])
+		model := strings.TrimSpace(values[3])
+		remark := strings.TrimSpace(values[4])
+
+		// Validate
+		if name == "" {
+			return editDoneMsg{err: fmt.Errorf("name cannot be empty")}
+		}
+		if _, err := url.ParseRequestURI(baseURL); err != nil || !strings.HasPrefix(baseURL, "http") {
+			return editDoneMsg{err: fmt.Errorf("invalid base URL")}
+		}
+		if apiKey == "" {
+			return editDoneMsg{err: fmt.Errorf("API key cannot be empty")}
+		}
+		if model == "" {
+			return editDoneMsg{err: fmt.Errorf("model cannot be empty")}
+		}
+
+		updated := config.Provider{
+			Name:    name,
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+			Model:   model,
+			Remark:  remark,
+			WireAPI: "responses",
+		}
+
+		if err := config.EditProvider(cfg, oldName, updated); err != nil {
+			return editDoneMsg{err: err}
+		}
+
+		// If the updated provider is active, update Codex config as well
+		if cfg.Active == name {
+			adapter := codexadapter.New()
+			tc := target.Config{
+				BaseURL: baseURL,
+				APIKey:  apiKey,
+				Model:   model,
+				WireAPI: "responses",
+			}
+			if err := adapter.Write(&tc); err != nil {
+				return editDoneMsg{err: err}
+			}
+		}
+
+		return editDoneMsg{}
 	}
 }
 
