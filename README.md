@@ -18,11 +18,19 @@ CXC is a CLI/TUI tool for managing multiple API relay endpoint configurations fo
 
 ## Installation
 
+### One-click Installer (Linux / macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhang3say/cxc/main/install.sh | bash
+```
+
+### Go Install
+
 ```bash
 go install github.com/zhang3say/cxc@latest
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/zhang3say/cxc
@@ -44,7 +52,9 @@ Launch the interactive full-screen TUI. Keyboard shortcuts:
 |-----|--------|
 | `↑`/`↓` | Navigate providers |
 | `a` | Add a new provider |
+| `e` | Edit highlighted provider |
 | `t` | Test the highlighted provider |
+| `T` | Test all providers concurrently |
 | `Enter`/`s` | Switch to highlighted provider |
 | `d`/`Delete` | Remove highlighted provider |
 | `q`/`Esc` | Quit |
@@ -64,6 +74,7 @@ cxc provider list
 # Test a provider's connectivity
 cxc provider test               # tests active provider
 cxc provider test my-relay      # tests named provider
+cxc provider test --all         # tests all saved providers concurrently (or -a)
 
 # Switch active provider
 cxc provider switch my-relay
