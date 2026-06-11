@@ -45,6 +45,16 @@ fi
 
 echo "Latest release: $LATEST_RELEASE"
 
+# Check if cxc is already installed and compare version
+if command -v cxc >/dev/null 2>&1; then
+  CURRENT_VERSION=$(cxc --version | awk '{print $2}')
+  CLEAN_LATEST=$(echo "$LATEST_RELEASE" | sed 's/^v//')
+  if [ "$CURRENT_VERSION" = "$CLEAN_LATEST" ]; then
+    echo "✓ cxc is already up to date (version $LATEST_RELEASE)."
+    exit 0
+  fi
+fi
+
 # Construct download URL
 TARBALL="${REPO}-${TARGET}.tar.xz"
 URL="https://github.com/$OWNER/$REPO/releases/download/$LATEST_RELEASE/$TARBALL"
