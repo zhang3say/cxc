@@ -12,7 +12,7 @@ import (
 )
 
 func newAddCmd() *cobra.Command {
-	var name, baseURL, apiKey, model, wireAPI string
+	var name, baseURL, apiKey, model, wireAPI, remark string
 
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -26,10 +26,18 @@ func newAddCmd() *cobra.Command {
 
 			r := bufio.NewReader(os.Stdin)
 
+			// We enter interactive mode if any required fields are empty
+			isInteractive := name == "" || baseURL == "" || apiKey == "" || model == ""
+
 			name = promptIfEmpty(r, name, "Provider name")
 			baseURL = promptIfEmpty(r, baseURL, "Base URL (e.g. https://api.example.com/v1)")
 			apiKey = promptIfEmpty(r, apiKey, "API key")
 			model = promptIfEmpty(r, model, "Model (e.g. gpt-4)")
+
+			if isInteractive {
+				remark = promptIfEmpty(r, remark, "Remark (optional)")
+			}
+
 			if wireAPI == "" {
 				wireAPI = "responses"
 			}
@@ -54,6 +62,7 @@ func newAddCmd() *cobra.Command {
 				APIKey:  apiKey,
 				Model:   model,
 				WireAPI: wireAPI,
+				Remark:  remark,
 			}
 
 			if err := config.AddProvider(cfg, p); err != nil {
@@ -73,6 +82,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key for authentication")
 	cmd.Flags().StringVar(&model, "model", "", "Model name (e.g. gpt-4, gpt-5)")
 	cmd.Flags().StringVar(&wireAPI, "wire-api", "responses", "Wire API protocol (default: responses)")
+	cmd.Flags().StringVar(&remark, "remark", "", "Remark/note describing this provider")
 
 	return cmd
 }

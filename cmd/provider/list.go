@@ -26,8 +26,8 @@ func newListCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "  NAME\tBASE URL\tMODEL\tLAST TEST\tLATENCY\t")
-			fmt.Fprintln(w, "  ----\t--------\t-----\t---------\t-------\t")
+			fmt.Fprintln(w, "  NAME\tBASE URL\tMODEL\tLAST TEST\tLATENCY\tREMARK\t")
+			fmt.Fprintln(w, "  ----\t--------\t-----\t---------\t-------\t------\t")
 			for _, p := range cfg.Providers {
 				active := "  "
 				if p.Name == cfg.Active {
@@ -50,8 +50,8 @@ func newListCmd() *cobra.Command {
 					}
 				}
 
-				fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\t\n",
-					active, p.Name, p.BaseURL, p.Model, lastTest, latency)
+				fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\t%s\t\n",
+					active, p.Name, p.BaseURL, p.Model, lastTest, latency, p.Remark)
 			}
 			w.Flush()
 			return nil

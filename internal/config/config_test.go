@@ -195,3 +195,27 @@ func TestConfigDir(t *testing.T) {
 		t.Error("config dir should be a directory")
 	}
 }
+
+func TestRemarkPersistence(t *testing.T) {
+	setupTestConfig(t)
+
+	cfg := &Config{}
+	_ = AddProvider(cfg, Provider{
+		Name:    "a",
+		BaseURL: "https://a.com/v1",
+		APIKey:  "k1",
+		Model:   "m1",
+		Remark:  "My backup endpoint",
+	})
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.Providers) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(loaded.Providers))
+	}
+	if loaded.Providers[0].Remark != "My backup endpoint" {
+		t.Errorf("expected remark 'My backup endpoint', got %q", loaded.Providers[0].Remark)
+	}
+}

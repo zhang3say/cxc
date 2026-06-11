@@ -83,12 +83,13 @@ const (
 	fieldBaseURL
 	fieldAPIKey
 	fieldModel
+	fieldRemark
 	fieldDone
 )
 
 type addFormState struct {
 	field  addField
-	values [4]string
+	values [5]string
 	cursor int
 }
 
@@ -288,13 +289,13 @@ func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "backspace":
 		idx := int(m.addForm.field)
-		if idx < 4 && len(m.addForm.values[idx]) > 0 {
+		if idx < 5 && len(m.addForm.values[idx]) > 0 {
 			m.addForm.values[idx] = m.addForm.values[idx][:len(m.addForm.values[idx])-1]
 		}
 
 	default:
 		idx := int(m.addForm.field)
-		if idx < 4 && len(msg.Runes) > 0 {
+		if idx < 5 && len(msg.Runes) > 0 {
 			m.addForm.values[idx] += string(msg.Runes)
 		}
 	}
@@ -411,16 +412,28 @@ func (m model) viewList() string {
 		sb.WriteString("\n")
 	}
 
+	// Show remark of selected provider
+	sb.WriteString("\n")
+	if m.cursor >= 0 && m.cursor < len(m.cfg.Providers) {
+		p := m.cfg.Providers[m.cursor]
+		remarkText := p.Remark
+		if remarkText == "" {
+			remarkText = "(none)"
+		}
+		sb.WriteString(styleHeader.Render("  Remark: ") + styleWarn.Render(remarkText) + "\n")
+	}
+
 	return sb.String()
 }
 
 func (m model) viewAdd() string {
-	labels := []string{"Name", "Base URL", "API Key", "Model"}
+	labels := []string{"Name", "Base URL", "API Key", "Model", "Remark"}
 	placeholders := []string{
 		"e.g. my-relay",
 		"e.g. https://api.example.com/v1",
 		"e.g. sk-...",
 		"e.g. gpt-4",
+		"e.g. backup proxy (optional)",
 	}
 
 	var sb strings.Builder
@@ -449,7 +462,7 @@ func (m model) viewAdd() string {
 		}
 	}
 
-	sb.WriteString("\n" + styleDim.Render("  [Enter] next field  [Esc] cancel"))
+	sb.WriteString("\n" + styleDim.Render("  [Enter] next field/submit  [Esc] cancel"))
 	return sb.String()
 }
 
@@ -527,7 +540,7 @@ func runRemove(cfg *config.Config, name string) tea.Cmd {
 	}
 }
 
-func submitAdd(values [4]string) tea.Cmd {
+func submitAdd(values [5]string) tea.Cmd {
 	return func() tea.Msg {
 		cfg, err := config.Load()
 		if err != nil {
@@ -538,6 +551,7 @@ func submitAdd(values [4]string) tea.Cmd {
 			BaseURL: strings.TrimSpace(values[1]),
 			APIKey:  strings.TrimSpace(values[2]),
 			Model:   strings.TrimSpace(values[3]),
+			Remark:  strings.TrimSpace(values[4]),
 			WireAPI: "responses",
 		}
 		if err := config.AddProvider(cfg, p); err != nil {

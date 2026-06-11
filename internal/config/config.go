@@ -21,6 +21,7 @@ type Provider struct {
 	APIKey    string     `yaml:"api_key"`
 	Model     string     `yaml:"model"`
 	WireAPI   string     `yaml:"wire_api"`
+	Remark    string     `yaml:"remark,omitempty"`
 	LastTest  *time.Time `yaml:"last_test,omitempty"`
 	LatencyMS *int64     `yaml:"latency_ms,omitempty"`
 	LastOK    *bool      `yaml:"last_ok,omitempty"`

@@ -19,3 +19,8 @@ The Provider currently configured for a given Target Tool. When the user switche
 ## Connectivity Test
 
 A lightweight, real API call (minimal chat completion request) sent to a Provider's endpoint to verify that the `base_url`, `api_key`, and `model` are valid and the service is reachable. Not a synthetic ping — it exercises the actual inference path.
+
+## Remark（备注）
+
+An optional user-defined description or note for a Provider. Helps users distinguish between different API relay endpoints (e.g., "backup relay", "fast relay", "dev test").
+
