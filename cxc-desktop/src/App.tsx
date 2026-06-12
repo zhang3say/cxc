@@ -771,7 +771,7 @@ function App() {
                         </div>
 
                         {/* Quiet action buttons column */}
-                        <div className="w-full sm:w-24 shrink-0 pr-4 flex items-center justify-end sm:justify-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                        <div className="w-full sm:w-24 shrink-0 pr-4 flex items-center justify-end sm:justify-center gap-1">
                           <Button
                             variant="ghost"
                             size="icon-sm"
