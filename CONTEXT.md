@@ -36,3 +36,11 @@ The graphical user interface (GUI) version of CXC built with Tauri. It provides 
 
 A persistent quick-access menu in the operating system's notification area. It allows users to switch Active Providers instantly and view notification status without launching the full Desktop App window.
 
+## Codex Source (Codex 来源)
+
+The execution environment of the Target Tool (specifically Codex). It determines where CXC reads and writes the configuration. On Windows, it can be set to either "app" (native Windows Desktop App) or "wsl" (WSL CLI).
+
+## Codex Custom Directory (Codex 自定义目录)
+
+An optional directory path configuration in CXC. Used when the Codex config files reside in a non-standard path, such as inside a specific WSL distribution (accessed via Windows UNC paths like `\\wsl.localhost\Ubuntu\home\<user>\.codex`).
+

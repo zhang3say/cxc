@@ -13,8 +13,22 @@ impl CodexAdapter {
         let codex_dir = if let Ok(test_dir) = std::env::var("CXC_TEST_CODEX_DIR") {
             PathBuf::from(test_dir)
         } else {
-            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
-            home.join(".codex")
+            // Load global cxc config to check for custom codex directory settings
+            let custom_dir = crate::config::load().ok().and_then(|cfg| {
+                if let Some(source) = cfg.codex_source.as_deref() {
+                    if source == "wsl" && !cfg.codex_custom_dir.is_empty() {
+                        return Some(PathBuf::from(&cfg.codex_custom_dir));
+                    }
+                }
+                None
+            });
+
+            if let Some(dir) = custom_dir {
+                dir
+            } else {
+                let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
+                home.join(".codex")
+            }
         };
         Ok(Self { codex_dir })
     }

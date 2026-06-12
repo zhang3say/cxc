@@ -107,6 +107,15 @@ async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, 
     cxc_core::connectivity::fetch_models(&base_url, &api_key).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn save_settings(source: String, custom_dir: String) -> Result<Config, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    cfg.codex_source = Some(source);
+    cfg.codex_custom_dir = custom_dir;
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    Ok(cfg)
+}
+
 fn do_switch_provider(app_handle: &tauri::AppHandle, name: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     
@@ -224,7 +233,8 @@ pub fn run() {
             delete_provider,
             test_provider,
             test_all_providers,
-            fetch_models
+            fetch_models,
+            save_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

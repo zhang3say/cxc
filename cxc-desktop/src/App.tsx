@@ -35,6 +35,7 @@ import {
   Loader2,
   List,
   LayoutGrid,
+  Settings,
 } from "lucide-react";
 
 interface Provider {
@@ -52,6 +53,8 @@ interface Provider {
 interface Config {
   active: string;
   providers: Provider[];
+  codex_source?: string;
+  codex_custom_dir?: string;
 }
 
 const initialFormValues = {
@@ -92,6 +95,12 @@ function App() {
     }
     return "dark";
   });
+
+  // Settings State
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [settingsSource, setSettingsSource] = useState<string>("app");
+  const [settingsCustomDir, setSettingsCustomDir] = useState<string>("");
+  const [savingSettings, setSavingSettings] = useState<boolean>(false);
 
   // Form State
   const [showForm, setShowForm] = useState<"add" | "edit" | null>(null);
@@ -143,6 +152,9 @@ function App() {
       setError(null);
       const cfg = await invoke<Config>("get_config");
       setConfig(cfg);
+      // Initialize settings from loaded config
+      setSettingsSource(cfg.codex_source || "app");
+      setSettingsCustomDir(cfg.codex_custom_dir || "");
     } catch (e: any) {
       setError(e.toString());
     } finally {
@@ -274,6 +286,24 @@ function App() {
     }
   }
 
+  async function handleSaveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      setSavingSettings(true);
+      setError(null);
+      const updatedCfg = await invoke<Config>("save_settings", {
+        source: settingsSource,
+        customDir: settingsCustomDir,
+      });
+      setConfig(updatedCfg);
+      setShowSettings(false);
+    } catch (e: any) {
+      setError(e.toString());
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   function formatDate(isoStr?: string) {
     if (!isoStr) return "";
     try {
@@ -312,6 +342,17 @@ function App() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Settings gear button */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowSettings(true)}
+            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+            title="Settings"
+          >
+            <Settings className="size-4" />
+          </Button>
+
           {/* Theme switcher styled as utility button */}
           <Button
             variant="outline"
@@ -793,6 +834,107 @@ function App() {
           </section>
         )}
       </main>
+
+      {/* Settings Dialog Modal (Notion-style Settings) */}
+      <Dialog open={showSettings} onOpenChange={(open) => !open && setShowSettings(false)}>
+        <DialogContent className="sm:max-w-md bg-card border border-border rounded-xl shadow-xl p-5 gap-4">
+          <DialogHeader className="gap-1.5">
+            <DialogTitle className="text-base font-bold tracking-tight">
+              Settings
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Configure global CXC settings and Target Tool sources.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveSettings} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-muted-foreground">
+                Codex Source (Codex 来源)
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSettingsSource("app")}
+                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                    settingsSource === "app"
+                      ? "border-primary bg-primary/[0.03] text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">Desktop App</span>
+                    <span className="text-[10px] text-muted-foreground block mt-0.5">Desktop version (~/.codex)</span>
+                  </div>
+                  {settingsSource === "app" && <Check className="size-4 shrink-0" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSettingsSource("wsl")}
+                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                    settingsSource === "wsl"
+                      ? "border-primary bg-primary/[0.03] text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">WSL CLI</span>
+                    <span className="text-[10px] text-muted-foreground block mt-0.5">WSL environment paths</span>
+                  </div>
+                  {settingsSource === "wsl" && <Check className="size-4 shrink-0" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Custom directory input field */}
+            <div className="space-y-1">
+              <Label htmlFor="settings-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <span>Codex Custom Directory (自定义目录)</span>
+                {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">Recommended for WSL</span>}
+              </Label>
+              <Input
+                id="settings-custom-dir"
+                type="text"
+                value={settingsCustomDir}
+                onChange={(e) => setSettingsCustomDir(e.target.value)}
+                placeholder={settingsSource === "wsl" ? "e.g. \\\\wsl.localhost\\Ubuntu\\home\\username\\.codex" : "Optional custom path"}
+                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+              />
+              <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+                {settingsSource === "wsl" ? (
+                  <>
+                    <strong>WSL Note:</strong> Please specify the absolute UNC network path to your WSL `.codex` folder so CXC on Windows can write config files successfully.
+                  </>
+                ) : (
+                  "Defaults to your home directory (~/.codex) if left blank."
+                )}
+              </p>
+            </div>
+
+            <DialogFooter className="pt-3">
+              <div className="flex w-full justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSettings(false)}
+                  className="h-8 px-4 rounded-full border border-border bg-card text-xs font-semibold hover:bg-muted"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm"
+                >
+                  {savingSettings ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
+                  Save Settings
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Add / Edit Dialog Modal */}
       <Dialog open={showForm !== null} onOpenChange={(open) => !open && setShowForm(null)}>

@@ -70,6 +70,10 @@ pub struct Config {
     pub active: String,
     #[serde(default)]
     pub providers: Vec<Provider>,
+    #[serde(default)]
+    pub codex_source: Option<String>,
+    #[serde(default)]
+    pub codex_custom_dir: String,
 }
 
 pub fn config_path() -> Result<PathBuf, ConfigError> {

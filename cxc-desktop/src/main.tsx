@@ -43,7 +43,9 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         latency_ms: 0,
         last_ok: false
       }
-    ]
+    ],
+    codex_source: "app",
+    codex_custom_dir: ""
   };
 
   (window as any).__TAURI_INTERNALS__ = {
@@ -95,6 +97,11 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
       if (cmd === "fetch_models") {
         await new Promise(r => setTimeout(r, 800));
         return ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-5-sonnet", "llama3"];
+      }
+      if (cmd === "save_settings") {
+        (mockConfig as any).codex_source = args.source;
+        (mockConfig as any).codex_custom_dir = args.customDir;
+        return { ...mockConfig };
       }
       return null;
     },
