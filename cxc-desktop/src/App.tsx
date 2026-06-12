@@ -705,7 +705,7 @@ function App() {
                 /* Table Database Layout */
                 <div className="border border-border rounded-xl bg-card overflow-hidden divide-y divide-border shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
                   {/* Table Header */}
-                  <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60">
+                  <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 gap-4">
                     <div className="w-6 shrink-0" />
                     <div className="w-40 shrink-0 pr-4">{t.providerNameCol}</div>
                     <div className="flex-1 min-w-0 pr-4">{t.endpointCol}</div>
