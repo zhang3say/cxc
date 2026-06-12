@@ -833,6 +833,7 @@ dependencies = [
 name = "cxc-desktop"
 version = "0.1.0"
 dependencies = [
+ "cxc-core",
  "serde",
  "serde_json",
  "tauri",
