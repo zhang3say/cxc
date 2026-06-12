@@ -326,12 +326,9 @@ function App() {
       {/* Notion Document Navigation Chrome */}
       <header className="sticky top-0 z-40 w-full border-b border-border bg-card/90 backdrop-blur-md px-6 py-4 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
         <div className="flex items-center gap-3.5">
-          {/* Logo with Notion decorative palette style */}
-          <div className="relative flex items-center justify-center size-10 rounded-xl bg-card border border-border text-primary font-bold text-lg shadow-sm transition-transform hover:rotate-3 duration-200">
-            C
-            <span className="text-[9px] absolute bottom-1 right-1.5 font-bold text-muted-foreground">XC</span>
-            {/* Playful sticker dot */}
-            <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-sticker-purple shadow-sm"></span>
+          {/* Logo with official CXC image */}
+          <div className="relative flex items-center justify-center size-10 rounded-xl bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200">
+            <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
           </div>
           <div>
             <h1 className="text-base font-bold tracking-tight text-foreground/95 flex items-center gap-1.5">
