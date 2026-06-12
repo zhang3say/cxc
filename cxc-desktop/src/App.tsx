@@ -712,7 +712,7 @@ function App() {
                     <div className="w-32 shrink-0 pr-4">{t.modelCol}</div>
                     <div className="w-36 shrink-0 pr-4">{t.statusLatencyCol}</div>
                     <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
-                    <div className="w-24 shrink-0 text-right">{t.activeCol}</div>
+                    <div className="w-24 shrink-0 text-center">{t.activeCol}</div>
                   </div>
 
                   {filteredProviders.map((p) => {
