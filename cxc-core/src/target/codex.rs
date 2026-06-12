@@ -15,10 +15,24 @@ impl CodexAdapter {
         } else {
             // Load global cxc config to check for custom codex directory settings
             let custom_dir = crate::config::load().ok().and_then(|cfg| {
-                if let Some(source) = cfg.codex_source.as_deref() {
-                    if source == "wsl" && !cfg.codex_custom_dir.is_empty() {
-                        return Some(PathBuf::from(&cfg.codex_custom_dir));
+                if !cfg.codex_custom_dir.is_empty() {
+                    let mut path_str = cfg.codex_custom_dir.clone();
+
+                    // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
+                    // automatically convert it to a WSL mount path (like /mnt/c/...)
+                    #[cfg(target_os = "linux")]
+                    {
+                        if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
+                            let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
+                            let remaining = &path_str[2..];
+                            let normalized = remaining.replace('\\', "/");
+                            path_str = format!("/mnt/{}{}", drive, normalized);
+                        } else {
+                            path_str = path_str.replace('\\', "/");
+                        }
                     }
+
+                    return Some(PathBuf::from(path_str));
                 }
                 None
             });
