@@ -1,5 +1,5 @@
 # CXC — Agent Instructions
-
+- 始终使用中文回复、交流、文档等。
 ## Agent skills
 
 ### Issue tracker
