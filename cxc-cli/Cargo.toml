@@ -1,0 +1,25 @@
+[package]
+name = "cxc"
+version = "0.2.9"
+edition = "2024"
+repository = "https://github.com/zhang3say/cxc"
+homepage = "https://github.com/zhang3say/cxc"
+description = "Codex Cross-Connect client in Rust"
+license = "MIT"
+
+[dependencies]
+cxc-core = { path = "../cxc-core" }
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.38", features = ["full"] }
+anyhow = "1.0"
+ratatui = "0.26"
+crossterm = { version = "0.27", features = ["event-stream"] }
+unicode-width = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+url = "2.5"
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"
+wiremock = "0.6"

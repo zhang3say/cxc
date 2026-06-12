@@ -278,8 +278,24 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm",
+ "cxc-core",
  "dirs",
  "ratatui",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "unicode-width",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "cxc-core"
+version = "0.2.9"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,0 +1,26 @@
+[package]
+name = "cxc-core"
+version = "0.2.9"
+edition = "2024"
+repository = "https://github.com/zhang3say/cxc"
+homepage = "https://github.com/zhang3say/cxc"
+description = "Core business logic library for Codex Cross-Connect"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+toml_edit = "0.22"
+tokio = { version = "1.38", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+thiserror = "1.0"
+anyhow = "1.0"
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.5"
+unicode-width = "0.1"
+
+[dev-dependencies]
+tempfile = "3.10"
+wiremock = "0.6"

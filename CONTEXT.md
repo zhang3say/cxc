@@ -28,3 +28,11 @@ An optional user-defined description or note for a Provider. Helps users disting
 
 The act of querying a Provider's `GET /models` endpoint to retrieve the list of models it exposes. Used during Provider creation or editing so users can pick a model from the live list rather than typing it by hand. Requires a valid `base_url` and `api_key`. Distinct from a Connectivity Test — Model Discovery does not validate inference, only enumerates available model IDs.
 
+## Desktop App（桌面端应用）
+
+The graphical user interface (GUI) version of CXC built with Tauri. It provides a visual dashboard for managing, testing, and switching Providers, complementary to the TUI and CLI.
+
+## System Tray（系统托盘）
+
+A persistent quick-access menu in the operating system's notification area. It allows users to switch Active Providers instantly and view notification status without launching the full Desktop App window.
+
