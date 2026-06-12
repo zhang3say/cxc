@@ -19,11 +19,30 @@ interface Config {
   providers: Provider[];
 }
 
+const initialFormValues = {
+  name: "",
+  base_url: "",
+  api_key: "",
+  model: "",
+  wire_api: "responses",
+  remark: "",
+};
+
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Form State
+  const [showForm, setShowForm] = useState<"add" | "edit" | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState(initialFormValues);
+
+  // Model Discovery State
+  const [fetchingModels, setFetchingModels] = useState<boolean>(false);
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     loadConfig();
@@ -55,6 +74,91 @@ function App() {
     }
   }
 
+  function openAddForm() {
+    setFormValues(initialFormValues);
+    setFetchedModels([]);
+    setFetchError(null);
+    setShowForm("add");
+    setEditingName(null);
+  }
+
+  function openEditForm(p: Provider) {
+    setFormValues({
+      name: p.name,
+      base_url: p.base_url,
+      api_key: p.api_key,
+      model: p.model,
+      wire_api: p.wire_api,
+      remark: p.remark || "",
+    });
+    setFetchedModels([]);
+    setFetchError(null);
+    setShowForm("edit");
+    setEditingName(p.name);
+  }
+
+  async function handleFetchModels() {
+    if (!formValues.base_url || !formValues.api_key) {
+      setFetchError("Please fill in Base URL and API Key first");
+      return;
+    }
+    try {
+      setFetchingModels(true);
+      setFetchError(null);
+      const models = await invoke<string[]>("fetch_models", {
+        baseUrl: formValues.base_url,
+        apiKey: formValues.api_key,
+      });
+      if (models.length === 0) {
+        setFetchError("No models returned from endpoint");
+      } else {
+        setFetchedModels(models);
+      }
+    } catch (e: any) {
+      setFetchError(e.toString());
+    } finally {
+      setFetchingModels(false);
+    }
+  }
+
+  async function handleSubmitForm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formValues.name || !formValues.base_url || !formValues.api_key || !formValues.model) {
+      setError("Please fill in all required fields (Name, Base URL, API Key, Model)");
+      return;
+    }
+
+    try {
+      setError(null);
+      let updatedCfg: Config;
+      if (showForm === "add") {
+        updatedCfg = await invoke<Config>("add_provider", { provider: formValues });
+      } else {
+        updatedCfg = await invoke<Config>("edit_provider", {
+          oldName: editingName,
+          updated: formValues,
+        });
+      }
+      setConfig(updatedCfg);
+      setShowForm(null);
+    } catch (e: any) {
+      setError(e.toString());
+    }
+  }
+
+  async function handleDeleteProvider(name: string) {
+    if (!confirm(`Are you sure you want to remove provider "${name}"?`)) {
+      return;
+    }
+    try {
+      setError(null);
+      const updatedCfg = await invoke<Config>("delete_provider", { name });
+      setConfig(updatedCfg);
+    } catch (e: any) {
+      setError(e.toString());
+    }
+  }
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -64,6 +168,9 @@ function App() {
           <span className="badge">Desktop</span>
         </div>
         <div className="header-actions">
+          <button className="btn btn-primary" onClick={openAddForm} style={{ marginRight: "0.5rem" }}>
+            + Add Provider
+          </button>
           <button className="btn btn-secondary btn-icon" onClick={loadConfig} disabled={loading}>
             {loading ? "⟳" : "↻"}
           </button>
@@ -76,6 +183,125 @@ function App() {
             <span className="alert-icon">⚠</span>
             <span className="alert-message">{error}</span>
             <button className="alert-close" onClick={() => setError(null)}>×</button>
+          </div>
+        )}
+
+        {showForm && (
+          <div className="modal-backdrop">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h2>{showForm === "add" ? "Add New Provider" : `Edit Provider: ${editingName}`}</h2>
+                <button className="modal-close-btn" onClick={() => setShowForm(null)}>×</button>
+              </div>
+
+              <form onSubmit={handleSubmitForm} className="modal-form">
+                <div className="form-group">
+                  <label htmlFor="form-name">Provider Name *</label>
+                  <input
+                    id="form-name"
+                    type="text"
+                    required
+                    value={formValues.name}
+                    onChange={(e) => setFormValues({ ...formValues, name: e.target.value })}
+                    placeholder="e.g. fast-relay"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="form-url">Base URL *</label>
+                  <input
+                    id="form-url"
+                    type="url"
+                    required
+                    value={formValues.base_url}
+                    onChange={(e) => setFormValues({ ...formValues, base_url: e.target.value })}
+                    placeholder="https://api.example.com/v1"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="form-key">API Key *</label>
+                  <input
+                    id="form-key"
+                    type="password"
+                    required
+                    value={formValues.api_key}
+                    onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
+                    placeholder="sk-••••••••••••"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <div className="model-label-row">
+                    <label htmlFor="form-model">Model *</label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-xs"
+                      onClick={handleFetchModels}
+                      disabled={fetchingModels || !formValues.base_url || !formValues.api_key}
+                    >
+                      {fetchingModels ? "Fetching..." : "🔍 Discover Models"}
+                    </button>
+                  </div>
+
+                  {fetchedModels.length > 0 ? (
+                    <select
+                      id="form-model-select"
+                      value={formValues.model}
+                      onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
+                    >
+                      <option value="">-- Select a model --</option>
+                      {fetchedModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id="form-model"
+                      type="text"
+                      required
+                      value={formValues.model}
+                      onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
+                      placeholder="e.g. gpt-4o (or fetch list above)"
+                    />
+                  )}
+                  {fetchError && <span className="field-error">{fetchError}</span>}
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="form-wire">Wire API</label>
+                  <input
+                    id="form-wire"
+                    type="text"
+                    value={formValues.wire_api}
+                    onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
+                    placeholder="responses"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="form-remark">Remark / Description</label>
+                  <input
+                    id="form-remark"
+                    type="text"
+                    value={formValues.remark}
+                    onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
+                    placeholder="e.g. Backup endpoint"
+                  />
+                </div>
+
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowForm(null)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary">
+                    {showForm === "add" ? "Create Provider" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 
@@ -130,20 +356,35 @@ function App() {
                       )}
                     </div>
 
-                    <div className="card-actions">
-                      {!isActive ? (
+                    <div className="card-actions-row">
+                      <div className="switch-wrapper">
+                        {!isActive ? (
+                          <button
+                            className="btn btn-primary btn-sm btn-block"
+                            onClick={() => handleSwitch(p.name)}
+                            disabled={switching !== null}
+                          >
+                            {isThisSwitching ? "Switching..." : "Switch"}
+                          </button>
+                        ) : (
+                          <button className="btn btn-success btn-sm btn-block" disabled>
+                            ✓ Active
+                          </button>
+                        )}
+                      </div>
+                      <div className="manage-buttons">
+                        <button className="btn btn-secondary btn-sm" onClick={() => openEditForm(p)}>
+                          Edit
+                        </button>
                         <button
-                          className="btn btn-primary btn-block"
-                          onClick={() => handleSwitch(p.name)}
-                          disabled={switching !== null}
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleDeleteProvider(p.name)}
+                          disabled={isActive}
+                          title={isActive ? "Cannot delete active provider" : "Delete provider"}
                         >
-                          {isThisSwitching ? "Switching..." : "Switch to Provider"}
+                          Delete
                         </button>
-                      ) : (
-                        <button className="btn btn-success btn-block" disabled>
-                          ✓ Currently Active
-                        </button>
-                      )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -151,7 +392,7 @@ function App() {
 
               {config?.providers?.length === 0 && (
                 <div className="empty-state">
-                  <p>No providers configured yet.</p>
+                  <p>No providers configured yet. Click "+ Add Provider" to create one.</p>
                 </div>
               )}
             </div>
