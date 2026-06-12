@@ -43,6 +43,7 @@ impl Tester {
                 role: "user".to_string(),
                 content: "say hi".to_string(),
             }],
+            max_tokens: Some(1),
         };
 
         let start = Instant::now();
@@ -164,6 +165,7 @@ impl Tester {
 struct ChatRequest {
     model: String,
     messages: Vec<Message>,
+    max_tokens: Option<u32>,
 }
 
 #[derive(Serialize)]
