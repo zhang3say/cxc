@@ -61,6 +61,7 @@ enum ViewMode {
     Add,
     Confirm,
     Edit,
+    ModelPicker,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +132,11 @@ enum TuiEvent {
         latency_ms: Option<u64>,
         error: Option<String>,
     },
+    ModelsFetched {
+        /// Which form triggered the fetch: Add or Edit
+        target: ViewMode,
+        result: std::result::Result<Vec<String>, String>,
+    },
 }
 
 // ── App State ───────────────────────────────────────────────────────────────
@@ -146,6 +152,12 @@ struct TuiApp {
     status_err: bool,
     testing: std::collections::HashSet<String>,
     test_all_active: bool,
+    // Model Discovery state
+    fetching_models: bool,
+    /// Which form (Add/Edit) spawned the model fetch — to return to after picking
+    model_picker_origin: ViewMode,
+    model_list: Vec<String>,
+    model_picker_cursor: usize,
 }
 
 impl TuiApp {
@@ -162,6 +174,10 @@ impl TuiApp {
             status_err: false,
             testing: std::collections::HashSet::new(),
             test_all_active: false,
+            fetching_models: false,
+            model_picker_origin: ViewMode::Add,
+            model_list: Vec::new(),
+            model_picker_cursor: 0,
         })
     }
 
@@ -396,11 +412,13 @@ impl TuiApp {
         Ok(false)
     }
 
-    fn handle_add_key(&mut self, key: KeyEvent) -> Result<()> {
+    fn handle_add_key(&mut self, key: KeyEvent, tx: &tokio::sync::mpsc::Sender<TuiEvent>) -> Result<()> {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    self.submit_add()?;
+                    if !self.fetching_models {
+                        self.submit_add()?;
+                    }
                 }
                 KeyCode::Char('a') | KeyCode::Char('A') => {
                     self.add_form.cursor = 0;
@@ -408,6 +426,9 @@ impl TuiApp {
                 KeyCode::Char('e') | KeyCode::Char('E') => {
                     let val = &self.add_form.values[self.add_form.field];
                     self.add_form.cursor = val.chars().count();
+                }
+                KeyCode::Char('l') | KeyCode::Char('L') => {
+                    self.trigger_fetch_models(ViewMode::Add, tx);
                 }
                 _ => {}
             }
@@ -478,11 +499,13 @@ impl TuiApp {
         Ok(())
     }
 
-    fn handle_edit_key(&mut self, key: KeyEvent) -> Result<()> {
+    fn handle_edit_key(&mut self, key: KeyEvent, tx: &tokio::sync::mpsc::Sender<TuiEvent>) -> Result<()> {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    self.submit_edit()?;
+                    if !self.fetching_models {
+                        self.submit_edit()?;
+                    }
                 }
                 KeyCode::Char('a') | KeyCode::Char('A') => {
                     self.edit_form.cursor = 0;
@@ -490,6 +513,9 @@ impl TuiApp {
                 KeyCode::Char('e') | KeyCode::Char('E') => {
                     let val = &self.edit_form.values[self.edit_form.field];
                     self.edit_form.cursor = val.chars().count();
+                }
+                KeyCode::Char('l') | KeyCode::Char('L') => {
+                    self.trigger_fetch_models(ViewMode::Edit, tx);
                 }
                 _ => {}
             }
@@ -554,6 +580,80 @@ impl TuiApp {
                 let (new_val, new_cursor) = insert_char(val, self.edit_form.cursor, c);
                 self.edit_form.values[self.edit_form.field] = new_val;
                 self.edit_form.cursor = new_cursor;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn trigger_fetch_models(&mut self, origin: ViewMode, tx: &tokio::sync::mpsc::Sender<TuiEvent>) {
+        // Read base_url and api_key from whichever form is active
+        let (base_url, api_key) = match origin {
+            ViewMode::Add => (
+                self.add_form.values[1].trim().to_string(),
+                self.add_form.values[2].trim().to_string(),
+            ),
+            ViewMode::Edit => (
+                self.edit_form.values[1].trim().to_string(),
+                self.edit_form.values[2].trim().to_string(),
+            ),
+            _ => return,
+        };
+
+        if base_url.is_empty() || api_key.is_empty() {
+            self.status = "⚠ Fill in Base URL and API Key first".to_string();
+            self.status_err = true;
+            return;
+        }
+
+        self.fetching_models = true;
+        self.model_picker_origin = origin;
+        self.status = "⟳ Fetching models…".to_string();
+        self.status_err = false;
+
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let result = crate::connectivity::fetch_models(&base_url, &api_key).await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(TuiEvent::ModelsFetched { target: origin, result }).await;
+        });
+    }
+
+    fn handle_model_picker_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = self.model_picker_origin;
+                self.status = "Model selection cancelled".to_string();
+                self.status_err = false;
+            }
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
+                if self.model_picker_cursor > 0 {
+                    self.model_picker_cursor -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
+                if !self.model_list.is_empty() && self.model_picker_cursor < self.model_list.len() - 1 {
+                    self.model_picker_cursor += 1;
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(selected) = self.model_list.get(self.model_picker_cursor) {
+                    let selected = selected.clone();
+                    match self.model_picker_origin {
+                        ViewMode::Add => {
+                            self.add_form.values[3] = selected.clone();
+                            self.add_form.cursor = selected.chars().count();
+                        }
+                        ViewMode::Edit => {
+                            self.edit_form.values[3] = selected.clone();
+                            self.edit_form.cursor = selected.chars().count();
+                        }
+                        _ => {}
+                    }
+                    self.status = format!("✓ Selected model: {}", selected);
+                    self.status_err = false;
+                    self.mode = self.model_picker_origin;
+                }
             }
             _ => {}
         }
@@ -904,9 +1004,15 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                     }
                     lines.push(Line::from(spans));
                 } else if idx < app.add_form.field {
+                    // For the Model field (index 3), show fetching indicator if in progress
+                    let display_val = if idx == 3 && app.fetching_models {
+                        Span::styled("⟳ fetching…".to_string(), Style::default().fg(theme.warn))
+                    } else {
+                        Span::styled(val.clone(), Style::default().fg(theme.success))
+                    };
                     lines.push(Line::from(vec![
                         Span::styled(format!("{}{}: ", prefix, label), Style::default().fg(theme.dim)),
-                        Span::styled(val.clone(), Style::default().fg(theme.success)),
+                        display_val,
                     ]));
                 } else {
                     lines.push(Line::from(vec![
@@ -916,12 +1022,12 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                 }
             }
 
+
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  [Enter] next  [↑/↓] navigate  [Ctrl+S] save  [Esc] cancel",
-                Style::default().fg(theme.dim)
+                "  ↳ 按 Ctrl+L 可从 base_url 拉取模型列表",
+                Style::default().fg(theme.dim),
             )));
-
             frame.render_widget(Paragraph::new(lines), chunks[2]);
         }
         ViewMode::Edit => {
@@ -960,9 +1066,14 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                     spans.push(Span::raw(right));
                     lines.push(Line::from(spans));
                 } else if idx < app.edit_form.field {
+                    let display_val = if idx == 3 && app.fetching_models {
+                        Span::styled("⟳ fetching…".to_string(), Style::default().fg(theme.warn))
+                    } else {
+                        Span::styled(val.clone(), Style::default().fg(theme.success))
+                    };
                     lines.push(Line::from(vec![
                         Span::styled(format!("{}{}: ", prefix, label), Style::default().fg(theme.dim)),
-                        Span::styled(val.clone(), Style::default().fg(theme.success)),
+                        display_val,
                     ]));
                 } else {
                     lines.push(Line::from(vec![
@@ -972,12 +1083,12 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                 }
             }
 
+
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  [Enter] next  [↑/↓] navigate  [Ctrl+S] save  [Esc] cancel",
-                Style::default().fg(theme.dim)
+                "  ↳ 按 Ctrl+L 可从 base_url 拉取模型列表",
+                Style::default().fg(theme.dim),
             )));
-
             frame.render_widget(Paragraph::new(lines), chunks[2]);
         }
         ViewMode::Confirm => {
@@ -1000,6 +1111,55 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
                 ];
                 frame.render_widget(Paragraph::new(confirm_lines), chunks[2]);
             }
+        }
+        ViewMode::ModelPicker => {
+            let (op, name) = match app.model_picker_origin {
+                ViewMode::Add => (
+                    "添加 Provider",
+                    app.add_form.values[0].trim().to_string(),
+                ),
+                ViewMode::Edit => (
+                    "编辑 Provider",
+                    app.edit_form.old_name.trim().to_string(),
+                ),
+                _ => ("", String::new()),
+            };
+            let title = if name.is_empty() {
+                "  Select Model".to_string()
+            } else {
+                format!("  {} : {} — Select Model", op, name)
+            };
+
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    title,
+                    Style::default().fg(theme.header).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+            ];
+
+            if app.model_list.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  (no models)",
+                    Style::default().fg(theme.dim),
+                )));
+            } else {
+                for (idx, model_id) in app.model_list.iter().enumerate() {
+                    let is_selected = idx == app.model_picker_cursor;
+                    let prefix = if is_selected { "> " } else { "  " };
+                    let style = if is_selected {
+                        Style::default().fg(theme.selected_fg).bg(theme.selected_bg).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    lines.push(Line::from(Span::styled(
+                        format!("{}  {}", prefix, model_id),
+                        style,
+                    )));
+                }
+            }
+
+            frame.render_widget(Paragraph::new(lines), chunks[2]);
         }
     }
 
@@ -1030,8 +1190,13 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
     }
 
     // 5. Help bar
-    if app.mode == ViewMode::List {
-        let help_text = "  ↑/↓ navigate  ·  a add  ·  e edit  ·  t test  ·  T test all  ·  Enter/s switch  ·  d/Del remove  ·  q quit";
+    let help_text = match app.mode {
+        ViewMode::List => "  ↑/↓ navigate  ·  a add  ·  e edit  ·  t test  ·  T test all  ·  Enter/s switch  ·  d/Del remove  ·  q quit",
+        ViewMode::Add | ViewMode::Edit => "  [Enter] next  ·  [↑/↓] navigate  ·  [Ctrl+L] fetch models  ·  [Ctrl+S] save  ·  [Esc] cancel",
+        ViewMode::ModelPicker => "  [↑/↓] navigate  ·  [Enter] select  ·  [Esc] cancel",
+        _ => "",
+    };
+    if !help_text.is_empty() {
         let help_p = Paragraph::new(help_text).style(Style::default().fg(theme.help));
         frame.render_widget(help_p, chunks[8]);
     } else {
@@ -1065,13 +1230,16 @@ async fn run_tui_loop(
                             }
                         }
                         ViewMode::Add => {
-                            app.handle_add_key(key)?;
+                            app.handle_add_key(key, tx)?;
                         }
                         ViewMode::Edit => {
-                            app.handle_edit_key(key)?;
+                            app.handle_edit_key(key, tx)?;
                         }
                         ViewMode::Confirm => {
                             app.handle_confirm_key(key)?;
+                        }
+                        ViewMode::ModelPicker => {
+                            app.handle_model_picker_key(key)?;
                         }
                     }
                 }
@@ -1099,6 +1267,27 @@ async fn run_tui_loop(
 
                     if let Ok(new_cfg) = config::load() {
                         app.cfg = new_cfg;
+                    }
+                }
+                TuiEvent::ModelsFetched { target, result } => {
+                    app.fetching_models = false;
+                    match result {
+                        Ok(models) if models.is_empty() => {
+                            app.status = "⚠ No models returned".to_string();
+                            app.status_err = true;
+                        }
+                        Ok(models) => {
+                            app.model_list = models;
+                            app.model_picker_cursor = 0;
+                            app.model_picker_origin = target;
+                            app.mode = ViewMode::ModelPicker;
+                            app.status = format!("✓ {} models fetched — use ↑/↓ to select", app.model_list.len());
+                            app.status_err = false;
+                        }
+                        Err(e) => {
+                            app.status = format!("✗ {}", e);
+                            app.status_err = true;
+                        }
                     }
                 }
             }

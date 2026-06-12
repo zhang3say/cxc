@@ -161,6 +161,48 @@ impl Tester {
     }
 }
 
+// ── Model Discovery ─────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ModelsResponse {
+    data: Vec<ModelEntry>,
+}
+
+#[derive(Deserialize)]
+struct ModelEntry {
+    id: String,
+}
+
+/// Fetch the list of model IDs from `GET {base_url}/models`.
+/// Returns `Ok(vec![])` if the endpoint returns an empty list.
+/// Returns `Err` on network failure or non-2xx status.
+pub async fn fetch_models(base_url: &str, api_key: &str) -> anyhow::Result<Vec<String>> {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| Client::new());
+
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("network error: {}", e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("HTTP {} from /models", status.as_u16()));
+    }
+
+    let models_resp: ModelsResponse = resp
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to parse /models response: {}", e))?;
+
+    Ok(models_resp.data.into_iter().map(|m| m.id).collect())
+}
+
 #[derive(Serialize)]
 struct ChatRequest {
     model: String,
@@ -370,5 +412,66 @@ mod tests {
                 || result.error.contains("timeout")
                 || result.error.contains("connection refused")
         );
+    }
+
+    // ── fetch_models tests ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_fetch_models_success() {
+        let mock_server = MockServer::start().await;
+        let body = serde_json::json!({
+            "data": [
+                { "id": "gpt-4o" },
+                { "id": "gpt-4" }
+            ]
+        });
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("Authorization", "Bearer sk-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_models(&mock_server.uri(), "sk-test").await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        let models = result.unwrap();
+        assert_eq!(models, vec!["gpt-4o", "gpt-4"]);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_models_empty_list() {
+        let mock_server = MockServer::start().await;
+        let body = serde_json::json!({ "data": [] });
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_models(&mock_server.uri(), "sk-test").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_models_auth_error() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_models(&mock_server.uri(), "sk-bad").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("401"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_models_network_error() {
+        // Non-existent domain — DNS failure
+        let result = fetch_models("http://cxc-nonexistent-domain-456.com", "sk-test").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("network error"));
     }
 }
