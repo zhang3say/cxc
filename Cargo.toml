@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "cxc-core",
-    "cxc-cli",
     "cxc-desktop/src-tauri",
 ]
 

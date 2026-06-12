@@ -2,7 +2,7 @@
 
 ## CXC (Code Cross-Connect)
 
-The project name and CLI command name. A meta-configuration tool that manages API relay endpoint configurations for AI coding tools (Codex, Claude, etc.). Users invoke it as `cxc` in the terminal to quickly add, test, and switch API relay endpoints for their AI tools.
+The project name. A meta-configuration tool that manages API relay endpoint configurations for AI coding tools (Codex, Claude, etc.). It provides a desktop application for users to quickly add, test, and switch API relay endpoints for their AI tools.
 
 ## Provider（中转站）
 
@@ -30,7 +30,7 @@ The act of querying a Provider's `GET /models` endpoint to retrieve the list of 
 
 ## Desktop App（桌面端应用）
 
-The graphical user interface (GUI) version of CXC built with Tauri. It provides a visual dashboard for managing, testing, and switching Providers, complementary to the TUI and CLI.
+The graphical user interface (GUI) of CXC built with Tauri. It provides a visual dashboard for managing, testing, and switching Providers.
 
 ## System Tray（系统托盘）
 
