@@ -819,7 +819,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut TuiApp, theme: &Theme) {
     // 1. Title bar
     let title_spans = vec![
         Span::styled(
-            "  CXC — Codex Cross-Connect  ",
+            "  CXC — Code Cross-Connect  ",
             Style::default().fg(theme.title_fg).bg(theme.title_bg).add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),

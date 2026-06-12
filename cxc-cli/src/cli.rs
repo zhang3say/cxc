@@ -7,7 +7,7 @@ use url::Url;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Parser, Debug)]
-#[command(name = "cxc", version, about = "Codex Cross-Connect")]
+#[command(name = "cxc", version, about = "Code Cross-Connect")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,

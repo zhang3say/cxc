@@ -202,8 +202,16 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             
+            #[cfg(target_os = "macos")]
+            const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray_iconTemplate.png");
+            #[cfg(not(target_os = "macos"))]
+            const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray_icon.png");
+
+            let tray_icon = tauri::image::Image::from_bytes(TRAY_ICON_BYTES)
+                .expect("Failed to load tray icon");
+
             let _tray = TrayIconBuilder::with_id("cxc_tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .on_menu_event(move |app_handle, event| {
                     let id = event.id.as_ref();
                     if id == "quit" {

@@ -4,7 +4,7 @@ version = "0.2.9"
 edition = "2024"
 repository = "https://github.com/zhang3say/cxc"
 homepage = "https://github.com/zhang3say/cxc"
-description = "Core business logic library for Codex Cross-Connect"
+description = "Core business logic library for Code Cross-Connect"
 license = "MIT"
 
 [dependencies]

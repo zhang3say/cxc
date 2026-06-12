@@ -1,4 +1,4 @@
-# CXC — Codex Cross-Connect
+# CXC — Code Cross-Connect
 
 > Quickly switch API relay endpoints for AI coding tools like Codex and Claude.
 

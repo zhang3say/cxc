@@ -4,7 +4,7 @@ version = "0.2.9"
 edition = "2024"
 repository = "https://github.com/zhang3say/cxc"
 homepage = "https://github.com/zhang3say/cxc"
-description = "Codex Cross-Connect client in Rust"
+description = "Code Cross-Connect client in Rust"
 license = "MIT"
 
 [dependencies]

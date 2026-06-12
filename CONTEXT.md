@@ -1,6 +1,6 @@
 # CXC — Glossary
 
-## CXC (Codex Cross-Connect)
+## CXC (Code Cross-Connect)
 
 The project name and CLI command name. A meta-configuration tool that manages API relay endpoint configurations for AI coding tools (Codex, Claude, etc.). Users invoke it as `cxc` in the terminal to quickly add, test, and switch API relay endpoints for their AI tools.
 
