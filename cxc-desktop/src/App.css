@@ -233,6 +233,11 @@ body {
   background-color: #6366f1;
 }
 
+.provider-card.testing {
+  opacity: 0.8;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
 .card-header {
   display: flex;
   flex-direction: column;
@@ -282,6 +287,7 @@ body {
 .info-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 0.8rem;
 }
 
@@ -315,6 +321,16 @@ body {
 .text-error {
   color: #f87171;
   font-weight: 600;
+}
+
+.text-warn {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.text-dim {
+  color: #475569;
+  font-size: 0.75rem;
 }
 
 .card-actions-row {
@@ -485,7 +501,7 @@ body {
   margin-left: 0.5rem;
 }
 
-/* States */
+/* States & Spinners */
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -503,6 +519,18 @@ body {
   border-top-color: #6366f1;
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+.mini-spinner {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid rgba(245, 158, 11, 0.1);
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 0.25rem;
+  vertical-align: middle;
 }
 
 .empty-state {

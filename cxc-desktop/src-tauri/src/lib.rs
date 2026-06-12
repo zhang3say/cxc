@@ -73,6 +73,47 @@ fn delete_provider(name: String) -> Result<Config, String> {
 }
 
 #[tauri::command]
+async fn test_provider(name: String) -> Result<Config, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    let p = config::get_provider(&cfg, &name)
+        .ok_or_else(|| format!("provider \"{}\" not found", name))?
+        .clone();
+
+    let tester = cxc_core::connectivity::Tester::new();
+    let res = tester.test(&p.base_url, &p.api_key, &p.model).await;
+
+    config::update_test_result(&mut cfg, &name, res.latency_ms, res.ok).map_err(|e| e.to_string())?;
+    config::save(&cfg).map_err(|e| e.to_string())?;
+
+    Ok(cfg)
+}
+
+#[tauri::command]
+async fn test_all_providers() -> Result<Config, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    let providers = cfg.providers.clone();
+    
+    let mut tasks = vec![];
+    for p in providers {
+        tasks.push(tokio::spawn(async move {
+            let tester = cxc_core::connectivity::Tester::new();
+            let res = tester.test(&p.base_url, &p.api_key, &p.model).await;
+            (p.name.clone(), res.ok, res.latency_ms)
+        }));
+    }
+    
+    for task in tasks {
+        if let std::result::Result::Ok(res) = task.await {
+            let (name, is_ok, latency) = res;
+            let _ = config::update_test_result(&mut cfg, &name, latency, is_ok);
+        }
+    }
+    
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    Ok(cfg)
+}
+
+#[tauri::command]
 async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
     cxc_core::connectivity::fetch_models(&base_url, &api_key).await.map_err(|e| e.to_string())
 }
@@ -88,6 +129,8 @@ pub fn run() {
             add_provider,
             edit_provider,
             delete_provider,
+            test_provider,
+            test_all_providers,
             fetch_models
         ])
         .run(tauri::generate_context!())

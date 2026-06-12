@@ -44,6 +44,10 @@ function App() {
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Connectivity Test State
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [testingAll, setTestingAll] = useState<boolean>(false);
+
   useEffect(() => {
     loadConfig();
   }, []);
@@ -156,6 +160,42 @@ function App() {
       setConfig(updatedCfg);
     } catch (e: any) {
       setError(e.toString());
+    }
+  }
+
+  async function handleTestProvider(name: string) {
+    try {
+      setTestingProvider(name);
+      setError(null);
+      const updatedCfg = await invoke<Config>("test_provider", { name });
+      setConfig(updatedCfg);
+    } catch (e: any) {
+      setError(e.toString());
+    } finally {
+      setTestingProvider(null);
+    }
+  }
+
+  async function handleTestAllProviders() {
+    try {
+      setTestingAll(true);
+      setError(null);
+      const updatedCfg = await invoke<Config>("test_all_providers");
+      setConfig(updatedCfg);
+    } catch (e: any) {
+      setError(e.toString());
+    } finally {
+      setTestingAll(false);
+    }
+  }
+
+  function formatDate(isoStr?: string) {
+    if (!isoStr) return "";
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleString();
+    } catch {
+      return isoStr;
     }
   }
 
@@ -315,14 +355,26 @@ function App() {
             <div className="section-header">
               <h2>Saved Providers</h2>
               <span className="count-badge">{config?.providers?.length || 0}</span>
+              {config && config.providers.length > 0 && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleTestAllProviders}
+                  disabled={testingAll || testingProvider !== null}
+                  style={{ marginLeft: "auto" }}
+                >
+                  {testingAll ? "Testing All..." : "⚡ Test All Connections"}
+                </button>
+              )}
             </div>
 
             <div className="providers-grid">
               {config?.providers?.map((p) => {
                 const isActive = config.active === p.name;
                 const isThisSwitching = switching === p.name;
+                const isTesting = testingProvider === p.name || (testingAll && !isActive);
+
                 return (
-                  <div key={p.name} className={`provider-card ${isActive ? "active" : ""}`}>
+                  <div key={p.name} className={`provider-card ${isActive ? "active" : ""} ${isTesting ? "testing" : ""}`}>
                     <div className="card-header">
                       <div className="title-wrapper">
                         <h3 className="provider-name">{p.name}</h3>
@@ -346,14 +398,30 @@ function App() {
                           {p.api_key.substring(0, 8)}••••••••
                         </span>
                       </div>
-                      {p.latency_ms !== undefined && p.last_ok !== undefined && (
-                        <div className="info-row">
+
+                      {isTesting ? (
+                        <div className="info-row testing-indicator">
                           <span className="info-label">Latency:</span>
-                          <span className={`info-value ${p.last_ok ? "text-success" : "text-error"}`}>
-                            {p.last_ok ? `${p.latency_ms} ms` : "Failed"}
+                          <span className="info-value text-warn">
+                            <span className="mini-spinner"></span> testing...
                           </span>
                         </div>
-                      )}
+                      ) : p.latency_ms !== undefined && p.last_ok !== undefined ? (
+                        <>
+                          <div className="info-row">
+                            <span className="info-label">Latency:</span>
+                            <span className={`info-value ${p.last_ok ? "text-success" : "text-error"}`}>
+                              {p.last_ok ? `${p.latency_ms} ms` : "Failed"}
+                            </span>
+                          </div>
+                          {p.last_test && (
+                            <div className="info-row">
+                              <span className="info-label">Last Tested:</span>
+                              <span className="info-value text-dim">{formatDate(p.last_test)}</span>
+                            </div>
+                          )}
+                        </>
+                      ) : null}
                     </div>
 
                     <div className="card-actions-row">
@@ -362,7 +430,7 @@ function App() {
                           <button
                             className="btn btn-primary btn-sm btn-block"
                             onClick={() => handleSwitch(p.name)}
-                            disabled={switching !== null}
+                            disabled={switching !== null || testingAll || testingProvider !== null}
                           >
                             {isThisSwitching ? "Switching..." : "Switch"}
                           </button>
@@ -373,13 +441,21 @@ function App() {
                         )}
                       </div>
                       <div className="manage-buttons">
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleTestProvider(p.name)}
+                          disabled={testingProvider !== null || testingAll || switching !== null}
+                          title="Test connectivity"
+                        >
+                          {testingProvider === p.name ? "⏳" : "⚡"}
+                        </button>
                         <button className="btn btn-secondary btn-sm" onClick={() => openEditForm(p)}>
                           Edit
                         </button>
                         <button
                           className="btn btn-danger btn-sm"
                           onClick={() => handleDeleteProvider(p.name)}
-                          disabled={isActive}
+                          disabled={isActive || switching !== null || testingAll || testingProvider !== null}
                           title={isActive ? "Cannot delete active provider" : "Delete provider"}
                         >
                           Delete
