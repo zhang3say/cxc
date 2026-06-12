@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
@@ -50,6 +51,20 @@ function App() {
 
   useEffect(() => {
     loadConfig();
+
+    let unlisten: (() => void) | undefined;
+    const setupListener = async () => {
+      unlisten = await listen<Config>("config-updated", (event) => {
+        setConfig(event.payload);
+      });
+    };
+    setupListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
   }, []);
 
   async function loadConfig() {
