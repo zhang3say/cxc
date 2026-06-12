@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "cxc-core",
     "cxc-cli",
+    "cxc-desktop/src-tauri",
 ]
 
 # The profile that 'dist' will build with
