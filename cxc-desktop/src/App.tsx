@@ -33,6 +33,8 @@ import {
   Compass,
   AlertTriangle,
   Loader2,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 
 interface Provider {
@@ -67,6 +69,19 @@ function App() {
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  // View mode state (list or card, default to list)
+  const [viewMode, setViewMode] = useState<"list" | "card">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("cxc-view-mode");
+      if (saved === "list" || saved === "card") return saved;
+    }
+    return "list";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("cxc-view-mode", viewMode);
+  }, [viewMode]);
 
   // Theme state
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -277,60 +292,68 @@ function App() {
   ) || [];
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 font-sans transition-colors duration-200">
-      {/* Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-neutral-200/80 dark:border-neutral-800/80 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center size-10 rounded-xl bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 font-extrabold text-xl shadow-lg shadow-neutral-950/10 dark:shadow-neutral-50/5">
+    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
+      {/* Notion Document Navigation Chrome */}
+      <header className="sticky top-0 z-40 w-full border-b border-border bg-card/90 backdrop-blur-md px-6 py-4 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        <div className="flex items-center gap-3.5">
+          {/* Logo with Notion decorative palette style */}
+          <div className="relative flex items-center justify-center size-10 rounded-xl bg-card border border-border text-primary font-bold text-lg shadow-sm transition-transform hover:rotate-3 duration-200">
             C
-            <span className="text-[10px] absolute bottom-1 right-1 font-bold text-neutral-400 dark:text-neutral-600">XC</span>
+            <span className="text-[9px] absolute bottom-1 right-1.5 font-bold text-muted-foreground">XC</span>
+            {/* Playful sticker dot */}
+            <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-sticker-purple shadow-sm"></span>
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight">CXC Cross-Connect</h1>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">Relay Configuration Manager</p>
+            <h1 className="text-base font-bold tracking-tight text-foreground/95 flex items-center gap-1.5">
+              CXC Cross-Connect
+            </h1>
+            <p className="text-xs text-muted-foreground font-medium">Relay Configuration Manager</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Theme switcher styled as utility button */}
           <Button
             variant="outline"
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
             title="Toggle theme"
           >
-            {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-indigo-500" />}
+            {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-primary" />}
           </Button>
 
+          {/* Refresh config utility button */}
           <Button
             variant="outline"
             size="icon"
             onClick={loadConfig}
             disabled={loading}
-            className="rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
             title="Refresh configuration"
           >
-            <RefreshCw className={`size-4 ${loading ? "animate-spin text-neutral-400" : ""}`} />
+            <RefreshCw className={`size-4 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
           </Button>
 
+          {/* Primary CTA: Pill-shaped in Notion Blue */}
           <Button
             onClick={openAddForm}
-            className="rounded-lg bg-neutral-900 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 hover:bg-neutral-800 dark:hover:bg-neutral-200 shadow-sm"
+            className="h-8 px-4 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-95 shadow-sm font-medium text-xs transition-all duration-200"
           >
-            <Plus className="size-4 mr-1.5" />
+            <Plus className="size-3.5 mr-1" />
             Add Provider
           </Button>
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Container */}
       <main className="max-w-6xl mx-auto p-6 space-y-6">
         {/* Error Alert */}
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 dark:border-red-900/50 dark:bg-red-950/20 text-red-700 dark:text-red-400 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-            <AlertTriangle className="size-5 shrink-0 mt-0.5" />
+          <div className="rounded-xl border border-red-200/60 bg-red-500/5 p-4 dark:border-red-900/40 dark:bg-red-950/10 text-red-600 dark:text-red-400 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+            <AlertTriangle className="size-5 shrink-0 mt-0.5 text-sticker-orange" />
             <div className="flex-1">
-              <h5 className="font-semibold text-sm">System Alert</h5>
+              <h5 className="font-bold text-xs tracking-tight uppercase text-sticker-orange">System Alert</h5>
               <p className="text-xs mt-1 leading-normal opacity-90">{error}</p>
             </div>
             <button
@@ -345,247 +368,447 @@ function App() {
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60 pointer-events-none" />
             <Input
               type="text"
               placeholder="Search by name, model, remark..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 w-full bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 rounded-lg placeholder-neutral-400 dark:placeholder-neutral-500 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 focus-visible:ring-1"
+              className="pl-9 h-9 w-full bg-card border-border rounded-[4px] placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-sm shadow-sm transition-all"
             />
           </div>
 
-          {config && config.providers.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTestAllProviders}
-              disabled={testingAll || testingProvider !== null}
-              className="w-full sm:w-auto h-9 border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-semibold rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            >
-              {testingAll ? (
-                <>
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                  Testing All...
-                </>
-              ) : (
-                <>
-                  <Activity className="size-3.5 mr-1.5 text-neutral-500" />
-                  Test All Connections
-                </>
-              )}
-            </Button>
-          )}
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            {/* View Mode Toggle Controls */}
+            <div className="flex items-center border border-border rounded-md p-0.5 bg-card shadow-sm h-9">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setViewMode("list")}
+                className={`size-7 rounded-[4px] p-0 transition-all ${
+                  viewMode === "list"
+                    ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="List View"
+              >
+                <List className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setViewMode("card")}
+                className={`size-7 rounded-[4px] p-0 transition-all ${
+                  viewMode === "card"
+                    ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Card View"
+              >
+                <LayoutGrid className="size-3.5" />
+              </Button>
+            </div>
+
+            {config && config.providers.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestAllProviders}
+                disabled={testingAll || testingProvider !== null}
+                className="h-9 border-border bg-card text-xs font-semibold rounded-md hover:bg-muted text-foreground shadow-sm transition-all duration-200 hover:scale-[1.01]"
+              >
+                {testingAll ? (
+                  <>
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                    Testing All...
+                  </>
+                ) : (
+                  <>
+                    <Activity className="size-3.5 mr-1.5 text-muted-foreground" />
+                    Test All Connections
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Loading State */}
         {loading && !config ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Loader2 className="size-8 animate-spin text-neutral-400 dark:text-neutral-600" />
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">Fetching active configuration...</p>
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <Loader2 className="size-7 animate-spin text-muted-foreground/50" />
+            <p className="text-xs text-muted-foreground font-medium">Fetching active configuration...</p>
           </div>
         ) : (
           <section className="space-y-4">
-            {/* Grid of Providers */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredProviders.map((p) => {
-                const isActive = config?.active === p.name;
-                const isThisSwitching = switching === p.name;
-                const isTesting = testingProvider === p.name || (testingAll && !isActive);
+            {/* Conditional list/card rendering */}
+            {filteredProviders.length > 0 ? (
+              viewMode === "list" ? (
+                /* List View Layout */
+                <div className="border border-border rounded-xl bg-card overflow-hidden divide-y divide-border shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                  {filteredProviders.map((p) => {
+                    const isActive = config?.active === p.name;
+                    const isThisSwitching = switching === p.name;
+                    const isTesting = testingProvider === p.name || (testingAll && !isActive);
 
-                // Latency styling
-                let latencyColor = "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300";
-                if (p.last_ok) {
-                  if (p.latency_ms !== undefined) {
-                    if (p.latency_ms < 150) {
-                      latencyColor = "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200/55 dark:border-emerald-900/30";
-                    } else if (p.latency_ms < 400) {
-                      latencyColor = "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200/55 dark:border-amber-900/30";
-                    } else {
-                      latencyColor = "bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 border border-orange-200/55 dark:border-orange-900/30";
+                    // Latency styling using Notion's decorative sticker palette
+                    let latencyBadgeStyle = "bg-muted text-muted-foreground border-border";
+                    if (p.last_ok) {
+                      if (p.latency_ms !== undefined) {
+                        if (p.latency_ms < 150) {
+                          latencyBadgeStyle = "bg-sticker-green/10 dark:bg-sticker-green/20 text-sticker-green dark:text-emerald-400 border-sticker-green/20";
+                        } else if (p.latency_ms < 400) {
+                          latencyBadgeStyle = "bg-sticker-orange/10 dark:bg-sticker-orange/20 text-sticker-orange dark:text-orange-400 border-sticker-orange/20";
+                        } else {
+                          latencyBadgeStyle = "bg-sticker-orange/15 dark:bg-sticker-orange/25 text-sticker-orange dark:text-orange-400 border-sticker-orange/30";
+                        }
+                      }
+                    } else if (p.last_ok === false) {
+                      latencyBadgeStyle = "bg-red-500/10 dark:bg-red-950/20 text-red-600 dark:text-red-400 border-red-500/20 dark:border-red-900/30";
                     }
-                  }
-                } else if (p.last_ok === false) {
-                  latencyColor = "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200/55 dark:border-red-900/30";
-                }
 
-                return (
-                  <Card
-                    key={p.name}
-                    className={`relative flex flex-col justify-between overflow-hidden bg-white dark:bg-neutral-900 border transition-all duration-200 hover:shadow-md ${
-                      isActive
-                        ? "border-neutral-950 dark:border-neutral-50 ring-[1px] ring-neutral-950 dark:ring-neutral-50 shadow-sm"
-                        : "border-neutral-200 dark:border-neutral-800"
-                    } ${isTesting ? "opacity-75 animate-pulse" : ""}`}
-                  >
-                    <CardHeader className="pb-3 px-5 pt-5 gap-1.5">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base font-bold truncate pr-2" title={p.name}>
-                            {p.name}
-                          </CardTitle>
-                          {p.remark ? (
-                            <CardDescription className="text-xs font-medium text-neutral-400 dark:text-neutral-500 line-clamp-1">
-                              {p.remark}
-                            </CardDescription>
-                          ) : (
-                            <span className="block h-4" />
-                          )}
-                        </div>
-                        {isActive && (
-                          <Badge className="bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 font-bold px-2 py-0.5 rounded-md hover:bg-neutral-950 dark:hover:bg-neutral-50 text-[10px]">
-                            Active
-                          </Badge>
-                        )}
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="space-y-3 px-5 pb-4 text-xs">
-                      <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-neutral-50 dark:bg-neutral-950/50 border border-neutral-100 dark:border-neutral-800/40">
-                        <div className="flex justify-between items-center text-[11px]">
-                          <span className="text-neutral-400 dark:text-neutral-500">Endpoint:</span>
-                          <span className="font-mono text-neutral-600 dark:text-neutral-300 truncate max-w-[170px]" title={p.base_url}>
-                            {p.base_url}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-[11px]">
-                          <span className="text-neutral-400 dark:text-neutral-500">Model:</span>
-                          <span className="font-semibold text-neutral-700 dark:text-neutral-200">{p.model}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[11px]">
-                          <span className="text-neutral-400 dark:text-neutral-500">Key:</span>
-                          <span className="font-mono text-neutral-500 dark:text-neutral-400">
-                            {p.api_key.substring(0, 8)}••••••••
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Latency & Status info */}
-                      <div className="flex items-center justify-between min-h-[26px]">
-                        <span className="text-neutral-400 dark:text-neutral-500 text-[11px] font-medium">Latency:</span>
-                        {isTesting ? (
-                          <div className="flex items-center gap-1 text-[11px] text-amber-500 font-semibold">
-                            <Loader2 className="size-3 animate-spin" />
-                            testing...
+                    return (
+                      <div
+                        key={p.name}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 transition-colors hover:bg-muted/30 ${
+                          isActive ? "bg-primary/[0.02] dark:bg-primary/[0.04]" : ""
+                        } ${isTesting ? "opacity-80 animate-pulse" : ""}`}
+                      >
+                        {/* Left: Name & remark */}
+                        <div className="flex items-center gap-3 min-w-[200px] max-w-[260px] w-full sm:w-auto">
+                          <div className="flex-shrink-0 flex items-center justify-center size-5">
+                            {isActive ? (
+                              <span className="size-2 rounded-full bg-primary animate-pulse" />
+                            ) : (
+                              <span className="size-2 rounded-full bg-muted-foreground/30" />
+                            )}
                           </div>
-                        ) : p.latency_ms !== undefined && p.last_ok !== undefined ? (
-                          <div className="flex items-center gap-2">
-                            <Badge className={`px-2 py-0.5 rounded text-[10px] font-bold ${latencyColor}`}>
-                              {p.last_ok ? `${p.latency_ms} ms` : "Offline"}
-                            </Badge>
-                            {p.last_test && (
-                              <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
-                                {formatDate(p.last_test)}
+                          <div className="truncate">
+                            <span className="text-sm font-bold text-foreground/90 tracking-tight" title={p.name}>
+                              {p.name}
+                            </span>
+                            {p.remark && (
+                              <p className="text-xs text-muted-foreground/75 truncate mt-0.5" title={p.remark}>
+                                {p.remark}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Middle: Base URL & Model */}
+                        <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 text-xs w-full sm:w-auto">
+                          <div className="flex items-center gap-1.5 min-w-[150px]">
+                            <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
+                            <span className="font-mono text-foreground/70 truncate max-w-[220px]" title={p.base_url}>
+                              {p.base_url}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
+                            <span className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[11px]">
+                              {p.model}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Right: Latency & Actions */}
+                        <div className="flex items-center justify-between sm:justify-end gap-4 flex-shrink-0 w-full sm:w-auto">
+                          {/* Latency */}
+                          <div className="flex items-center gap-1.5 min-w-[90px] justify-end">
+                            {isTesting ? (
+                              <div className="flex items-center gap-1 text-[11px] text-sticker-orange font-semibold">
+                                <Loader2 className="size-3 animate-spin text-sticker-orange" />
+                                testing...
+                              </div>
+                            ) : p.latency_ms !== undefined && p.last_ok !== undefined ? (
+                              <Badge className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${latencyBadgeStyle}`}>
+                                {p.last_ok ? `${p.latency_ms} ms` : "Offline"}
+                              </Badge>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground/60 font-medium italic">
+                                Never tested
                               </span>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium italic">
-                            Never tested
-                          </span>
-                        )}
-                      </div>
-                    </CardContent>
 
-                    {/* Actions footer */}
-                    <div className="flex items-center gap-1 border-t border-neutral-100 dark:border-neutral-800/40 bg-neutral-50/50 dark:bg-neutral-900/50 p-3 justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => handleTestProvider(p.name)}
-                          disabled={testingProvider !== null || testingAll || switching !== null}
-                          className="rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-50"
-                          title="Test connection"
-                        >
-                          <Activity className="size-3.5" />
-                        </Button>
+                          {/* Quiet action buttons */}
+                          <div className="flex items-center gap-1 border-l border-border pl-3">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleTestProvider(p.name)}
+                              disabled={testingProvider !== null || testingAll || switching !== null}
+                              className="size-7 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title="Test connection"
+                            >
+                              <Activity className="size-3.5" />
+                            </Button>
 
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => openEditForm(p)}
-                          disabled={testingProvider !== null || testingAll || switching !== null}
-                          className="rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-50"
-                          title="Edit provider"
-                        >
-                          <Edit2 className="size-3.5" />
-                        </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => openEditForm(p)}
+                              disabled={testingProvider !== null || testingAll || switching !== null}
+                              className="size-7 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title="Edit provider"
+                            >
+                              <Edit2 className="size-3.5" />
+                            </Button>
 
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => handleDeleteProvider(p.name)}
-                          disabled={isActive || switching !== null || testingAll || testingProvider !== null}
-                          className="rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-40"
-                          title={isActive ? "Active provider cannot be deleted" : "Delete provider"}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-
-                      <div className="w-24">
-                        {!isActive ? (
-                          <Button
-                            size="sm"
-                            onClick={() => handleSwitch(p.name)}
-                            disabled={switching !== null || testingAll || testingProvider !== null}
-                            className="w-full text-[11px] h-7 bg-neutral-900 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 rounded-md hover:bg-neutral-800 dark:hover:bg-neutral-200 font-semibold"
-                          >
-                            {isThisSwitching ? (
-                              <Loader2 className="size-3 animate-spin" />
-                            ) : (
-                              "Switch"
-                            )}
-                          </Button>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1 h-7 border border-emerald-500/20 dark:border-emerald-400/20 bg-emerald-50/50 dark:bg-emerald-950/10 text-emerald-600 dark:text-emerald-400 rounded-md text-[10px] font-bold px-2 py-0.5">
-                            <Check className="size-3 shrink-0" />
-                            Active
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleDeleteProvider(p.name)}
+                              disabled={isActive || switching !== null || testingAll || testingProvider !== null}
+                              className="size-7 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
+                              title={isActive ? "Active provider cannot be deleted" : "Delete provider"}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
 
-              {filteredProviders.length === 0 && (
-                <div className="col-span-full py-16 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl bg-white dark:bg-neutral-900/50">
-                  <Compass className="size-10 text-neutral-300 dark:text-neutral-700" />
-                  <div className="text-center">
-                    <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400">No providers found</p>
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-                      {searchQuery ? "Try altering your search filters" : "Create a new provider to get started."}
-                    </p>
-                  </div>
-                  {!searchQuery && (
-                    <Button onClick={openAddForm} className="mt-2" size="sm">
-                      <Plus className="size-3.5 mr-1" /> Add Provider
-                    </Button>
-                  )}
+                          {/* Switch Active Trigger */}
+                          <div className="w-24 flex justify-end">
+                            {!isActive ? (
+                              <Button
+                                size="sm"
+                                onClick={() => handleSwitch(p.name)}
+                                disabled={switching !== null || testingAll || testingProvider !== null}
+                                className="w-full text-[11px] h-7 bg-card text-foreground border border-border rounded-md hover:bg-muted font-medium shadow-sm transition-all duration-200 active:scale-95"
+                              >
+                                {isThisSwitching ? (
+                                  <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                                ) : (
+                                  "Switch"
+                                )}
+                              </Button>
+                            ) : (
+                              <div className="flex items-center justify-center gap-1 h-7 border border-primary/20 bg-primary/5 text-primary rounded-full text-[10px] font-bold px-3 py-0.5">
+                                <Check className="size-3 shrink-0" />
+                                Active
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              ) : (
+                /* Card Grid View Layout */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredProviders.map((p) => {
+                    const isActive = config?.active === p.name;
+                    const isThisSwitching = switching === p.name;
+                    const isTesting = testingProvider === p.name || (testingAll && !isActive);
+
+                    // Latency styling using Notion's decorative sticker palette
+                    let latencyBadgeStyle = "bg-muted text-muted-foreground border-border";
+                    if (p.last_ok) {
+                      if (p.latency_ms !== undefined) {
+                        if (p.latency_ms < 150) {
+                          // Fast: Green sticker
+                          latencyBadgeStyle = "bg-sticker-green/10 dark:bg-sticker-green/20 text-sticker-green dark:text-emerald-400 border-sticker-green/20";
+                        } else if (p.latency_ms < 400) {
+                          // Moderate: Orange sticker
+                          latencyBadgeStyle = "bg-sticker-orange/10 dark:bg-sticker-orange/20 text-sticker-orange dark:text-orange-400 border-sticker-orange/20";
+                        } else {
+                          // Slow: Orange / deep orange sticker
+                          latencyBadgeStyle = "bg-sticker-orange/15 dark:bg-sticker-orange/25 text-sticker-orange dark:text-orange-400 border-sticker-orange/30";
+                        }
+                      }
+                    } else if (p.last_ok === false) {
+                      // Offline: Red / deep orange
+                      latencyBadgeStyle = "bg-red-500/10 dark:bg-red-950/20 text-red-600 dark:text-red-400 border-red-500/20 dark:border-red-900/30";
+                    }
+
+                    return (
+                      <Card
+                        key={p.name}
+                        className={`relative flex flex-col justify-between overflow-hidden bg-card border transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] hover:-translate-y-[2px] ${
+                          isActive
+                            ? "border-primary/45 border-l-4 border-l-primary ring-1 ring-primary/10 shadow-sm"
+                            : "border-border"
+                        } ${isTesting ? "opacity-80 animate-pulse" : ""}`}
+                      >
+                        {/* Header of Card */}
+                        <CardHeader className="pb-3 px-5 pt-5 gap-1">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-0.5">
+                              <CardTitle className="text-[15px] font-bold tracking-tight text-foreground/90 truncate pr-2 flex items-center gap-1.5" title={p.name}>
+                                {/* Blue decorative dot for active card */}
+                                {isActive && (
+                                  <span className="size-2 rounded-full bg-primary animate-pulse shrink-0" />
+                                )}
+                                {p.name}
+                              </CardTitle>
+                              {p.remark ? (
+                                <CardDescription className="text-xs text-muted-foreground/75 font-medium line-clamp-1">
+                                  {p.remark}
+                                </CardDescription>
+                              ) : (
+                                <span className="block h-4" />
+                              )}
+                            </div>
+                            {isActive && (
+                              <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold tracking-wide uppercase">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        </CardHeader>
+
+                        {/* Card Content: Details Block */}
+                        <CardContent className="space-y-3.5 px-5 pb-4 text-xs">
+                          {/* Monospace layout list, styled with paper canvas background */}
+                          <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-background border border-border">
+                            <div className="flex justify-between items-center text-[11px] gap-2">
+                              <span className="text-muted-foreground/80 font-medium">Endpoint:</span>
+                              <span className="font-mono text-foreground/75 truncate max-w-[175px]" title={p.base_url}>
+                                {p.base_url}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] gap-2">
+                              <span className="text-muted-foreground/80 font-medium">Model:</span>
+                              <span className="font-semibold text-foreground/80 truncate max-w-[175px]" title={p.model}>{p.model}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] gap-2">
+                              <span className="text-muted-foreground/80 font-medium">Key:</span>
+                              <span className="font-mono text-muted-foreground/80">
+                                {p.api_key.substring(0, 8)}••••••••
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Latency & Status Info */}
+                          <div className="flex items-center justify-between min-h-[26px]">
+                            <span className="text-muted-foreground/85 text-[11px] font-medium">Latency:</span>
+                            {isTesting ? (
+                              <div className="flex items-center gap-1 text-[11px] text-sticker-orange font-semibold">
+                                <Loader2 className="size-3 animate-spin text-sticker-orange" />
+                                testing...
+                              </div>
+                            ) : p.latency_ms !== undefined && p.last_ok !== undefined ? (
+                              <div className="flex items-center gap-1.5">
+                                <Badge className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${latencyBadgeStyle}`}>
+                                  {p.last_ok ? `${p.latency_ms} ms` : "Offline"}
+                                </Badge>
+                                {p.last_test && (
+                                  <span className="text-[10px] text-muted-foreground/60 font-medium">
+                                    {formatDate(p.last_test)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground/60 font-medium italic">
+                                Never tested
+                              </span>
+                            )}
+                          </div>
+                        </CardContent>
+
+                        {/* Actions Footer - Quiet utility strip */}
+                        <div className="flex items-center gap-1 border-t border-border bg-background/50 p-3 justify-between">
+                          {/* Left: action icons */}
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleTestProvider(p.name)}
+                              disabled={testingProvider !== null || testingAll || switching !== null}
+                              className="size-7 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title="Test connection"
+                            >
+                              <Activity className="size-3.5" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => openEditForm(p)}
+                              disabled={testingProvider !== null || testingAll || switching !== null}
+                              className="size-7 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title="Edit provider"
+                            >
+                              <Edit2 className="size-3.5" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleDeleteProvider(p.name)}
+                              disabled={isActive || switching !== null || testingAll || testingProvider !== null}
+                              className="size-7 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
+                              title={isActive ? "Active provider cannot be deleted" : "Delete provider"}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+
+                          {/* Right: Switch active button */}
+                          <div className="w-24 flex justify-end">
+                            {!isActive ? (
+                              <Button
+                                size="sm"
+                                onClick={() => handleSwitch(p.name)}
+                                disabled={switching !== null || testingAll || testingProvider !== null}
+                                className="w-full text-[11px] h-7 bg-card text-foreground border border-border rounded-md hover:bg-muted font-medium shadow-sm transition-all duration-200 active:scale-95"
+                              >
+                                {isThisSwitching ? (
+                                  <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                                ) : (
+                                  "Switch"
+                                )}
+                              </Button>
+                            ) : (
+                              <div className="flex items-center justify-center gap-1 h-7 border border-primary/20 bg-primary/5 text-primary rounded-full text-[10px] font-bold px-3 py-0.5">
+                                <Check className="size-3 shrink-0" />
+                                Active
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              /* Empty State */
+              <div className="py-20 flex flex-col items-center justify-center gap-3 border border-dashed border-border rounded-xl bg-card">
+                <Compass className="size-9 text-muted-foreground/40" />
+                <div className="text-center">
+                  <p className="text-sm font-bold text-foreground/85">No providers found</p>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    {searchQuery ? "Try altering your search filters" : "Create a new provider to get started."}
+                  </p>
+                </div>
+                {!searchQuery && (
+                  <Button onClick={openAddForm} className="mt-3 h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm">
+                    <Plus className="size-3.5 mr-1" /> Add Provider
+                  </Button>
+                )}
+              </div>
+            )}
           </section>
         )}
       </main>
 
       {/* Add / Edit Dialog Modal */}
       <Dialog open={showForm !== null} onOpenChange={(open) => !open && setShowForm(null)}>
-        <DialogContent className="sm:max-w-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-2xl p-5 gap-4">
-          <DialogHeader className="gap-1">
-            <DialogTitle className="text-lg font-bold">
+        <DialogContent className="sm:max-w-md bg-card border border-border rounded-xl shadow-xl p-5 gap-4">
+          <DialogHeader className="gap-1.5">
+            <DialogTitle className="text-base font-bold tracking-tight">
               {showForm === "add" ? "Create Provider" : "Edit Provider"}
             </DialogTitle>
-            <DialogDescription className="text-xs text-neutral-400 dark:text-neutral-500">
+            <DialogDescription className="text-xs text-muted-foreground">
               Provide endpoint details for the cross-connect proxy relay.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmitForm} className="space-y-4">
             <div className="space-y-1">
-              <Label htmlFor="form-name" className="text-xs font-bold text-neutral-500 dark:text-neutral-400">
+              <Label htmlFor="form-name" className="text-xs font-bold text-muted-foreground">
                 Provider Name *
               </Label>
               <Input
@@ -595,12 +818,12 @@ function App() {
                 value={formValues.name}
                 onChange={(e) => setFormValues({ ...formValues, name: e.target.value })}
                 placeholder="e.g. proxy-fast"
-                className="bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 h-9 rounded-lg"
+                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
               />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="form-url" className="text-xs font-bold text-neutral-500 dark:text-neutral-400">
+              <Label htmlFor="form-url" className="text-xs font-bold text-muted-foreground">
                 Base URL *
               </Label>
               <Input
@@ -610,12 +833,12 @@ function App() {
                 value={formValues.base_url}
                 onChange={(e) => setFormValues({ ...formValues, base_url: e.target.value })}
                 placeholder="https://api.example.com/v1"
-                className="bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 h-9 rounded-lg"
+                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
               />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="form-key" className="text-xs font-bold text-neutral-500 dark:text-neutral-400">
+              <Label htmlFor="form-key" className="text-xs font-bold text-muted-foreground">
                 API Key *
               </Label>
               <Input
@@ -625,13 +848,13 @@ function App() {
                 value={formValues.api_key}
                 onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
                 placeholder="sk-••••••••••••"
-                className="bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 h-9 rounded-lg"
+                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
               />
             </div>
 
             <div className="space-y-1">
               <div className="flex items-center justify-between pb-1">
-                <Label htmlFor="form-model" className="text-xs font-bold text-neutral-500 dark:text-neutral-400">
+                <Label htmlFor="form-model" className="text-xs font-bold text-muted-foreground">
                   Model *
                 </Label>
                 <Button
@@ -640,7 +863,7 @@ function App() {
                   size="xs"
                   onClick={handleFetchModels}
                   disabled={fetchingModels || !formValues.base_url || !formValues.api_key}
-                  className="h-6 text-[10px] border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 font-bold"
+                  className="h-6 text-[10px] border-border bg-card text-muted-foreground hover:bg-muted font-bold px-2 rounded-md shadow-sm transition-all"
                 >
                   {fetchingModels ? (
                     <>
@@ -661,7 +884,7 @@ function App() {
                   id="form-model-select"
                   value={formValues.model}
                   onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                  className="flex h-9 w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50"
+                  className="flex h-9 w-full rounded-[4px] border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
                 >
                   <option value="">-- Select a model --</option>
                   {fetchedModels.map((m) => (
@@ -678,7 +901,7 @@ function App() {
                   value={formValues.model}
                   onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
                   placeholder="e.g. gpt-4o"
-                  className="bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 h-9 rounded-lg"
+                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
                 />
               )}
               {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
@@ -686,7 +909,7 @@ function App() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <Label htmlFor="form-wire" className="text-xs font-bold text-neutral-500 dark:text-neutral-400">
+                <Label htmlFor="form-wire" className="text-xs font-bold text-muted-foreground">
                   Wire API
                 </Label>
                 <Input
@@ -695,12 +918,12 @@ function App() {
                   value={formValues.wire_api}
                   onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
                   placeholder="responses"
-                  className="bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 h-9 rounded-lg text-xs"
+                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="form-remark" className="text-xs font-bold text-neutral-500 dark:text-neutral-400">
+                <Label htmlFor="form-remark" className="text-xs font-bold text-muted-foreground">
                   Remark / Notes
                 </Label>
                 <Input
@@ -709,24 +932,24 @@ function App() {
                   value={formValues.remark}
                   onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
                   placeholder="e.g. Backup relay"
-                  className="bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 focus-visible:ring-neutral-950 dark:focus-visible:ring-neutral-50 h-9 rounded-lg text-xs"
+                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
                 />
               </div>
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3">
               <div className="flex w-full justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setShowForm(null)}
-                  className="h-9 rounded-lg border-neutral-200 dark:border-neutral-800 text-xs font-bold"
+                  className="h-8 px-4 rounded-full border border-border bg-card text-xs font-semibold hover:bg-muted"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  className="h-9 rounded-lg bg-neutral-900 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 hover:bg-neutral-800 dark:hover:bg-neutral-200 text-xs font-bold"
+                  className="h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm"
                 >
                   {showForm === "add" ? "Create" : "Save Changes"}
                 </Button>
