@@ -108,11 +108,27 @@ async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, 
 }
 
 #[tauri::command]
-fn save_settings(source: String, custom_dir: String) -> Result<Config, String> {
+fn save_settings(app_handle: tauri::AppHandle, source: String, custom_dir: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     cfg.codex_source = Some(source);
     cfg.codex_custom_dir = custom_dir;
     config::save(&cfg).map_err(|e| e.to_string())?;
+
+    if !cfg.active.is_empty() {
+        if let Some(p) = config::get_provider(&cfg, &cfg.active) {
+            let p = p.clone();
+            let adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+            let tc = TargetConfig {
+                base_url: p.base_url.clone(),
+                api_key: p.api_key.clone(),
+                model: p.model.clone(),
+                wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
+            };
+            adapter.write(&tc).map_err(|e| e.to_string())?;
+        }
+    }
+
+    let _ = update_tray_menu(&app_handle);
     Ok(cfg)
 }
 
