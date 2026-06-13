@@ -251,6 +251,8 @@ impl TargetAdapter for CodexAdapter {
         let mut doc = toml_data.parse::<DocumentMut>().map_err(|e| TargetError::ParseError(e.to_string()))?;
 
         doc["model"] = toml_edit::value(&config.model);
+        // Point Codex at our fixed "codex" provider entry
+        doc["model_provider"] = toml_edit::value("codex");
         
         // Ensure model_providers.codex path exists and update fields
         doc["model_providers"]["codex"]["base_url"] = toml_edit::value(&config.base_url);
@@ -402,6 +404,10 @@ trust_level = "trusted"
         assert_eq!(got.base_url, new_cfg.base_url);
         assert_eq!(got.api_key, new_cfg.api_key);
         assert_eq!(got.model, new_cfg.model);
+
+        // Verify model_provider is set to "codex"
+        let content = fs::read_to_string(adapter.config_path()).unwrap();
+        assert!(content.contains("model_provider = \"codex\""), "model_provider should be set to codex");
 
         // Verify backups created
         assert!(dir.path().join("config.toml.bak").exists());
