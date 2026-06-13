@@ -13,10 +13,15 @@ impl CodexAdapter {
         let codex_dir = if let Ok(test_dir) = std::env::var("CXC_TEST_CODEX_DIR") {
             PathBuf::from(test_dir)
         } else {
-            // Load global cxc config to check for custom codex directory settings
-            let custom_dir = crate::config::load().ok().and_then(|cfg| {
-                if !cfg.codex_custom_dir.is_empty() {
-                    let mut path_str = cfg.codex_custom_dir.clone();
+            // Load global cxc config to check for custom codex directory and source settings
+            let cfg = crate::config::load().ok();
+            let source = cfg.as_ref()
+                .and_then(|c| c.codex_source.as_deref())
+                .unwrap_or("wsl");
+
+            let custom_dir = cfg.as_ref().and_then(|c| {
+                if !c.codex_custom_dir.is_empty() {
+                    let mut path_str = c.codex_custom_dir.clone();
 
                     // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
                     // automatically convert it to a WSL mount path (like /mnt/c/...)
@@ -40,11 +45,104 @@ impl CodexAdapter {
             if let Some(dir) = custom_dir {
                 dir
             } else {
-                let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
-                home.join(".codex")
+                // No custom dir: use smart defaults based on codex_source
+                Self::default_codex_dir(source)?
             }
         };
         Ok(Self { codex_dir })
+    }
+
+    /// Resolve the default Codex config directory based on `codex_source`.
+    ///
+    /// - `"wsl"` on Linux  → `~/.codex` (local WSL home)
+    /// - `"app"` on Linux  → `/mnt/c/Users/<username>/.codex` (Windows host via WSL mount)
+    /// - `"app"` on Windows → `%USERPROFILE%\.codex`
+    /// - `"wsl"` on Windows → try `\\wsl.localhost\<distro>\home\<user>\.codex`
+    fn default_codex_dir(source: &str) -> Result<PathBuf, TargetError> {
+        #[cfg(target_os = "linux")]
+        {
+            if source == "app" {
+                // Try to find the Windows home directory via common WSL mount points
+                if let Some(win_dir) = Self::detect_windows_codex_dir() {
+                    return Ok(win_dir);
+                }
+                // Fall back to local home if Windows mount not found
+            }
+            // source == "wsl" or fallback: use native Linux home
+            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
+            return Ok(home.join(".codex"));
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            if source == "wsl" {
+                // Try to find WSL home directory via UNC path
+                if let Some(wsl_dir) = Self::detect_wsl_codex_dir() {
+                    return Ok(wsl_dir);
+                }
+                // Fall back to local Windows home if WSL not reachable
+            }
+            // source == "app" or fallback: use native Windows home
+            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
+            return Ok(home.join(".codex"));
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        {
+            let _ = source;
+            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
+            Ok(home.join(".codex"))
+        }
+    }
+
+    /// Detect Windows Codex directory from within WSL via /mnt/c/Users/<username>/.codex
+    #[cfg(target_os = "linux")]
+    fn detect_windows_codex_dir() -> Option<PathBuf> {
+        let username = std::env::var("USER").ok()?;
+        // Try the most common mount point first
+        let candidate = PathBuf::from(format!("/mnt/c/Users/{}/.codex", username));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        // Try scanning /mnt/c/Users/ for a matching directory
+        if let Ok(entries) = fs::read_dir("/mnt/c/Users") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_lowercase();
+                if name == username.to_lowercase() {
+                    let codex_dir = entry.path().join(".codex");
+                    if codex_dir.exists() {
+                        return Some(codex_dir);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Detect WSL Codex directory from Windows via \\wsl.localhost\<distro>\home\<user>\.codex
+    #[cfg(target_os = "windows")]
+    fn detect_wsl_codex_dir() -> Option<PathBuf> {
+        let username = std::env::var("USERNAME").ok()?.to_lowercase();
+        // Try common distro names
+        let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
+        for distro in &distros {
+            let candidate = PathBuf::from(format!(
+                "\\\\wsl.localhost\\{}\\home\\{}\\.codex", distro, username
+            ));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        // Also try wsl$ UNC path (older WSL1 style)
+        for distro in &distros {
+            let candidate = PathBuf::from(format!(
+                "\\\\wsl$\\{}\\home\\{}\\.codex", distro, username
+            ));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        None
     }
 
     pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {
@@ -117,16 +215,38 @@ impl TargetAdapter for CodexAdapter {
     }
 
     fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
+        // Ensure the codex directory exists
+        if !self.codex_dir.exists() {
+            fs::create_dir_all(&self.codex_dir).map_err(|err| TargetError::WriteError {
+                path: self.codex_dir.clone(),
+                source: err,
+            })?;
+        }
+
         // Backup files first
         backup(&self.config_path())?;
         backup(&self.auth_path())?;
 
-        // Update config.toml
+        // Update config.toml (read existing or use minimal scaffold)
         let config_path = self.config_path();
-        let toml_data = fs::read_to_string(&config_path).map_err(|err| TargetError::ReadError {
-            path: config_path.clone(),
-            source: err,
-        })?;
+        let toml_data = if config_path.exists() {
+            fs::read_to_string(&config_path).map_err(|err| TargetError::ReadError {
+                path: config_path.clone(),
+                source: err,
+            })?
+        } else {
+            // Minimal Codex config scaffold for first-time write
+            String::from(concat!(
+                "model_provider = \"codex\"\n",
+                "model = \"\"\n",
+                "\n",
+                "[model_providers.codex]\n",
+                "base_url = \"\"\n",
+                "name = \"codex\"\n",
+                "requires_openai_auth = true\n",
+                "wire_api = \"responses\"\n",
+            ))
+        };
 
         let mut doc = toml_data.parse::<DocumentMut>().map_err(|e| TargetError::ParseError(e.to_string()))?;
 
@@ -147,12 +267,17 @@ impl TargetAdapter for CodexAdapter {
             source: err,
         })?;
 
-        // Update auth.json
+        // Update auth.json (read existing or use minimal scaffold)
         let auth_path = self.auth_path();
-        let auth_data = fs::read_to_string(&auth_path).map_err(|err| TargetError::ReadError {
-            path: auth_path.clone(),
-            source: err,
-        })?;
+        let auth_data = if auth_path.exists() {
+            fs::read_to_string(&auth_path).map_err(|err| TargetError::ReadError {
+                path: auth_path.clone(),
+                source: err,
+            })?
+        } else {
+            // Minimal auth scaffold
+            String::from("{\"auth_mode\": \"apikey\", \"OPENAI_API_KEY\": \"\"}")
+        };
 
         let mut auth: serde_json::Value = serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
         auth["OPENAI_API_KEY"] = serde_json::Value::String(config.api_key.clone());
@@ -331,5 +456,52 @@ trust_level = "trusted"
         let data = fs::read_to_string(adapter.config_path()).unwrap();
         let parsed = data.parse::<DocumentMut>();
         assert!(parsed.is_ok(), "Written TOML is invalid");
+    }
+
+    #[test]
+    fn test_write_creates_files_from_scratch() {
+        // Test that write() works even when config.toml and auth.json don't exist
+        let dir = tempfile::tempdir().unwrap();
+        // Do NOT create config.toml or auth.json
+        let adapter = CodexAdapter::new_with_dir(dir.path());
+
+        let new_cfg = TargetConfig {
+            base_url: "https://new.example.com/v1".to_string(),
+            api_key: "sk-new-key".to_string(),
+            model: "gpt-5".to_string(),
+            wire_api: "responses".to_string(),
+        };
+        adapter.write(&new_cfg).unwrap();
+
+        // Verify files were created and are readable
+        let got = adapter.read().unwrap();
+        assert_eq!(got.base_url, new_cfg.base_url);
+        assert_eq!(got.api_key, new_cfg.api_key);
+        assert_eq!(got.model, new_cfg.model);
+        assert_eq!(got.wire_api, new_cfg.wire_api);
+
+        // No backups should exist since originals didn't exist
+        assert!(!dir.path().join("config.toml.bak").exists());
+        assert!(!dir.path().join("auth.json.bak").exists());
+    }
+
+    #[test]
+    fn test_write_creates_directory_if_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("sub").join("codex");
+        let adapter = CodexAdapter::new_with_dir(&nested);
+
+        let new_cfg = TargetConfig {
+            base_url: "https://example.com/v1".to_string(),
+            api_key: "sk-test".to_string(),
+            model: "gpt-4".to_string(),
+            wire_api: "responses".to_string(),
+        };
+        adapter.write(&new_cfg).unwrap();
+
+        assert!(nested.join("config.toml").exists());
+        assert!(nested.join("auth.json").exists());
+        let got = adapter.read().unwrap();
+        assert_eq!(got.base_url, "https://example.com/v1");
     }
 }
