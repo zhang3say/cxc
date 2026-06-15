@@ -89,6 +89,7 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
       }
       if (cmd === "test_provider") {
         const { name, targetTool } = args;
+        await new Promise(r => setTimeout(r, 800));
         const list = targetTool === "codex" ? mockConfig.codex_providers : mockConfig.claude_providers;
         const p = list.find(x => x.name === name);
         if (p) {
