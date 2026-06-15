@@ -291,12 +291,23 @@ function App() {
 
   // Settings State
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [targetTool, setTargetTool] = useState<"codex" | "claude">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("cxc-target-tool");
+      if (saved === "codex" || saved === "claude") return saved;
+    }
+    return "codex";
+  });
   const [settingsSource, setSettingsSource] = useState<string>("app");
   const [settingsCustomDir, setSettingsCustomDir] = useState<string>("");
   const [claudeSource, setClaudeSource] = useState<string>("wsl");
   const [claudeCustomDir, setClaudeCustomDir] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("");
+
+  useEffect(() => {
+    localStorage.setItem("cxc-target-tool", targetTool);
+  }, [targetTool]);
 
   // Form State
   const [showForm, setShowForm] = useState<"add" | "edit" | null>(null);
@@ -379,7 +390,10 @@ function App() {
     try {
       setSwitching(name);
       setError(null);
-      const updatedCfg = await invoke<Config>("switch_provider", { name });
+      const updatedCfg = await invoke<Config>("switch_provider", {
+        name,
+        targetTool
+      });
       setConfig(updatedCfg);
     } catch (e: any) {
       setError(e.toString());
@@ -545,6 +559,7 @@ function App() {
         updatedCfg = await invoke<Config>("edit_provider", {
           oldName: editingName,
           updated: formValues,
+          targetTool
         });
       }
       setConfig(updatedCfg);
@@ -599,6 +614,7 @@ function App() {
       setSavingSettings(true);
       setError(null);
       const updatedCfg = await invoke<Config>("save_settings", {
+        targetTool,
         source: settingsSource,
         customDir: settingsCustomDir,
         claudeSource: claudeSource,
@@ -697,6 +713,40 @@ function App() {
               CXC Cross-Connect
             </h1>
             <p className="text-xs text-muted-foreground font-medium">{t.subtitle}</p>
+          </div>
+
+          {/* Target Tool Switcher */}
+          <div className="flex items-center gap-1 ml-4 p-1 rounded-lg bg-muted/50 border border-border">
+            <button
+              onClick={() => setTargetTool("codex")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                targetTool === "codex"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Codex Desktop App"
+            >
+              <svg className="size-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 3h18v18H3V3z" fill="currentColor" opacity="0.1"/>
+                <path d="M8 8l4 4-4 4M13 16h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>Codex</span>
+            </button>
+            <button
+              onClick={() => setTargetTool("claude")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                targetTool === "claude"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title="Claude CLI"
+            >
+              <svg className="size-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.1"/>
+                <path d="M8 12h8M12 8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <span>Claude CLI</span>
+            </button>
           </div>
         </div>
 
@@ -1173,127 +1223,134 @@ function App() {
               {t.settingsTitle}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              {t.settingsDesc}
+              {targetTool === "codex" ? "配置 Codex 配置文件写入的相关设置。" : "配置 Claude CLI 配置文件写入的相关设置。"}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSaveSettings} className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-xs font-bold text-muted-foreground">
-                {t.codexSourceLabel}
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSettingsSource("app")}
-                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
-                    settingsSource === "app"
-                      ? "border-primary bg-primary/[0.03] text-primary"
-                      : "border-border bg-card text-foreground hover:bg-muted/30"
-                  }`}
-                >
-                  <div>
-                    <span className="text-xs font-bold block">{t.desktopAppOption}</span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">{t.desktopAppDesc}</span>
+            {targetTool === "codex" ? (
+              <>
+                {/* Codex Configuration */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-muted-foreground">
+                    {t.codexSourceLabel}
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSource("app")}
+                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                        settingsSource === "app"
+                          ? "border-primary bg-primary/[0.03] text-primary"
+                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                      }`}
+                    >
+                      <div>
+                        <span className="text-xs font-bold block">{t.desktopAppOption}</span>
+                        <span className="text-[10px] text-muted-foreground block mt-0.5">{t.desktopAppDesc}</span>
+                      </div>
+                      {settingsSource === "app" && <Check className="size-4 shrink-0" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSource("wsl")}
+                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                        settingsSource === "wsl"
+                          ? "border-primary bg-primary/[0.03] text-primary"
+                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                      }`}
+                    >
+                      <div>
+                        <span className="text-xs font-bold block">{t.wslCliOption}</span>
+                        <span className="text-[10px] text-muted-foreground block mt-0.5">{t.wslCliDesc}</span>
+                      </div>
+                      {settingsSource === "wsl" && <Check className="size-4 shrink-0" />}
+                    </button>
                   </div>
-                  {settingsSource === "app" && <Check className="size-4 shrink-0" />}
-                </button>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSettingsSource("wsl")}
-                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
-                    settingsSource === "wsl"
-                      ? "border-primary bg-primary/[0.03] text-primary"
-                      : "border-border bg-card text-foreground hover:bg-muted/30"
-                  }`}
-                >
-                  <div>
-                    <span className="text-xs font-bold block">{t.wslCliOption}</span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">{t.wslCliDesc}</span>
+                {/* Codex custom directory */}
+                <div className="space-y-1">
+                  <Label htmlFor="settings-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                    <span>{t.customDirLabel}</span>
+                    {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
+                  </Label>
+                  <Input
+                    id="settings-custom-dir"
+                    type="text"
+                    value={settingsCustomDir}
+                    onChange={(e) => setSettingsCustomDir(e.target.value)}
+                    placeholder={settingsSource === "wsl" ? t.wslPlaceholder : t.appPlaceholder}
+                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+                    {settingsSource === "wsl" ? t.wslNote : t.appNote}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Claude CLI Configuration */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-muted-foreground">
+                    {t.claudeSourceLabel}
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setClaudeSource("wsl")}
+                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                        claudeSource === "wsl"
+                          ? "border-primary bg-primary/[0.03] text-primary"
+                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                      }`}
+                    >
+                      <div>
+                        <span className="text-xs font-bold block">{t.wslCliOption}</span>
+                        <span className="text-[10px] text-muted-foreground block mt-0.5">WSL 环境 (~/.claude)</span>
+                      </div>
+                      {claudeSource === "wsl" && <Check className="size-4 shrink-0" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setClaudeSource("app")}
+                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                        claudeSource === "app"
+                          ? "border-primary bg-primary/[0.03] text-primary"
+                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                      }`}
+                    >
+                      <div>
+                        <span className="text-xs font-bold block">{t.desktopAppOption}</span>
+                        <span className="text-[10px] text-muted-foreground block mt-0.5">Windows 客户端 (~/.claude)</span>
+                      </div>
+                      {claudeSource === "app" && <Check className="size-4 shrink-0" />}
+                    </button>
                   </div>
-                  {settingsSource === "wsl" && <Check className="size-4 shrink-0" />}
-                </button>
-              </div>
-            </div>
+                </div>
 
-            {/* Custom directory input field */}
-            <div className="space-y-1">
-              <Label htmlFor="settings-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
-                <span>{t.customDirLabel}</span>
-                {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
-              </Label>
-              <Input
-                id="settings-custom-dir"
-                type="text"
-                value={settingsCustomDir}
-                onChange={(e) => setSettingsCustomDir(e.target.value)}
-                placeholder={settingsSource === "wsl" ? t.wslPlaceholder : t.appPlaceholder}
-                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
-              />
-              <p className="text-[10px] text-muted-foreground leading-normal mt-1">
-                {settingsSource === "wsl" ? t.wslNote : t.appNote}
-              </p>
-            </div>
-
-            {/* Claude CLI Configuration */}
-            <div className="space-y-2 pt-4 border-t border-border">
-              <Label className="text-xs font-bold text-muted-foreground">
-                {t.claudeSourceLabel}
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setClaudeSource("wsl")}
-                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
-                    claudeSource === "wsl"
-                      ? "border-primary bg-primary/[0.03] text-primary"
-                      : "border-border bg-card text-foreground hover:bg-muted/30"
-                  }`}
-                >
-                  <div>
-                    <span className="text-xs font-bold block">{t.wslCliOption}</span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">WSL 环境 (~/.claude)</span>
-                  </div>
-                  {claudeSource === "wsl" && <Check className="size-4 shrink-0" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setClaudeSource("app")}
-                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
-                    claudeSource === "app"
-                      ? "border-primary bg-primary/[0.03] text-primary"
-                      : "border-border bg-card text-foreground hover:bg-muted/30"
-                  }`}
-                >
-                  <div>
-                    <span className="text-xs font-bold block">{t.desktopAppOption}</span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">Windows 客户端 (~/.claude)</span>
-                  </div>
-                  {claudeSource === "app" && <Check className="size-4 shrink-0" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Claude custom directory input field */}
-            <div className="space-y-1">
-              <Label htmlFor="claude-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
-                <span>{t.claudeCustomDirLabel}</span>
-                {claudeSource === "app" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
-              </Label>
-              <Input
-                id="claude-custom-dir"
-                type="text"
-                value={claudeCustomDir}
-                onChange={(e) => setClaudeCustomDir(e.target.value)}
-                placeholder={claudeSource === "app" ? t.claudeWslPlaceholder : t.appPlaceholder}
-                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
-              />
-              <p className="text-[10px] text-muted-foreground leading-normal mt-1">
-                {claudeSource === "app" ? t.claudeWslNote : t.claudeAppNote}
-              </p>
-            </div>
+                {/* Claude custom directory */}
+                <div className="space-y-1">
+                  <Label htmlFor="claude-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                    <span>{t.claudeCustomDirLabel}</span>
+                    {claudeSource === "app" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
+                  </Label>
+                  <Input
+                    id="claude-custom-dir"
+                    type="text"
+                    value={claudeCustomDir}
+                    onChange={(e) => setClaudeCustomDir(e.target.value)}
+                    placeholder={claudeSource === "app" ? t.claudeWslPlaceholder : t.appPlaceholder}
+                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+                    {claudeSource === "app" ? t.claudeWslNote : t.claudeAppNote}
+                  </p>
+                </div>
+              </>
+            )}
 
             <DialogFooter className="pt-3">
               <div className="flex w-full items-center justify-between gap-2">

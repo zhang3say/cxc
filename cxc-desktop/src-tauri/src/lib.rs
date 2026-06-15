@@ -16,8 +16,8 @@ fn get_config() -> Result<Config, String> {
 }
 
 #[tauri::command]
-fn switch_provider(app_handle: tauri::AppHandle, name: String) -> Result<Config, String> {
-    do_switch_provider(&app_handle, name)
+fn switch_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
+    do_switch_provider(&app_handle, name, target_tool)
 }
 
 #[tauri::command]
@@ -30,23 +30,23 @@ fn add_provider(app_handle: tauri::AppHandle, provider: Provider) -> Result<Conf
 }
 
 #[tauri::command]
-fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provider) -> Result<Config, String> {
+fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provider, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
     if cfg.active == old_name || cfg.active == updated.name {
-        // Update Codex configuration
-        let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
-        let tc = TargetConfig {
-            base_url: updated.base_url.clone(),
-            api_key: updated.api_key.clone(),
-            model: updated.model.clone(),
-            wire_api: if updated.wire_api.is_empty() { "responses".to_string() } else { updated.wire_api.clone() },
-        };
-        codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-
-        // Update Claude CLI configuration
-        if let Ok(claude_adapter) = ClaudeAdapter::new() {
-            let _ = claude_adapter.write_provider(&updated);
+        // Update based on target tool
+        if target_tool == "codex" {
+            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+            let tc = TargetConfig {
+                base_url: updated.base_url.clone(),
+                api_key: updated.api_key.clone(),
+                model: updated.model.clone(),
+                wire_api: if updated.wire_api.is_empty() { "responses".to_string() } else { updated.wire_api.clone() },
+            };
+            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+        } else if target_tool == "claude" {
+            let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+            claude_adapter.write_provider(&updated).map_err(|e| e.to_string())?;
         }
     }
 
@@ -114,31 +114,31 @@ async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, 
 }
 
 #[tauri::command]
-fn save_settings(app_handle: tauri::AppHandle, source: String, custom_dir: String, claude_source: String, claude_custom_dir: String) -> Result<Config, String> {
+fn save_settings(app_handle: tauri::AppHandle, target_tool: String, source: String, custom_dir: String, claude_source: String, claude_custom_dir: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    cfg.codex_source = Some(source);
-    cfg.codex_custom_dir = custom_dir;
-    cfg.claude_source = Some(claude_source);
-    cfg.claude_custom_dir = claude_custom_dir;
+    cfg.codex_source = Some(source.clone());
+    cfg.codex_custom_dir = custom_dir.clone();
+    cfg.claude_source = Some(claude_source.clone());
+    cfg.claude_custom_dir = claude_custom_dir.clone();
     config::save(&cfg).map_err(|e| e.to_string())?;
 
     if !cfg.active.is_empty() {
         if let Some(p) = config::get_provider(&cfg, &cfg.active) {
             let p = p.clone();
 
-            // Update Codex configuration
-            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
-            let tc = TargetConfig {
-                base_url: p.base_url.clone(),
-                api_key: p.api_key.clone(),
-                model: p.model.clone(),
-                wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
-            };
-            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-
-            // Update Claude CLI configuration
-            if let Ok(claude_adapter) = ClaudeAdapter::new() {
-                let _ = claude_adapter.write_provider(&p);
+            // Update based on target tool
+            if target_tool == "codex" {
+                let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+                let tc = TargetConfig {
+                    base_url: p.base_url.clone(),
+                    api_key: p.api_key.clone(),
+                    model: p.model.clone(),
+                    wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
+                };
+                codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+            } else if target_tool == "claude" {
+                let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+                claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
             }
         }
     }
@@ -153,28 +153,28 @@ fn get_app_version(app_handle: tauri::AppHandle) -> String {
 }
 
 
-fn do_switch_provider(app_handle: &tauri::AppHandle, name: String) -> Result<Config, String> {
+fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
     let p = config::get_provider(&cfg, &name)
         .ok_or_else(|| format!("provider \"{}\" not found", name))?
         .clone();
 
-    // Update Codex configuration
-    let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+    // Update based on target tool
+    if target_tool == "codex" {
+        let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
 
-    let tc = TargetConfig {
-        base_url: p.base_url.clone(),
-        api_key: p.api_key.clone(),
-        model: p.model.clone(),
-        wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
-    };
+        let tc = TargetConfig {
+            base_url: p.base_url.clone(),
+            api_key: p.api_key.clone(),
+            model: p.model.clone(),
+            wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
+        };
 
-    codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-
-    // Update Claude CLI configuration
-    if let Ok(claude_adapter) = ClaudeAdapter::new() {
-        let _ = claude_adapter.write_provider(&p);
+        codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+    } else if target_tool == "claude" {
+        let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+        claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
     }
 
     config::set_active(&mut cfg, &name).map_err(|e| e.to_string())?;
@@ -283,7 +283,8 @@ pub fn run() {
                         }
                     } else if id.starts_with("prov:") {
                         let prov_name = id.trim_start_matches("prov:").to_string();
-                        let _ = do_switch_provider(app_handle, prov_name);
+                        // Default to codex for tray menu (user can't select target tool from tray)
+                        let _ = do_switch_provider(app_handle, prov_name, "codex".to_string());
                     }
                 })
                 .build(app)?;
