@@ -261,6 +261,7 @@ function App() {
   const [settingsSource, setSettingsSource] = useState<string>("app");
   const [settingsCustomDir, setSettingsCustomDir] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
+  const [appVersion, setAppVersion] = useState<string>("");
 
   // Form State
   const [showForm, setShowForm] = useState<"add" | "edit" | null>(null);
@@ -290,6 +291,10 @@ function App() {
   // Load config & subscribe to tray events
   useEffect(() => {
     loadConfig();
+
+    invoke<string>("get_app_version")
+      .then(setAppVersion)
+      .catch((err) => console.error("Failed to get version:", err));
 
     let unlisten: (() => void) | undefined;
     const setupListener = async () => {
@@ -1062,8 +1067,14 @@ function App() {
             </div>
 
             <DialogFooter className="pt-3">
-              <div className="flex w-full justify-end gap-2">
-                <Button
+              <div className="flex w-full items-center justify-between gap-2">
+                {appVersion && (
+                  <span className="text-[10px] text-muted-foreground/40 font-medium">
+                    v{appVersion}
+                  </span>
+                )}
+                <div className="flex gap-2 justify-end ml-auto">
+                  <Button
                   type="button"
                   variant="outline"
                   onClick={() => setShowSettings(false)}
@@ -1086,6 +1097,7 @@ function App() {
                   )}
                 </Button>
               </div>
+            </div>
             </DialogFooter>
           </form>
         </DialogContent>

@@ -132,6 +132,12 @@ fn save_settings(app_handle: tauri::AppHandle, source: String, custom_dir: Strin
     Ok(cfg)
 }
 
+#[tauri::command]
+fn get_app_version(app_handle: tauri::AppHandle) -> String {
+    app_handle.package_info().version.to_string()
+}
+
+
 fn do_switch_provider(app_handle: &tauri::AppHandle, name: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     
@@ -258,7 +264,8 @@ pub fn run() {
             test_provider,
             test_all_providers,
             fetch_models,
-            save_settings
+            save_settings,
+            get_app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
