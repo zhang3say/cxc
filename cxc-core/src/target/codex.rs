@@ -243,7 +243,7 @@ impl TargetAdapter for CodexAdapter {
                 "[model_providers.codex]\n",
                 "base_url = \"\"\n",
                 "name = \"codex\"\n",
-                "requires_openai_auth = true\n",
+                "requires_openai_auth = false\n",
                 "wire_api = \"responses\"\n",
             ))
         };
@@ -253,12 +253,17 @@ impl TargetAdapter for CodexAdapter {
         doc["model"] = toml_edit::value(&config.model);
         // Point Codex at our fixed "codex" provider entry
         doc["model_provider"] = toml_edit::value("codex");
-        
+
+        // Promote any inline tables inside [model_providers] to standard TOML sections,
+        // so the output uses `[model_providers.codex]` format instead of `codex = { ... }`.
+        promote_model_providers_to_tables(&mut doc);
+
         // Ensure model_providers.codex path exists and update fields
         doc["model_providers"]["codex"]["base_url"] = toml_edit::value(&config.base_url);
         doc["model_providers"]["codex"]["wire_api"] = toml_edit::value(&config.wire_api);
         doc["model_providers"]["codex"]["name"] = toml_edit::value("codex");
-        doc["model_providers"]["codex"]["requires_openai_auth"] = toml_edit::value(true);
+        // false = disable OpenAI-native auth check; required for third-party relay gateways
+        doc["model_providers"]["codex"]["requires_openai_auth"] = toml_edit::value(false);
 
         // Validate by re-parsing
         let out = doc.to_string();
@@ -294,7 +299,60 @@ impl TargetAdapter for CodexAdapter {
     }
 }
 
+
+
+/// Promote all inline tables inside `[model_providers]` to standard TOML table sections.
+///
+/// toml_edit preserves the original format when editing existing documents, so if the
+/// existing config.toml has `codex = { ... }` (inline table), modifications stay in that
+/// format. This function converts all inline-table entries under `model_providers` into
+/// proper subtables, resulting in `[model_providers.codex]` section headers on output.
+fn promote_model_providers_to_tables(doc: &mut DocumentMut) {
+    use toml_edit::{Item, Table};
+
+    // Extract existing model_providers item, if any
+    let existing = match doc.remove("model_providers") {
+        Some(item) => item,
+        None => return, // nothing to promote
+    };
+
+    // Collect all provider entries as (key, Table) pairs
+    let entries: Vec<(String, Table)> = match &existing {
+        Item::Table(outer) => {
+            outer.iter().filter_map(|(k, v)| {
+                // Convert inline table to standard table
+                let tbl = match v {
+                    Item::Value(toml_edit::Value::InlineTable(it)) => {
+                        let mut t = it.clone().into_table();
+                        t.set_implicit(false);
+                        t
+                    }
+                    Item::Table(t) => t.clone(),
+                    _ => return None,
+                };
+                Some((k.to_string(), tbl))
+            }).collect()
+        }
+        _ => return, // unexpected shape; leave as-is
+    };
+
+    if entries.is_empty() {
+        // Re-insert unchanged if nothing to promote
+        doc["model_providers"] = existing;
+        return;
+    }
+
+    // Build a new standard table for model_providers
+    let mut outer = Table::new();
+    outer.set_implicit(true); // don't emit `[model_providers]` header line itself
+    for (key, tbl) in entries {
+        outer.insert(&key, Item::Table(tbl));
+    }
+    doc.insert("model_providers", Item::Table(outer));
+}
+
 fn backup(path: &Path) -> Result<(), TargetError> {
+
     if !path.exists() {
         return Ok(()); // nothing to backup
     }
@@ -510,4 +568,62 @@ trust_level = "trusted"
         let got = adapter.read().unwrap();
         assert_eq!(got.base_url, "https://example.com/v1");
     }
+
+    #[test]
+    fn test_write_expands_inline_table_to_standard_toml() {
+        // Simulate a config.toml written by Windows Codex Desktop App which uses inline format:
+        // `codex = { base_url = "...", ... }` instead of `[model_providers.codex]`
+        let inline_config = concat!(
+            "model_provider = \"custom\"\n",
+            "model = \"gpt-4o\"\n",
+            "\n",
+            "[model_providers]\n",
+            "codex = { base_url = \"https://old.example.com/v1\", name = \"codex\", requires_openai_auth = true, wire_api = \"responses\" }\n",
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), inline_config).unwrap();
+        fs::write(dir.path().join("auth.json"), r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-old"}"#).unwrap();
+        let adapter = CodexAdapter::new_with_dir(dir.path());
+
+        let new_cfg = TargetConfig {
+            base_url: "https://coderelay.cn/v1".to_string(),
+            api_key: "sk-new".to_string(),
+            model: "gpt-4o".to_string(),
+            wire_api: "responses".to_string(),
+        };
+        adapter.write(&new_cfg).unwrap();
+
+        let content = fs::read_to_string(adapter.config_path()).unwrap();
+
+        // Should NOT contain inline table format
+        assert!(
+            !content.contains("codex = {"),
+            "codex provider should not be written as inline table, got:\n{}", content
+        );
+        // Should use standard section header format
+        assert!(
+            content.contains("[model_providers.codex]"),
+            "codex provider should use [model_providers.codex] section format, got:\n{}", content
+        );
+    }
+
+    #[test]
+    fn test_write_sets_requires_openai_auth_false() {
+        let (_dir, adapter) = setup_codex_dir();
+        let new_cfg = TargetConfig {
+            base_url: "https://coderelay.cn/v1".to_string(),
+            api_key: "sk-relay".to_string(),
+            model: "gpt-4o".to_string(),
+            wire_api: "responses".to_string(),
+        };
+        adapter.write(&new_cfg).unwrap();
+
+        let content = fs::read_to_string(adapter.config_path()).unwrap();
+        assert!(
+            content.contains("requires_openai_auth = false"),
+            "requires_openai_auth should be false for relay gateway, got:\n{}", content
+        );
+    }
 }
+
