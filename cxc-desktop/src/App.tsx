@@ -561,7 +561,7 @@ function App() {
       setError(null);
       let updatedCfg: Config;
       if (showForm === "add") {
-        updatedCfg = await invoke<Config>("add_provider", { provider: formValues });
+        updatedCfg = await invoke<Config>("add_provider", { provider: formValues, targetTool });
       } else {
         updatedCfg = await invoke<Config>("edit_provider", {
           oldName: editingName,
@@ -582,7 +582,7 @@ function App() {
     }
     try {
       setError(null);
-      const updatedCfg = await invoke<Config>("delete_provider", { name });
+      const updatedCfg = await invoke<Config>("delete_provider", { name, targetTool });
       setConfig(updatedCfg);
     } catch (e: any) {
       setError(e.toString());
@@ -593,7 +593,7 @@ function App() {
     try {
       setTestingProvider(name);
       setError(null);
-      const updatedCfg = await invoke<Config>("test_provider", { name });
+      const updatedCfg = await invoke<Config>("test_provider", { name, targetTool });
       setConfig(updatedCfg);
     } catch (e: any) {
       setError(e.toString());
@@ -606,7 +606,7 @@ function App() {
     try {
       setTestingAll(true);
       setError(null);
-      const updatedCfg = await invoke<Config>("test_all_providers");
+      const updatedCfg = await invoke<Config>("test_all_providers", { targetTool });
       setConfig(updatedCfg);
     } catch (e: any) {
       setError(e.toString());
