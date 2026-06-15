@@ -59,6 +59,8 @@ interface Config {
   providers: Provider[];
   codex_source?: string;
   codex_custom_dir?: string;
+  claude_source?: string;
+  claude_custom_dir?: string;
 }
 
 const locales = {
@@ -94,18 +96,23 @@ const locales = {
     tryAlteringSearch: "尝试修改您的搜索过滤条件",
     createFirst: "请配置您的第一个 API 中转节点以开始使用。",
     settingsTitle: "CXC 系统设置",
-    settingsDesc: "配置 Codex 配置文件写入的相关设置。",
+    settingsDesc: "配置 Codex 和 Claude CLI 配置文件写入的相关设置。",
     codexSourceLabel: "Codex 来源配置",
+    claudeSourceLabel: "Claude CLI 来源配置",
     desktopAppOption: "Desktop 客户端",
     desktopAppDesc: "Windows 客户端 (~/.codex)",
     wslCliOption: "WSL 命令行",
     wslCliDesc: "WSL 子系统环境路径",
     customDirLabel: "Codex 自定义目录",
+    claudeCustomDirLabel: "Claude CLI 自定义目录",
     wslRecommended: "WSL 环境推荐",
     wslPlaceholder: "例如: \\\\wsl.localhost\\Ubuntu\\home\\username\\.codex",
+    claudeWslPlaceholder: "例如: \\\\wsl.localhost\\Ubuntu\\home\\username\\.claude",
     appPlaceholder: "可选的自定义路径",
     wslNote: "WSL 注意事项: 请指定 WSL 中 .codex 文件夹的绝对 UNC network路径，以便 Windows 端的 CXC 能够成功写入配置文件。",
+    claudeWslNote: "WSL 注意事项: 请指定 WSL 中 .claude 文件夹的绝对 UNC network路径，以便 Windows 端的 CXC 能够成功写入配置文件。",
     appNote: "若留空，则默认使用您当前的用户家目录 (~/.codex)。",
+    claudeAppNote: "若留空，则默认使用您当前的用户家目录 (~/.claude)。",
     cancelBtn: "取消",
     saveSettingsBtn: "保存设置",
     savingSettingsBtn: "保存中...",
@@ -175,16 +182,21 @@ const locales = {
     settingsTitle: "CXC System Settings",
     settingsDesc: "Configure global CXC settings and Target Tool sources.",
     codexSourceLabel: "Codex Source (Codex 来源)",
+    claudeSourceLabel: "Claude CLI Source (Claude CLI 来源)",
     desktopAppOption: "Desktop App",
     desktopAppDesc: "Desktop version (~/.codex)",
     wslCliOption: "WSL CLI",
     wslCliDesc: "WSL environment paths",
     customDirLabel: "Codex Custom Directory (自定义目录)",
+    claudeCustomDirLabel: "Claude CLI Custom Directory",
     wslRecommended: "Recommended for WSL",
     wslPlaceholder: "e.g. \\\\wsl.localhost\\Ubuntu\\home\\username\\.codex",
+    claudeWslPlaceholder: "e.g. \\\\wsl.localhost\\Ubuntu\\home\\username\\.claude",
     appPlaceholder: "Optional custom path",
     wslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .codex folder so CXC on Windows can write config files successfully.",
+    claudeWslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .claude folder so CXC on Windows can write config files successfully.",
     appNote: "Defaults to your home directory (~/.codex) if left blank.",
+    claudeAppNote: "Defaults to your home directory (~/.claude) if left blank.",
     cancelBtn: "Cancel",
     saveSettingsBtn: "Save Settings",
     savingSettingsBtn: "Saving...",
@@ -281,6 +293,8 @@ function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [settingsSource, setSettingsSource] = useState<string>("app");
   const [settingsCustomDir, setSettingsCustomDir] = useState<string>("");
+  const [claudeSource, setClaudeSource] = useState<string>("wsl");
+  const [claudeCustomDir, setClaudeCustomDir] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("");
 
@@ -352,6 +366,8 @@ function App() {
       // Initialize settings from loaded config
       setSettingsSource(cfg.codex_source || "app");
       setSettingsCustomDir(cfg.codex_custom_dir || "");
+      setClaudeSource(cfg.claude_source || "wsl");
+      setClaudeCustomDir(cfg.claude_custom_dir || "");
     } catch (e: any) {
       setError(e.toString());
     } finally {
@@ -585,6 +601,8 @@ function App() {
       const updatedCfg = await invoke<Config>("save_settings", {
         source: settingsSource,
         customDir: settingsCustomDir,
+        claudeSource: claudeSource,
+        claudeCustomDir: claudeCustomDir,
       });
       setConfig(updatedCfg);
       setShowSettings(false);
@@ -1215,6 +1233,65 @@ function App() {
               />
               <p className="text-[10px] text-muted-foreground leading-normal mt-1">
                 {settingsSource === "wsl" ? t.wslNote : t.appNote}
+              </p>
+            </div>
+
+            {/* Claude CLI Configuration */}
+            <div className="space-y-2 pt-4 border-t border-border">
+              <Label className="text-xs font-bold text-muted-foreground">
+                {t.claudeSourceLabel}
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setClaudeSource("wsl")}
+                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                    claudeSource === "wsl"
+                      ? "border-primary bg-primary/[0.03] text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">{t.wslCliOption}</span>
+                    <span className="text-[10px] text-muted-foreground block mt-0.5">WSL 环境 (~/.claude)</span>
+                  </div>
+                  {claudeSource === "wsl" && <Check className="size-4 shrink-0" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setClaudeSource("app")}
+                  className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                    claudeSource === "app"
+                      ? "border-primary bg-primary/[0.03] text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">{t.desktopAppOption}</span>
+                    <span className="text-[10px] text-muted-foreground block mt-0.5">Windows 客户端 (~/.claude)</span>
+                  </div>
+                  {claudeSource === "app" && <Check className="size-4 shrink-0" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Claude custom directory input field */}
+            <div className="space-y-1">
+              <Label htmlFor="claude-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <span>{t.claudeCustomDirLabel}</span>
+                {claudeSource === "app" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
+              </Label>
+              <Input
+                id="claude-custom-dir"
+                type="text"
+                value={claudeCustomDir}
+                onChange={(e) => setClaudeCustomDir(e.target.value)}
+                placeholder={claudeSource === "app" ? t.claudeWslPlaceholder : t.appPlaceholder}
+                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+              />
+              <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+                {claudeSource === "app" ? t.claudeWslNote : t.claudeAppNote}
               </p>
             </div>
 

@@ -1,5 +1,5 @@
 use cxc_core::config::{self, Config, Provider};
-use cxc_core::target::{TargetAdapter, TargetConfig, codex::CodexAdapter};
+use cxc_core::target::{TargetAdapter, TargetConfig, codex::CodexAdapter, claude::ClaudeAdapter};
 use tauri::{Manager, Emitter};
 use tauri::menu::{Menu, MenuItem, CheckMenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
@@ -32,16 +32,22 @@ fn add_provider(app_handle: tauri::AppHandle, provider: Provider) -> Result<Conf
 #[tauri::command]
 fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provider) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    
+
     if cfg.active == old_name || cfg.active == updated.name {
-        let adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+        // Update Codex configuration
+        let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
         let tc = TargetConfig {
             base_url: updated.base_url.clone(),
             api_key: updated.api_key.clone(),
             model: updated.model.clone(),
             wire_api: if updated.wire_api.is_empty() { "responses".to_string() } else { updated.wire_api.clone() },
         };
-        adapter.write(&tc).map_err(|e| e.to_string())?;
+        codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+
+        // Update Claude CLI configuration
+        if let Ok(claude_adapter) = ClaudeAdapter::new() {
+            let _ = claude_adapter.write_provider(&updated);
+        }
     }
 
     config::edit_provider(&mut cfg, &old_name, updated).map_err(|e| e.to_string())?;
@@ -108,23 +114,32 @@ async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, 
 }
 
 #[tauri::command]
-fn save_settings(app_handle: tauri::AppHandle, source: String, custom_dir: String) -> Result<Config, String> {
+fn save_settings(app_handle: tauri::AppHandle, source: String, custom_dir: String, claude_source: String, claude_custom_dir: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     cfg.codex_source = Some(source);
     cfg.codex_custom_dir = custom_dir;
+    cfg.claude_source = Some(claude_source);
+    cfg.claude_custom_dir = claude_custom_dir;
     config::save(&cfg).map_err(|e| e.to_string())?;
 
     if !cfg.active.is_empty() {
         if let Some(p) = config::get_provider(&cfg, &cfg.active) {
             let p = p.clone();
-            let adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+
+            // Update Codex configuration
+            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
             let tc = TargetConfig {
                 base_url: p.base_url.clone(),
                 api_key: p.api_key.clone(),
                 model: p.model.clone(),
                 wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
             };
-            adapter.write(&tc).map_err(|e| e.to_string())?;
+            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+
+            // Update Claude CLI configuration
+            if let Ok(claude_adapter) = ClaudeAdapter::new() {
+                let _ = claude_adapter.write_provider(&p);
+            }
         }
     }
 
@@ -140,31 +155,37 @@ fn get_app_version(app_handle: tauri::AppHandle) -> String {
 
 fn do_switch_provider(app_handle: &tauri::AppHandle, name: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    
+
     let p = config::get_provider(&cfg, &name)
         .ok_or_else(|| format!("provider \"{}\" not found", name))?
         .clone();
-        
-    let adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
-    
+
+    // Update Codex configuration
+    let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+
     let tc = TargetConfig {
         base_url: p.base_url.clone(),
         api_key: p.api_key.clone(),
         model: p.model.clone(),
         wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
     };
-    
-    adapter.write(&tc).map_err(|e| e.to_string())?;
-    
+
+    codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+
+    // Update Claude CLI configuration
+    if let Ok(claude_adapter) = ClaudeAdapter::new() {
+        let _ = claude_adapter.write_provider(&p);
+    }
+
     config::set_active(&mut cfg, &name).map_err(|e| e.to_string())?;
-    
+
     let _ = update_tray_menu(app_handle);
-    
+
     let _ = notify_rust::Notification::new()
         .summary("CXC")
         .body(&format!("✓ Switched active provider to \"{}\"", name))
         .show();
-        
+
     let _ = app_handle.emit("config-updated", &cfg);
 
     Ok(cfg)
