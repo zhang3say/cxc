@@ -79,7 +79,8 @@ async fn test_provider(app_handle: tauri::AppHandle, name: String, target_tool: 
     };
 
     let tester = cxc_core::connectivity::Tester::new();
-    let res = tester.test(&p.base_url, &p.api_key, &p.model).await;
+    let is_claude = target_tool == "claude";
+    let res = tester.test(&p.base_url, &p.api_key, &p.model, is_claude).await;
 
     // Reload config AFTER the await to prevent overwriting other concurrent tests
     let mut cfg = config::load().map_err(|e| e.to_string())?;
@@ -99,10 +100,12 @@ async fn test_all_providers(app_handle: tauri::AppHandle, target_tool: String) -
     };
 
     let mut tasks = vec![];
+    let is_claude = target_tool == "claude";
     for p in providers {
+        let is_claude = is_claude;
         tasks.push(tokio::spawn(async move {
             let tester = cxc_core::connectivity::Tester::new();
-            let res = tester.test(&p.base_url, &p.api_key, &p.model).await;
+            let res = tester.test(&p.base_url, &p.api_key, &p.model, is_claude).await;
             (p.name.clone(), res.ok, res.latency_ms)
         }));
     }

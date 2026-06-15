@@ -34,7 +34,15 @@ impl Tester {
         Self { client }
     }
 
-    pub async fn test(&self, base_url: &str, api_key: &str, model: &str) -> Result {
+    pub async fn test(&self, base_url: &str, api_key: &str, model: &str, is_claude: bool) -> Result {
+        if is_claude {
+            self.test_claude(base_url, api_key, model).await
+        } else {
+            self.test_openai(base_url, api_key, model).await
+        }
+    }
+
+    async fn test_openai(&self, base_url: &str, api_key: &str, model: &str) -> Result {
         let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
         let req_body = ChatRequest {
@@ -159,6 +167,141 @@ impl Tester {
             error: String::new(),
         }
     }
+
+    async fn test_claude(&self, base_url: &str, api_key: &str, model: &str) -> Result {
+        let trimmed = base_url.trim().trim_end_matches('/');
+        let url = if trimmed.ends_with("/v1/messages") {
+            trimmed.to_string()
+        } else if trimmed.ends_with("/v1") {
+            format!("{}/messages", trimmed)
+        } else {
+            format!("{}/v1/messages", trimmed)
+        };
+
+        let req_body = AnthropicMessagesRequest {
+            model: model.to_string(),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: "say hi".to_string(),
+            }],
+            max_tokens: 1,
+        };
+
+        let start = Instant::now();
+        let res = self.client.post(&url)
+            .header("Content-Type", "application/json")
+            .header("x-api-key", api_key)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("anthropic-version", "2023-06-01")
+            .json(&req_body)
+            .send()
+            .await;
+
+        let latency_ms = start.elapsed().as_millis() as i64;
+
+        let resp = match res {
+            Ok(r) => r,
+            Err(e) => {
+                return Result {
+                    ok: false,
+                    latency_ms,
+                    response: String::new(),
+                    error: categorize_network_error(e),
+                };
+            }
+        };
+
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Result {
+                ok: false,
+                latency_ms,
+                response: String::new(),
+                error: "invalid API key (auth error)".to_string(),
+            };
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Result {
+                ok: false,
+                latency_ms,
+                response: String::new(),
+                error: "endpoint not found — check base_url".to_string(),
+            };
+        }
+
+        let raw_body = match resp.bytes().await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return Result {
+                    ok: false,
+                    latency_ms,
+                    response: String::new(),
+                    error: format!("reading response: {}", e),
+                };
+            }
+        };
+
+        let body_str = String::from_utf8_lossy(&raw_body);
+
+        let anthropic_resp: AnthropicMessagesResponse = match serde_json::from_slice(&raw_body) {
+            Ok(ar) => ar,
+            Err(_) => {
+                return Result {
+                    ok: false,
+                    latency_ms,
+                    response: String::new(),
+                    error: format!("invalid response (status {}): {}", status.as_u16(), truncate(&body_str, 100)),
+                };
+            }
+        };
+
+        if let Some(err) = anthropic_resp.error {
+            return Result {
+                ok: false,
+                latency_ms,
+                response: String::new(),
+                error: format!("API error: {}", err.message),
+            };
+        }
+
+        if !status.is_success() {
+            return Result {
+                ok: false,
+                latency_ms,
+                response: String::new(),
+                error: format!("unexpected status {}: {}", status.as_u16(), truncate(&body_str, 100)),
+            };
+        }
+
+        let content_list = match anthropic_resp.content {
+            Some(c) => c,
+            None => {
+                return Result {
+                    ok: false,
+                    latency_ms,
+                    response: String::new(),
+                    error: "no content returned".to_string(),
+                };
+            }
+        };
+
+        if content_list.is_empty() {
+            return Result {
+                ok: false,
+                latency_ms,
+                response: String::new(),
+                error: "no content returned".to_string(),
+            };
+        }
+
+        let content = &content_list[0].text;
+        Result {
+            ok: true,
+            latency_ms,
+            response: truncate(content, 50),
+            error: String::new(),
+        }
+    }
 }
 
 // ── Model Discovery ─────────────────────────────────────────────────────────
@@ -237,6 +380,36 @@ struct ApiError {
     message: String,
 }
 
+// ── Anthropic Messages structs ──────────────────────────────────────────────
+#[derive(Serialize)]
+struct AnthropicMessagesRequest {
+    model: String,
+    messages: Vec<AnthropicMessage>,
+    max_tokens: u32,
+}
+
+#[derive(Serialize)]
+struct AnthropicMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct AnthropicMessagesResponse {
+    content: Option<Vec<AnthropicContent>>,
+    error: Option<AnthropicError>,
+}
+
+#[derive(Deserialize)]
+struct AnthropicContent {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct AnthropicError {
+    message: String,
+}
+
 fn categorize_network_error(err: reqwest::Error) -> String {
     let msg = err.to_string().to_lowercase();
     if msg.contains("dns") || msg.contains("resolve") || msg.contains("unreachable") {
@@ -295,7 +468,7 @@ mod tests {
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4").await;
+        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4", false).await;
 
         assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
         assert_eq!(result.response, "Hi there!");
@@ -321,7 +494,7 @@ mod tests {
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4").await;
+        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4", false).await;
 
         assert!(result.ok);
         assert_eq!(result.response.chars().count(), 51); // 50 chars + 1 ellipsis char
@@ -338,7 +511,7 @@ mod tests {
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-bad", "gpt-4").await;
+        let result = tester.test(&mock_server.uri(), "sk-bad", "gpt-4", false).await;
 
         assert!(!result.ok);
         assert!(result.error.contains("auth") || result.error.contains("key"));
@@ -354,7 +527,7 @@ mod tests {
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-bad", "gpt-4").await;
+        let result = tester.test(&mock_server.uri(), "sk-bad", "gpt-4", false).await;
 
         assert!(!result.ok);
         assert!(result.error.contains("auth") || result.error.contains("key"));
@@ -369,7 +542,7 @@ mod tests {
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4").await;
+        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4", false).await;
 
         assert!(!result.ok);
         assert!(result.error.contains("not found"));
@@ -391,7 +564,7 @@ mod tests {
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "bad-model").await;
+        let result = tester.test(&mock_server.uri(), "sk-test", "bad-model", false).await;
 
         assert!(!result.ok);
         assert!(result.error.to_lowercase().contains("model"));
@@ -402,7 +575,7 @@ mod tests {
     async fn test_network_error() {
         let tester = Tester::new();
         // Use a non-existent domain to trigger a DNS lookup failure immediately
-        let result = tester.test("http://cxc-nonexistent-domain-123.com", "sk-test", "gpt-4").await;
+        let result = tester.test("http://cxc-nonexistent-domain-123.com", "sk-test", "gpt-4", false).await;
 
         assert!(!result.ok);
         assert!(
@@ -473,5 +646,31 @@ mod tests {
         let result = fetch_models("http://cxc-nonexistent-domain-456.com", "sk-test").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("network error"));
+    }
+
+    #[tokio::test]
+    async fn test_claude_success() {
+        let mock_server = MockServer::start().await;
+        let response_body = serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": "Hello, Human!"
+            }]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("x-api-key", "sk-claude"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let tester = Tester::new();
+        let result = tester.test(&mock_server.uri(), "sk-claude", "claude-3-opus", true).await;
+
+        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
+        assert_eq!(result.response, "Hello, Human!");
+        assert!(result.latency_ms >= 0);
     }
 }
