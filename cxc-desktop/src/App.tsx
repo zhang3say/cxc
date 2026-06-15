@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Card,
   CardHeader,
@@ -134,7 +135,9 @@ const locales = {
     searchModelPlaceholder: "搜索模型...",
     noModelsFound: "未找到匹配的模型",
     retryBtn: "重试",
-    quickSwitchTooltip: "点击快速切换模型"
+    quickSwitchTooltip: "点击快速切换模型",
+    endpointTooltip: "Ctrl + 左键：在浏览器中打开\n普通左键：复制到剪贴板",
+    copiedToClipboard: "已复制到剪贴板"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -211,7 +214,9 @@ const locales = {
     searchModelPlaceholder: "Search models...",
     noModelsFound: "No matching models found",
     retryBtn: "Retry",
-    quickSwitchTooltip: "Click to quick switch model"
+    quickSwitchTooltip: "Click to quick switch model",
+    endpointTooltip: "Ctrl + Click: open in browser\nClick: copy to clipboard",
+    copiedToClipboard: "Copied to clipboard"
   }
 };
 
@@ -297,6 +302,9 @@ function App() {
   const [quickSwitchModels, setQuickSwitchModels] = useState<string[]>([]);
   const [quickSwitchError, setQuickSwitchError] = useState<string | null>(null);
   const [quickSwitchSearch, setQuickSwitchSearch] = useState<string>("");
+
+  // Toast notification state
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Apply theme
   useEffect(() => {
@@ -474,6 +482,31 @@ function App() {
       setQuickSwitchError(e.toString());
     }
   }
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 2000);
+  };
+
+  const handleEndpointClick = async (e: React.MouseEvent, url: string) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      try {
+        await openUrl(url);
+      } catch (err) {
+        console.error("Failed to open URL:", err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast(t.copiedToClipboard);
+      } catch (err) {
+        console.error("Failed to copy URL:", err);
+      }
+    }
+  };
 
   async function handleSubmitForm(e: React.FormEvent) {
     e.preventDefault();
@@ -851,7 +884,13 @@ function App() {
                           {/* Base URL column */}
                           <div className="flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 truncate flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
-                            <span className="truncate" title={p.base_url}>{p.base_url}</span>
+                            <span
+                              onClick={(e) => handleEndpointClick(e, p.base_url)}
+                              className="truncate cursor-pointer hover:text-primary hover:underline transition-colors"
+                              title={t.endpointTooltip}
+                            >
+                              {p.base_url}
+                            </span>
                           </div>
 
                           {/* Model column */}
@@ -983,7 +1022,11 @@ function App() {
                           <div className="flex flex-col gap-1 p-2 rounded-md bg-background border border-border">
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Endpoint:</span>
-                              <span className="font-mono text-foreground/75 truncate max-w-[150px]" title={p.base_url}>
+                              <span
+                                onClick={(e) => handleEndpointClick(e, p.base_url)}
+                                className="font-mono text-foreground/75 truncate max-w-[150px] cursor-pointer hover:text-primary hover:underline transition-colors"
+                                title={t.endpointTooltip}
+                              >
                                 {p.base_url}
                               </span>
                             </div>
@@ -1466,6 +1509,14 @@ function App() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 bg-card border border-border shadow-lg px-4 py-2.5 rounded-lg text-xs font-semibold text-foreground flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Check className="size-3.5 text-primary shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
