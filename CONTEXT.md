@@ -10,7 +10,7 @@ A named API relay endpoint configuration. Each Provider consists of a `name`, `b
 
 ## Target Tool（目标工具）
 
-An AI coding tool whose configuration CXC manages. Each Target Tool has a known config file path and format. MVP targets: Codex. Future: Claude. CXC writes Provider details into the Target Tool's config file when the user switches providers.
+An AI coding tool whose configuration CXC manages. Each Target Tool has a known config file path and format. Currently supported targets: Codex and Claude CLI. CXC writes Provider details into the Target Tool's config file when the user switches providers.
 
 ## Active Provider
 
@@ -34,7 +34,7 @@ The graphical user interface (GUI) of CXC built with Tauri. It provides a visual
 
 ## System Tray（系统托盘）
 
-A persistent quick-access menu in the operating system's notification area. It allows users to switch Active Providers instantly and view notification status without launching the full Desktop App window.
+A persistent quick-access menu in the operating system's notification area. It allows users to switch Active Providers instantly and view notification status without launching the full Desktop App window. Note: As a current design limitation, the system tray menu only displays and manages the provider list for the Codex target tool.
 
 ## Codex Source (Codex 来源)
 

@@ -21,10 +21,9 @@ fn switch_provider(app_handle: tauri::AppHandle, name: String, target_tool: Stri
 }
 
 #[tauri::command]
-fn add_provider(app_handle: tauri::AppHandle, provider: Provider) -> Result<Config, String> {
+fn add_provider(app_handle: tauri::AppHandle, provider: Provider, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::add_provider(&mut cfg, provider).map_err(|e| e.to_string())?;
-    config::save(&cfg).map_err(|e| e.to_string())?;
+    config::add_provider(&mut cfg, &target_tool, provider).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
     Ok(cfg)
 }
@@ -33,8 +32,15 @@ fn add_provider(app_handle: tauri::AppHandle, provider: Provider) -> Result<Conf
 fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provider, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
-    if cfg.active == old_name || cfg.active == updated.name {
-        // Update based on target tool
+    // Check if the active provider for this target_tool is being edited
+    let current_active = if target_tool == "codex" {
+        cfg.codex_active.clone()
+    } else {
+        cfg.claude_active.clone()
+    };
+
+    if current_active == old_name || current_active == updated.name {
+        // Write updated config to target tool's config file
         if target_tool == "codex" {
             let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
             let tc = TargetConfig {
@@ -50,43 +56,44 @@ fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provid
         }
     }
 
-    config::edit_provider(&mut cfg, &old_name, updated).map_err(|e| e.to_string())?;
-    config::save(&cfg).map_err(|e| e.to_string())?;
+    config::edit_provider(&mut cfg, &target_tool, &old_name, updated).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
     Ok(cfg)
 }
 
 #[tauri::command]
-fn delete_provider(app_handle: tauri::AppHandle, name: String) -> Result<Config, String> {
+fn delete_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::remove_provider(&mut cfg, &name).map_err(|e| e.to_string())?;
-    config::save(&cfg).map_err(|e| e.to_string())?;
+    config::remove_provider(&mut cfg, &target_tool, &name).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
     Ok(cfg)
 }
 
 #[tauri::command]
-async fn test_provider(app_handle: tauri::AppHandle, name: String) -> Result<Config, String> {
+async fn test_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let p = config::get_provider(&cfg, &name)
+    let p = config::get_provider(&cfg, &target_tool, &name)
         .ok_or_else(|| format!("provider \"{}\" not found", name))?
         .clone();
 
     let tester = cxc_core::connectivity::Tester::new();
     let res = tester.test(&p.base_url, &p.api_key, &p.model).await;
 
-    config::update_test_result(&mut cfg, &name, res.latency_ms, res.ok).map_err(|e| e.to_string())?;
-    config::save(&cfg).map_err(|e| e.to_string())?;
+    config::update_test_result(&mut cfg, &target_tool, &name, res.latency_ms, res.ok).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
 
     Ok(cfg)
 }
 
 #[tauri::command]
-async fn test_all_providers(app_handle: tauri::AppHandle) -> Result<Config, String> {
+async fn test_all_providers(app_handle: tauri::AppHandle, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let providers = cfg.providers.clone();
-    
+    let providers = if target_tool == "codex" {
+        cfg.codex_providers.clone()
+    } else {
+        cfg.claude_providers.clone()
+    };
+
     let mut tasks = vec![];
     for p in providers {
         tasks.push(tokio::spawn(async move {
@@ -95,14 +102,14 @@ async fn test_all_providers(app_handle: tauri::AppHandle) -> Result<Config, Stri
             (p.name.clone(), res.ok, res.latency_ms)
         }));
     }
-    
+
     for task in tasks {
         if let std::result::Result::Ok(res) = task.await {
             let (name, is_ok, latency) = res;
-            let _ = config::update_test_result(&mut cfg, &name, latency, is_ok);
+            let _ = config::update_test_result(&mut cfg, &target_tool, &name, latency, is_ok);
         }
     }
-    
+
     config::save(&cfg).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
     Ok(cfg)
@@ -122,24 +129,22 @@ fn save_settings(app_handle: tauri::AppHandle, target_tool: String, source: Stri
     cfg.claude_custom_dir = claude_custom_dir.clone();
     config::save(&cfg).map_err(|e| e.to_string())?;
 
-    if !cfg.active.is_empty() {
-        if let Some(p) = config::get_provider(&cfg, &cfg.active) {
-            let p = p.clone();
-
-            // Update based on target tool
-            if target_tool == "codex" {
-                let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
-                let tc = TargetConfig {
-                    base_url: p.base_url.clone(),
-                    api_key: p.api_key.clone(),
-                    model: p.model.clone(),
-                    wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
-                };
-                codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-            } else if target_tool == "claude" {
-                let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
-                claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
-            }
+    // Re-apply active provider config to target tool after settings change
+    if target_tool == "codex" {
+        if let Some(p) = config::get_active(&cfg, "codex").cloned() {
+            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+            let tc = TargetConfig {
+                base_url: p.base_url.clone(),
+                api_key: p.api_key.clone(),
+                model: p.model.clone(),
+                wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
+            };
+            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+        }
+    } else if target_tool == "claude" {
+        if let Some(p) = config::get_active(&cfg, "claude").cloned() {
+            let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+            claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
         }
     }
 
@@ -156,11 +161,11 @@ fn get_app_version(app_handle: tauri::AppHandle) -> String {
 fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
-    let p = config::get_provider(&cfg, &name)
+    let p = config::get_provider(&cfg, &target_tool, &name)
         .ok_or_else(|| format!("provider \"{}\" not found", name))?
         .clone();
 
-    // Update based on target tool
+    // Write to target tool config file
     if target_tool == "codex" {
         let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
 
@@ -177,7 +182,7 @@ fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: 
         claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
     }
 
-    config::set_active(&mut cfg, &name).map_err(|e| e.to_string())?;
+    config::set_active(&mut cfg, &target_tool, &name).map_err(|e| e.to_string())?;
 
     let _ = update_tray_menu(app_handle);
 
@@ -193,11 +198,13 @@ fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: 
 
 fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let cfg = config::load().map_err(|e| e.to_string())?;
-    
+
     let menu = Menu::new(app_handle).map_err(|e| e.to_string())?;
-    
-    for p in &cfg.providers {
-        let is_active = cfg.active == p.name;
+
+    // System Tray 只显示 Codex providers（已知的设计限制，见 CONTEXT.md）
+    // 托盘无法选择 Target Tool，固定使用 Codex 列表
+    for p in &cfg.codex_providers {
+        let is_active = cfg.codex_active == p.name;
         let item = CheckMenuItem::with_id(
             app_handle,
             format!("prov:{}", p.name),
@@ -206,13 +213,13 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
             is_active,
             None::<&str>,
         ).map_err(|e| e.to_string())?;
-        
+
         menu.append(&item).map_err(|e| e.to_string())?;
     }
-    
+
     let separator = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
     menu.append(&separator).map_err(|e| e.to_string())?;
-    
+
     let show_item = MenuItem::with_id(
         app_handle,
         "show_window",
@@ -221,7 +228,7 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
         None::<&str>,
     ).map_err(|e| e.to_string())?;
     menu.append(&show_item).map_err(|e| e.to_string())?;
-    
+
     let quit_item = MenuItem::with_id(
         app_handle,
         "quit",
@@ -230,11 +237,11 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
         None::<&str>,
     ).map_err(|e| e.to_string())?;
     menu.append(&quit_item).map_err(|e| e.to_string())?;
-    
+
     if let Some(tray) = app_handle.tray_by_id("cxc_tray") {
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -244,7 +251,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            
+
             #[cfg(target_os = "macos")]
             const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray_iconTemplate.png");
             #[cfg(not(target_os = "macos"))]
@@ -283,19 +290,19 @@ pub fn run() {
                         }
                     } else if id.starts_with("prov:") {
                         let prov_name = id.trim_start_matches("prov:").to_string();
-                        // Default to codex for tray menu (user can't select target tool from tray)
+                        // System Tray 固定使用 Codex（已知设计限制）
                         let _ = do_switch_provider(app_handle, prov_name, "codex".to_string());
                     }
                 })
                 .build(app)?;
-                
+
             let _ = update_tray_menu(&handle);
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet, 
-            get_config, 
+            greet,
+            get_config,
             switch_provider,
             add_provider,
             edit_provider,

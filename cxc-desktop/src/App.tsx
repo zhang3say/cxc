@@ -55,8 +55,15 @@ interface Provider {
 }
 
 interface Config {
+  // 旧字段（向后兼容，已废弃）
   active: string;
   providers: Provider[];
+  // 新字段：按 Target Tool 分开存储
+  codex_active: string;
+  codex_providers: Provider[];
+  claude_active: string;
+  claude_providers: Provider[];
+  // 设置字段
   codex_source?: string;
   codex_custom_dir?: string;
   claude_source?: string;
@@ -639,12 +646,20 @@ function App() {
     }
   }
 
-  const filteredProviders = config?.providers.filter(
+  // 根据当前选中的 Target Tool 获取对应的 providers 列表和 active 名称
+  const currentProviders = config
+    ? (targetTool === "codex" ? config.codex_providers : config.claude_providers) ?? []
+    : [];
+  const currentActive = config
+    ? (targetTool === "codex" ? config.codex_active : config.claude_active) ?? ""
+    : "";
+
+  const filteredProviders = currentProviders.filter(
     (p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.remark && p.remark.toLowerCase().includes(searchQuery.toLowerCase()))
-  ) || [];
+  );
 
   const filteredQuickSwitchModels = quickSwitchModels.filter((model) =>
     model.toLowerCase().includes(quickSwitchSearch.toLowerCase())
@@ -876,7 +891,7 @@ function App() {
               </Button>
             </div>
 
-            {config && config.providers.length > 0 && (
+            {currentProviders.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -926,7 +941,7 @@ function App() {
                     </div>
 
                     {filteredProviders.map((p) => {
-                      const isActive = config?.active === p.name;
+                      const isActive = currentActive === p.name;
                       const isThisSwitching = switching === p.name;
                       const isTesting = testingProvider === p.name || testingAll;
 
@@ -1057,7 +1072,7 @@ function App() {
                 /* Card Grid View Layout */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredProviders.map((p) => {
-                    const isActive = config?.active === p.name;
+                    const isActive = currentActive === p.name;
                     const isThisSwitching = switching === p.name;
                     const isTesting = testingProvider === p.name || testingAll;
 

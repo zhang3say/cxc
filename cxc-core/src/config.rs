@@ -81,17 +81,31 @@ fn default_wire_api() -> String {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Config {
-    pub active: String,
+    // Codex 配置
     #[serde(default)]
-    pub providers: Vec<Provider>,
+    pub codex_active: String,
+    #[serde(default)]
+    pub codex_providers: Vec<Provider>,
     #[serde(default)]
     pub codex_source: Option<String>,
     #[serde(default)]
     pub codex_custom_dir: String,
+
+    // Claude CLI 配置
+    #[serde(default)]
+    pub claude_active: String,
+    #[serde(default)]
+    pub claude_providers: Vec<Provider>,
     #[serde(default)]
     pub claude_source: Option<String>,
     #[serde(default)]
     pub claude_custom_dir: String,
+
+    // 旧字段（向后兼容，迁移后不再保存）
+    #[serde(default, skip_serializing)]
+    pub active: String,
+    #[serde(default, skip_serializing)]
+    pub providers: Vec<Provider>,
 }
 
 pub fn config_path() -> Result<PathBuf, ConfigError> {
@@ -118,7 +132,18 @@ pub fn load() -> Result<Config, ConfigError> {
         source: err,
     })?;
 
-    let cfg: Config = serde_yaml::from_slice(&data)?;
+    let mut cfg: Config = serde_yaml::from_slice(&data)?;
+
+    // 自动迁移：如果检测到旧字段，迁移到 Codex 配置
+    if cfg.codex_providers.is_empty() && !cfg.providers.is_empty() {
+        cfg.codex_providers = cfg.providers.clone();
+        cfg.codex_active = cfg.active.clone();
+        cfg.providers.clear();
+        cfg.active.clear();
+        // 立即保存迁移后的配置
+        save(&cfg)?;
+    }
+
     Ok(cfg)
 }
 
@@ -155,28 +180,39 @@ fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Resul
     Ok(())
 }
 
-pub fn add_provider(cfg: &mut Config, mut p: Provider) -> Result<(), ConfigError> {
-    if cfg.providers.iter().any(|prov| prov.name == p.name) {
+pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Result<(), ConfigError> {
+    let (providers, active) = if target_tool == "codex" {
+        (&mut cfg.codex_providers, &mut cfg.codex_active)
+    } else {
+        (&mut cfg.claude_providers, &mut cfg.claude_active)
+    };
+
+    if providers.iter().any(|prov| prov.name == p.name) {
         return Err(ConfigError::ProviderExists(p.name));
     }
     if p.wire_api.is_empty() {
         p.wire_api = default_wire_api();
     }
-    cfg.providers.push(p.clone());
-    if cfg.active.is_empty() {
-        cfg.active = p.name;
+    providers.push(p.clone());
+    if active.is_empty() {
+        *active = p.name;
     }
     save(cfg)
 }
 
-pub fn edit_provider(cfg: &mut Config, old_name: &str, mut updated: Provider) -> Result<(), ConfigError> {
-    let idx = cfg
-        .providers
+pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut updated: Provider) -> Result<(), ConfigError> {
+    let (providers, active) = if target_tool == "codex" {
+        (&mut cfg.codex_providers, &mut cfg.codex_active)
+    } else {
+        (&mut cfg.claude_providers, &mut cfg.claude_active)
+    };
+
+    let idx = providers
         .iter()
         .position(|prov| prov.name == old_name)
         .ok_or_else(|| ConfigError::ProviderNotFound(old_name.to_string()))?;
 
-    if updated.name != old_name && cfg.providers.iter().any(|prov| prov.name == updated.name) {
+    if updated.name != old_name && providers.iter().any(|prov| prov.name == updated.name) {
         return Err(ConfigError::ProviderExists(updated.name));
     }
 
@@ -184,7 +220,7 @@ pub fn edit_provider(cfg: &mut Config, old_name: &str, mut updated: Provider) ->
         updated.wire_api = default_wire_api();
     }
 
-    let existing = &cfg.providers[idx];
+    let existing = &providers[idx];
     if updated.last_test.is_none() {
         updated.last_test = existing.last_test;
     }
@@ -195,55 +231,81 @@ pub fn edit_provider(cfg: &mut Config, old_name: &str, mut updated: Provider) ->
         updated.last_ok = existing.last_ok;
     }
 
-    cfg.providers[idx] = updated.clone();
+    providers[idx] = updated.clone();
 
-    if cfg.active == old_name {
-        cfg.active = updated.name;
+    if *active == old_name {
+        *active = updated.name;
     }
 
     save(cfg)
 }
 
-pub fn remove_provider(cfg: &mut Config, name: &str) -> Result<(), ConfigError> {
-    if cfg.active == name {
+pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Result<(), ConfigError> {
+    let (providers, active) = if target_tool == "codex" {
+        (&mut cfg.codex_providers, &cfg.codex_active)
+    } else {
+        (&mut cfg.claude_providers, &cfg.claude_active)
+    };
+
+    if *active == name {
         return Err(ConfigError::CannotRemoveActive(name.to_string()));
     }
-    let idx = cfg
-        .providers
+    let idx = providers
         .iter()
         .position(|prov| prov.name == name)
         .ok_or_else(|| ConfigError::ProviderNotFound(name.to_string()))?;
 
-    cfg.providers.remove(idx);
+    providers.remove(idx);
     save(cfg)
 }
 
-pub fn set_active(cfg: &mut Config, name: &str) -> Result<(), ConfigError> {
-    if !cfg.providers.iter().any(|prov| prov.name == name) {
+pub fn set_active(cfg: &mut Config, target_tool: &str, name: &str) -> Result<(), ConfigError> {
+    let (providers, active) = if target_tool == "codex" {
+        (&cfg.codex_providers, &mut cfg.codex_active)
+    } else {
+        (&cfg.claude_providers, &mut cfg.claude_active)
+    };
+
+    if !providers.iter().any(|prov| prov.name == name) {
         return Err(ConfigError::ProviderNotFound(name.to_string()));
     }
-    cfg.active = name.to_string();
+    *active = name.to_string();
     save(cfg)
 }
 
-pub fn get_provider<'a>(cfg: &'a Config, name: &str) -> Option<&'a Provider> {
-    cfg.providers.iter().find(|prov| prov.name == name)
+pub fn get_provider<'a>(cfg: &'a Config, target_tool: &str, name: &str) -> Option<&'a Provider> {
+    let providers = if target_tool == "codex" {
+        &cfg.codex_providers
+    } else {
+        &cfg.claude_providers
+    };
+    providers.iter().find(|prov| prov.name == name)
 }
 
-pub fn get_active<'a>(cfg: &'a Config) -> Option<&'a Provider> {
-    get_provider(cfg, &cfg.active)
+pub fn get_active<'a>(cfg: &'a Config, target_tool: &str) -> Option<&'a Provider> {
+    let (providers, active) = if target_tool == "codex" {
+        (&cfg.codex_providers, &cfg.codex_active)
+    } else {
+        (&cfg.claude_providers, &cfg.claude_active)
+    };
+    providers.iter().find(|p| p.name == *active)
 }
 
-pub fn update_test_result(cfg: &mut Config, name: &str, latency_ms: i64, ok: bool) -> Result<(), ConfigError> {
-    let idx = cfg
-        .providers
+pub fn update_test_result(cfg: &mut Config, target_tool: &str, name: &str, latency_ms: i64, ok: bool) -> Result<(), ConfigError> {
+    let providers = if target_tool == "codex" {
+        &mut cfg.codex_providers
+    } else {
+        &mut cfg.claude_providers
+    };
+
+    let idx = providers
         .iter()
         .position(|prov| prov.name == name)
         .ok_or_else(|| ConfigError::ProviderNotFound(name.to_string()))?;
 
-    cfg.providers[idx].last_test = Some(Local::now());
-    cfg.providers[idx].latency_ms = Some(latency_ms);
-    cfg.providers[idx].last_ok = Some(ok);
+    providers[idx].last_test = Some(Local::now());
+    providers[idx].latency_ms = Some(latency_ms);
+    providers[idx].last_ok = Some(ok);
 
     save(cfg)
 }
@@ -278,11 +340,11 @@ mod tests {
             last_ok: None,
             claude_models: None,
         };
-        add_provider(&mut cfg, p).unwrap();
+        add_provider(&mut cfg, "codex", p).unwrap();
 
-        assert_eq!(cfg.providers.len(), 1);
-        assert_eq!(cfg.active, "test");
-        assert_eq!(cfg.providers[0].wire_api, "responses");
+        assert_eq!(cfg.codex_providers.len(), 1);
+        assert_eq!(cfg.codex_active, "test");
+        assert_eq!(cfg.codex_providers[0].wire_api, "responses");
     }
 
     #[test]
@@ -301,8 +363,8 @@ mod tests {
             last_ok: None,
             claude_models: None,
         };
-        add_provider(&mut cfg, p.clone()).unwrap();
-        let err = add_provider(&mut cfg, p);
+        add_provider(&mut cfg, "codex", p.clone()).unwrap();
+        let err = add_provider(&mut cfg, "codex", p);
         assert!(err.is_err());
     }
 
@@ -310,7 +372,7 @@ mod tests {
     fn test_first_provider_becomes_active() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -322,7 +384,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
             base_url: "https://b.com/v1".to_string(),
             api_key: "k2".to_string(),
@@ -335,14 +397,14 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        assert_eq!(cfg.active, "a");
+        assert_eq!(cfg.codex_active, "a");
     }
 
     #[test]
     fn test_remove_provider() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -354,7 +416,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
             base_url: "https://b.com/v1".to_string(),
             api_key: "k2".to_string(),
@@ -366,17 +428,17 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        set_active(&mut cfg, "b").unwrap();
-        remove_provider(&mut cfg, "a").unwrap();
+        set_active(&mut cfg, "codex", "b").unwrap();
+        remove_provider(&mut cfg, "codex", "a").unwrap();
 
-        assert_eq!(cfg.providers.len(), 1);
+        assert_eq!(cfg.codex_providers.len(), 1);
     }
 
     #[test]
     fn test_remove_active_provider_fails() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -389,7 +451,7 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        let err = remove_provider(&mut cfg, "a");
+        let err = remove_provider(&mut cfg, "codex", "a");
         assert!(err.is_err());
     }
 
@@ -397,7 +459,7 @@ mod tests {
     fn test_remove_nonexistent_provider_fails() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -410,7 +472,7 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        let err = remove_provider(&mut cfg, "nonexistent");
+        let err = remove_provider(&mut cfg, "codex", "nonexistent");
         assert!(err.is_err());
     }
 
@@ -418,7 +480,7 @@ mod tests {
     fn test_set_active() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -430,7 +492,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
             base_url: "https://b.com/v1".to_string(),
             api_key: "k2".to_string(),
@@ -443,15 +505,15 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        set_active(&mut cfg, "b").unwrap();
-        assert_eq!(cfg.active, "b");
+        set_active(&mut cfg, "codex", "b").unwrap();
+        assert_eq!(cfg.codex_active, "b");
     }
 
     #[test]
     fn test_persistence() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "sk-abc".to_string(),
@@ -465,8 +527,8 @@ mod tests {
         }).unwrap();
 
         let loaded = load().unwrap();
-        assert_eq!(loaded.providers.len(), 1);
-        assert_eq!(loaded.providers[0].api_key, "sk-abc");
+        assert_eq!(loaded.codex_providers.len(), 1);
+        assert_eq!(loaded.codex_providers[0].api_key, "sk-abc");
     }
 
     #[test]
@@ -474,7 +536,7 @@ mod tests {
     fn test_config_file_permissions() {
         let (_dir, path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -496,7 +558,7 @@ mod tests {
     fn test_update_test_result() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -509,8 +571,8 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        update_test_result(&mut cfg, "a", 123, true).unwrap();
-        let p = get_provider(&cfg, "a").unwrap();
+        update_test_result(&mut cfg, "codex", "a", 123, true).unwrap();
+        let p = get_provider(&cfg, "codex", "a").unwrap();
         assert_eq!(p.latency_ms, Some(123));
         assert_eq!(p.last_ok, Some(true));
         assert!(p.last_test.is_some());
@@ -520,7 +582,7 @@ mod tests {
     fn test_remark_persistence() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com/v1".to_string(),
             api_key: "k1".to_string(),
@@ -534,15 +596,15 @@ mod tests {
         }).unwrap();
 
         let loaded = load().unwrap();
-        assert_eq!(loaded.providers.len(), 1);
-        assert_eq!(loaded.providers[0].remark, Some("My backup endpoint".to_string()));
+        assert_eq!(loaded.codex_providers.len(), 1);
+        assert_eq!(loaded.codex_providers[0].remark, Some("My backup endpoint".to_string()));
     }
 
     #[test]
     fn test_edit_provider() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com".to_string(),
             api_key: "k1".to_string(),
@@ -567,9 +629,9 @@ mod tests {
             last_ok: None,
             claude_models: None,
         };
-        edit_provider(&mut cfg, "a", updated).unwrap();
+        edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
-        let p = get_provider(&cfg, "a").unwrap();
+        let p = get_provider(&cfg, "codex", "a").unwrap();
         assert_eq!(p.base_url, "https://new-a.com");
         assert_eq!(p.api_key, "new-k1");
         assert_eq!(p.model, "new-m1");
@@ -580,7 +642,7 @@ mod tests {
     fn test_edit_provider_rename_active() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com".to_string(),
             api_key: "k1".to_string(),
@@ -592,7 +654,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
             base_url: "https://b.com".to_string(),
             api_key: "k2".to_string(),
@@ -604,7 +666,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        set_active(&mut cfg, "a").unwrap();
+        set_active(&mut cfg, "codex", "a").unwrap();
 
         let updated = Provider {
             name: "new-a".to_string(),
@@ -618,18 +680,18 @@ mod tests {
             last_ok: None,
             claude_models: None,
         };
-        edit_provider(&mut cfg, "a", updated).unwrap();
+        edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
-        assert_eq!(cfg.active, "new-a");
-        assert!(get_provider(&cfg, "a").is_none());
-        assert!(get_provider(&cfg, "new-a").is_some());
+        assert_eq!(cfg.codex_active, "new-a");
+        assert!(get_provider(&cfg, "codex", "a").is_none());
+        assert!(get_provider(&cfg, "codex", "new-a").is_some());
     }
 
     #[test]
     fn test_edit_provider_duplicate_name() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "a".to_string(),
             base_url: "https://a.com".to_string(),
             api_key: "k1".to_string(),
@@ -641,7 +703,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        add_provider(&mut cfg, Provider {
+        add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
             base_url: "https://b.com".to_string(),
             api_key: "k2".to_string(),
@@ -666,7 +728,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         };
-        let err = edit_provider(&mut cfg, "a", updated);
+        let err = edit_provider(&mut cfg, "codex", "a", updated);
         assert!(err.is_err());
     }
 }
