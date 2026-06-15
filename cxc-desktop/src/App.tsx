@@ -341,6 +341,29 @@ function App() {
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // UI Variant State for prototype testing
+  const [uiVariant, setUiVariant] = useState<"default" | "unified" | "notion" | "compact">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("cxc-ui-variant");
+      if (saved === "default" || saved === "unified" || saved === "notion" || saved === "compact") return saved as any;
+    }
+    return "unified"; // 默认使用更简洁的单栏 unified 变体
+  });
+
+  const [showFoldSearch, setShowFoldSearch] = useState<boolean>(false);
+
+  // Keyboard shortcut Ctrl+F / Cmd+F to toggle search in compact mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setShowFoldSearch((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // Apply theme
   useEffect(() => {
     const root = window.document.documentElement;
@@ -717,118 +740,484 @@ function App() {
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
       {/* Notion Document Navigation Chrome */}
-      <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2.5 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-        <div className="flex items-center gap-3">
-          {/* Logo with official CXC image */}
-          <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200">
-            <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+      {/* UI Variant Header Render */}
+      {uiVariant === "default" && (
+        <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2.5 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center gap-3">
+            {/* Logo with official CXC image */}
+            <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200">
+              <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+            </div>
+            <div className="flex flex-col justify-center">
+              <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none">
+                CXC
+              </h1>
+              <p className="text-[10px] text-muted-foreground mt-1 font-semibold leading-none tracking-wider uppercase">
+                Code Cross-Connect
+              </p>
+            </div>
+
+            {/* Target Tool Switcher */}
+            <div className="flex items-center gap-0.5 ml-4 p-0.5 rounded-md bg-muted/40 border border-border/80">
+              <button
+                onClick={() => setTargetTool("codex")}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
+                  targetTool === "codex"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Codex Desktop App"
+              >
+                <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="currentColor" opacity="0.1"></path>
+                  <path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#codex-gradient-default)"></path>
+                  <defs>
+                    <linearGradient id="codex-gradient-default" x1="12" x2="12" y1="3" y2="21" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#B1A7FF"></stop>
+                      <stop offset=".5" stopColor="#7A9DFF"></stop>
+                      <stop offset="1" stopColor="#3941FF"></stop>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <span>Codex</span>
+              </button>
+              <button
+                onClick={() => setTargetTool("claude")}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
+                  targetTool === "claude"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Claude"
+              >
+                <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103(2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fillRule="nonzero"></path>
+                </svg>
+                <span>Claude</span>
+              </button>
+            </div>
           </div>
-          <div className="flex flex-col justify-center">
-            <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none">
+
+          <div className="flex items-center gap-2">
+            {/* Language Toggle Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={lang === "zh" ? "Switch to English" : "切换为中文"}
+            >
+              <Globe className="size-4" />
+            </Button>
+
+            {/* Settings gear button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={t.settings}
+            >
+              <Settings className="size-4" />
+            </Button>
+
+            {/* Theme switcher styled as utility button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={t.toggleTheme}
+            >
+              {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-primary" />}
+            </Button>
+
+            {/* Refresh config utility button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={loadConfig}
+              disabled={loading}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={t.refreshConfig}
+            >
+              <RefreshCw className={`size-4 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
+            </Button>
+
+            {/* Primary CTA: Pill-shaped in Notion Blue */}
+            <Button
+              onClick={openAddForm}
+              className="h-8 px-4 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-95 shadow-sm font-medium text-xs transition-all duration-200"
+            >
+              <Plus className="size-3.5 mr-1" />
+              {t.addProvider}
+            </Button>
+          </div>
+        </header>
+      )}
+
+      {uiVariant === "unified" && (
+        <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center gap-3">
+            {/* Logo */}
+            <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
+              <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+            </div>
+            <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none shrink-0" title="Code Cross-Connect">
               CXC
             </h1>
-            <p className="text-[10px] text-muted-foreground mt-1 font-semibold leading-none tracking-wider uppercase">
-              Code Cross-Connect
-            </p>
+
+            {/* Target Tool Switcher */}
+            <div className="flex items-center gap-0.5 ml-2 p-0.5 rounded-md bg-muted/40 border border-border/80 shrink-0">
+              <button
+                onClick={() => setTargetTool("codex")}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
+                  targetTool === "codex"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Codex Desktop App"
+              >
+                <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="currentColor" opacity="0.1"></path>
+                  <path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#codex-gradient-unified)"></path>
+                  <defs>
+                    <linearGradient id="codex-gradient-unified" x1="12" x2="12" y1="3" y2="21" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#B1A7FF"></stop>
+                      <stop offset=".5" stopColor="#7A9DFF"></stop>
+                      <stop offset="1" stopColor="#3941FF"></stop>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <span>Codex</span>
+              </button>
+              <button
+                onClick={() => setTargetTool("claude")}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
+                  targetTool === "claude"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Claude"
+              >
+                <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103(2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fillRule="nonzero"></path>
+                </svg>
+                <span>Claude</span>
+              </button>
+            </div>
           </div>
 
-          {/* Target Tool Switcher */}
-          <div className="flex items-center gap-0.5 ml-4 p-0.5 rounded-md bg-muted/40 border border-border/80">
-            <button
-              onClick={() => setTargetTool("codex")}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
-                targetTool === "codex"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              title="Codex Desktop App"
-            >
-              <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="currentColor" opacity="0.1"></path>
-                <path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#codex-gradient)"></path>
-                <defs>
-                  <linearGradient id="codex-gradient" x1="12" x2="12" y1="3" y2="21" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#B1A7FF"></stop>
-                    <stop offset=".5" stopColor="#7A9DFF"></stop>
-                    <stop offset="1" stopColor="#3941FF"></stop>
-                  </linearGradient>
-                </defs>
-              </svg>
-              <span>Codex</span>
-            </button>
-            <button
-              onClick={() => setTargetTool("claude")}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
-                targetTool === "claude"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              title="Claude"
-            >
-              <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fillRule="nonzero"></path>
-              </svg>
-              <span>Claude</span>
-            </button>
+          {/* Center search box */}
+          <div className="relative w-44 sm:w-60 focus-within:w-72 transition-all duration-300 mx-4">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 pointer-events-none" />
+            <Input
+              type="text"
+              placeholder={t.searchPlaceholder}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-8 w-full bg-muted/40 border-border/80 rounded-md placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-xs shadow-none transition-all"
+            />
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {/* Language Toggle Button */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
-            title={lang === "zh" ? "Switch to English" : "切换为中文"}
-          >
-            <Globe className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Quick Speed Test */}
+            {currentProviders.length > 0 && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleTestAllProviders}
+                disabled={testingAll || testingProvider !== null}
+                className="size-8 border-border bg-card text-foreground shadow-sm transition-all"
+                title={testingAll ? t.testingAll : t.testAll}
+              >
+                {testingAll ? (
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <Activity className="size-4 text-muted-foreground" />
+                )}
+              </Button>
+            )}
 
-          {/* Settings gear button */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setShowSettings(true)}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
-            title={t.settings}
-          >
-            <Settings className="size-4" />
-          </Button>
+            {/* Add Provider Button */}
+            <Button
+              onClick={openAddForm}
+              className="h-8 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-medium text-xs transition-all"
+              title={t.addProvider}
+            >
+              <Plus className="size-3.5 mr-1" />
+              <span>{lang === "zh" ? "添加" : "Add"}</span>
+            </Button>
 
-          {/* Theme switcher styled as utility button */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
-            title={t.toggleTheme}
-          >
-            {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-primary" />}
-          </Button>
+            <div className="h-4 w-px bg-border/60 mx-0.5" />
 
-          {/* Refresh config utility button */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={loadConfig}
-            disabled={loading}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
-            title={t.refreshConfig}
-          >
-            <RefreshCw className={`size-4 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
-          </Button>
+            {/* View mode toggle */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setViewMode(viewMode === "list" ? "card" : "list")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
+              title={viewMode === "list" ? t.cardView : t.listView}
+            >
+              {viewMode === "list" ? <LayoutGrid className="size-4" /> : <List className="size-4" />}
+            </Button>
 
-          {/* Primary CTA: Pill-shaped in Notion Blue */}
-          <Button
-            onClick={openAddForm}
-            className="h-8 px-4 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-95 shadow-sm font-medium text-xs transition-all duration-200"
-          >
-            <Plus className="size-3.5 mr-1" />
-            {t.addProvider}
-          </Button>
-        </div>
-      </header>
+            {/* System Settings */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
+              title={t.settings}
+            >
+              <Settings className="size-4" />
+            </Button>
+
+            {/* Light/Dark Toggle */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
+              title={t.toggleTheme}
+            >
+              {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-primary" />}
+            </Button>
+
+            {/* Refresh config */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={loadConfig}
+              disabled={loading}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
+              title={t.refreshConfig}
+            >
+              <RefreshCw className={`size-4 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
+            </Button>
+
+            {/* Lang Toggle */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
+              title={lang === "zh" ? "Switch to English" : "切换为中文"}
+            >
+              <Globe className="size-4" />
+            </Button>
+          </div>
+        </header>
+      )}
+
+      {uiVariant === "notion" && (
+        <header className="w-full bg-background px-6 py-2.5 flex items-center justify-between transition-all select-none border-b border-border/20">
+          <div className="flex items-center gap-2">
+            {/* Logo with official CXC image */}
+            <div className="relative flex items-center justify-center size-6 rounded bg-card border border-border/50 overflow-hidden shrink-0">
+              <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+            </div>
+            <span className="text-xs font-semibold text-muted-foreground shrink-0">cxc</span>
+            <span className="text-xs text-muted-foreground/40 shrink-0">/</span>
+            {/* Active target tool label */}
+            <span className="text-xs font-bold text-foreground/80 shrink-0 capitalize">{targetTool}</span>
+
+            {/* Target Tool Switcher as mini tags */}
+            <div className="flex items-center gap-1 ml-3 p-0.5 rounded bg-muted/30 border border-border/40 shrink-0">
+              <button
+                onClick={() => setTargetTool("codex")}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  targetTool === "codex"
+                    ? "bg-background text-foreground shadow-sm border border-border/20"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Codex
+              </button>
+              <button
+                onClick={() => setTargetTool("claude")}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  targetTool === "claude"
+                    ? "bg-background text-foreground shadow-sm border border-border/20"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Claude
+              </button>
+            </div>
+          </div>
+
+          {/* Action icons directly in line, transparent style */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+              className="size-7 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              title={lang === "zh" ? "Switch to English" : "切换为中文"}
+            >
+              <Globe className="size-3.5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              className="size-7 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              title={t.settings}
+            >
+              <Settings className="size-3.5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="size-7 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              title={t.toggleTheme}
+            >
+              {theme === "dark" ? <Sun className="size-3.5 text-amber-500" /> : <Moon className="size-3.5 text-primary" />}
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={loadConfig}
+              disabled={loading}
+              className="size-7 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              title={t.refreshConfig}
+            >
+              <RefreshCw className={`size-3.5 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
+            </Button>
+          </div>
+        </header>
+      )}
+
+      {uiVariant === "compact" && (
+        <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2.5 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center gap-3">
+            {/* Logo with official CXC image */}
+            <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200">
+              <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+            </div>
+            <div className="flex flex-col justify-center">
+              <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none">
+                CXC
+              </h1>
+              <p className="text-[10px] text-muted-foreground mt-1 font-semibold leading-none tracking-wider uppercase">
+                Code Cross-Connect
+              </p>
+            </div>
+
+            {/* Target Tool Switcher */}
+            <div className="flex items-center gap-0.5 ml-4 p-0.5 rounded-md bg-muted/40 border border-border/80">
+              <button
+                onClick={() => setTargetTool("codex")}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
+                  targetTool === "codex"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Codex Desktop App"
+              >
+                <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="currentColor" opacity="0.1"></path>
+                  <path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#codex-gradient-compact)"></path>
+                  <defs>
+                    <linearGradient id="codex-gradient-compact" x1="12" x2="12" y1="3" y2="21" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#B1A7FF"></stop>
+                      <stop offset=".5" stopColor="#7A9DFF"></stop>
+                      <stop offset="1" stopColor="#3941FF"></stop>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <span>Codex</span>
+              </button>
+              <button
+                onClick={() => setTargetTool("claude")}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-bold transition-all ${
+                  targetTool === "claude"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Claude"
+              >
+                <svg className="size-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103(2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fillRule="nonzero"></path>
+                </svg>
+                <span>Claude</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Toggle search trigger */}
+            <Button
+              variant={showFoldSearch ? "secondary" : "outline"}
+              size="icon"
+              onClick={() => setShowFoldSearch(!showFoldSearch)}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title="Toggle Search (Ctrl+F)"
+            >
+              <Search className="size-4" />
+            </Button>
+
+            {/* Language Toggle Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={lang === "zh" ? "Switch to English" : "切换为中文"}
+            >
+              <Globe className="size-4" />
+            </Button>
+
+            {/* Settings gear button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={t.settings}
+            >
+              <Settings className="size-4" />
+            </Button>
+
+            {/* Theme switcher styled as utility button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={t.toggleTheme}
+            >
+              {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-primary" />}
+            </Button>
+
+            {/* Refresh config utility button */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={loadConfig}
+              disabled={loading}
+              className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm transition-all duration-200"
+              title={t.refreshConfig}
+            >
+              <RefreshCw className={`size-4 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
+            </Button>
+
+            {/* Primary Add CTA */}
+            <Button
+              onClick={openAddForm}
+              className="h-8 px-4 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-95 shadow-sm font-medium text-xs transition-all duration-200"
+            >
+              <Plus className="size-3.5 mr-1" />
+              {t.addProvider}
+            </Button>
+          </div>
+        </header>
+      )}
 
       {/* Main Container */}
       <main className="max-w-6xl mx-auto px-6 py-4 space-y-6">
@@ -849,73 +1238,209 @@ function App() {
           </div>
         )}
 
-        {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60 pointer-events-none" />
-            <Input
-              type="text"
-              placeholder={t.searchPlaceholder}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 w-full bg-card border-border rounded-md placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-sm shadow-sm transition-all"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-            {/* View Mode Toggle Controls */}
-            <div className="flex items-center border border-border rounded-md p-0.5 bg-card shadow-sm h-9">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setViewMode("list")}
-                className={`size-7 rounded-[4px] p-0 transition-all ${
-                  viewMode === "list"
-                    ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={t.listView}
-              >
-                <List className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setViewMode("card")}
-                className={`size-7 rounded-[4px] p-0 transition-all ${
-                  viewMode === "card"
-                    ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={t.cardView}
-              >
-                <LayoutGrid className="size-3.5" />
-              </Button>
+        {/* Toolbar Variant Render */}
+        {uiVariant === "default" && (
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60 pointer-events-none" />
+              <Input
+                type="text"
+                placeholder={t.searchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-full bg-card border-border rounded-md placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-sm shadow-sm transition-all"
+              />
             </div>
 
-            {currentProviders.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTestAllProviders}
-                disabled={testingAll || testingProvider !== null}
-                className="h-9 border-border bg-card text-xs font-semibold rounded-md hover:bg-muted text-foreground shadow-sm transition-all duration-200 hover:scale-[1.01]"
-              >
-                {testingAll ? (
-                  <>
-                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                    {t.testingAll}
-                  </>
-                ) : (
-                  <>
-                    <Activity className="size-3.5 mr-1.5 text-muted-foreground" />
-                    {t.testAll}
-                  </>
-                )}
-              </Button>
-            )}
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              {/* View Mode Toggle Controls */}
+              <div className="flex items-center border border-border rounded-md p-0.5 bg-card shadow-sm h-9">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setViewMode("list")}
+                  className={`size-7 rounded-[4px] p-0 transition-all ${
+                    viewMode === "list"
+                      ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={t.listView}
+                >
+                  <List className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setViewMode("card")}
+                  className={`size-7 rounded-[4px] p-0 transition-all ${
+                    viewMode === "card"
+                      ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={t.cardView}
+                >
+                  <LayoutGrid className="size-3.5" />
+                </Button>
+              </div>
+
+              {currentProviders.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestAllProviders}
+                  disabled={testingAll || testingProvider !== null}
+                  className="h-9 border-border bg-card text-xs font-semibold rounded-md hover:bg-muted text-foreground shadow-sm transition-all duration-200 hover:scale-[1.01]"
+                >
+                  {testingAll ? (
+                    <>
+                      <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                      {t.testingAll}
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="size-3.5 mr-1.5 text-muted-foreground" />
+                      {t.testAll}
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {uiVariant === "notion" && (
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between border-b border-border/20 pb-3.5 animate-in fade-in duration-200">
+            {/* Search Box - minimal borderless style */}
+            <div className="relative w-full sm:w-72 bg-muted/20 border border-border/40 hover:border-border rounded px-2.5 py-1.5 flex items-center gap-2 transition-all">
+              <Search className="size-3.5 text-muted-foreground/60 shrink-0" />
+              <input
+                type="text"
+                placeholder={t.searchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent border-none outline-none text-xs w-full text-foreground placeholder-muted-foreground/40"
+              />
+            </div>
+
+            {/* Actions group */}
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              {/* Speed Test */}
+              {currentProviders.length > 0 && (
+                <button
+                  onClick={handleTestAllProviders}
+                  disabled={testingAll || testingProvider !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border/40 bg-card shadow-sm transition-all"
+                >
+                  {testingAll ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Activity className="size-3.5" />
+                  )}
+                  <span>{testingAll ? t.testingAll : t.testAll}</span>
+                </button>
+              )}
+
+              {/* View Switcher */}
+              <div className="flex items-center border border-border/40 rounded p-0.5 bg-muted/10 h-8 shadow-sm bg-card">
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={`px-2 py-0.5 rounded-sm text-[10px] font-semibold transition-all ${
+                    viewMode === "list" ? "bg-background text-foreground shadow-sm border border-border/10" : "text-muted-foreground"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  onClick={() => setViewMode("card")}
+                  className={`px-2 py-0.5 rounded-sm text-[10px] font-semibold transition-all ${
+                    viewMode === "card" ? "bg-background text-foreground shadow-sm border border-border/10" : "text-muted-foreground"
+                  }`}
+                >
+                  Card
+                </button>
+              </div>
+
+              {/* Add Button */}
+              <button
+                onClick={openAddForm}
+                className="flex items-center gap-1 px-3.5 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded text-xs font-semibold shadow-sm transition-all"
+              >
+                <Plus className="size-3.5" />
+                <span>{lang === "zh" ? "添加节点" : "Add Provider"}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {uiVariant === "compact" && showFoldSearch && (
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between p-3.5 bg-card/50 border border-border/80 rounded-xl shadow-inner animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60 pointer-events-none" />
+              <Input
+                type="text"
+                placeholder={t.searchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-full bg-background border-border rounded-md placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-sm shadow-sm transition-all"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              {/* View Mode Toggle Controls */}
+              <div className="flex items-center border border-border rounded-md p-0.5 bg-background shadow-sm h-9">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setViewMode("list")}
+                  className={`size-7 rounded-[4px] p-0 transition-all ${
+                    viewMode === "list"
+                      ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={t.listView}
+                >
+                  <List className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setViewMode("card")}
+                  className={`size-7 rounded-[4px] p-0 transition-all ${
+                    viewMode === "card"
+                      ? "bg-muted text-foreground font-semibold shadow-inner border border-border/10"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={t.cardView}
+                >
+                  <LayoutGrid className="size-3.5" />
+                </Button>
+              </div>
+
+              {currentProviders.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestAllProviders}
+                  disabled={testingAll || testingProvider !== null}
+                  className="h-9 border-border bg-background text-xs font-semibold rounded-md hover:bg-muted text-foreground shadow-sm transition-all duration-200 hover:scale-[1.01]"
+                >
+                  {testingAll ? (
+                    <>
+                      <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                      {t.testingAll}
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="size-3.5 mr-1.5 text-muted-foreground" />
+                      {t.testAll}
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Loading State */}
         {loading && !config ? (
@@ -1692,6 +2217,65 @@ function App() {
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* UI Prototype Controls Floating Toolbar */}
+      <div className="fixed bottom-4 left-4 z-50 bg-card/90 backdrop-blur-md border border-border/80 shadow-lg px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold text-foreground animate-in fade-in slide-in-from-left-3 duration-300">
+        <span className="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 mr-1 animate-pulse">
+          UI 原型
+        </span>
+        <button
+          onClick={() => {
+            setUiVariant("default");
+            localStorage.setItem("cxc-ui-variant", "default");
+          }}
+          className={`px-2 py-1 rounded-full text-[10px] transition-all font-bold cursor-pointer ${
+            uiVariant === "default"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          }`}
+        >
+          双栏极窄
+        </button>
+        <button
+          onClick={() => {
+            setUiVariant("unified");
+            localStorage.setItem("cxc-ui-variant", "unified");
+          }}
+          className={`px-2 py-1 rounded-full text-[10px] transition-all font-bold cursor-pointer ${
+            uiVariant === "unified"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          }`}
+        >
+          单栏一体 (推荐)
+        </button>
+        <button
+          onClick={() => {
+            setUiVariant("notion");
+            localStorage.setItem("cxc-ui-variant", "notion");
+          }}
+          className={`px-2 py-1 rounded-full text-[10px] transition-all font-bold cursor-pointer ${
+            uiVariant === "notion"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          }`}
+        >
+          Notion无界
+        </button>
+        <button
+          onClick={() => {
+            setUiVariant("compact");
+            localStorage.setItem("cxc-ui-variant", "compact");
+          }}
+          className={`px-2 py-1 rounded-full text-[10px] transition-all font-bold cursor-pointer ${
+            uiVariant === "compact"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          }`}
+        >
+          折叠搜索
+        </button>
+      </div>
     </div>
   );
 }
