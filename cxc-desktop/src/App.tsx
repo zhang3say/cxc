@@ -637,7 +637,7 @@ function App() {
               placeholder={t.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 w-full bg-card border-border rounded-[4px] placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-sm shadow-sm transition-all"
+              className="pl-9 h-9 w-full bg-card border-border rounded-md placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-sm shadow-sm transition-all"
             />
           </div>
 

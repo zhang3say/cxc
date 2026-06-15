@@ -2,7 +2,7 @@ use cxc_core::config::{self, Config, Provider};
 use cxc_core::target::{TargetAdapter, TargetConfig, codex::CodexAdapter};
 use tauri::{Manager, Emitter};
 use tauri::menu::{Menu, MenuItem, CheckMenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -234,6 +234,23 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::with_id("cxc_tray")
                 .icon(tray_icon)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(move |tray, event| {
+                    match event {
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } => {
+                            let app_handle = tray.app_handle();
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        _ => {}
+                    }
+                })
                 .on_menu_event(move |app_handle, event| {
                     let id = event.id.as_ref();
                     if id == "quit" {
