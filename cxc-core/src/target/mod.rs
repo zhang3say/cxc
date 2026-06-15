@@ -1,4 +1,5 @@
 pub mod codex;
+pub mod claude;
 
 use thiserror::Error;
 use std::path::PathBuf;
@@ -21,6 +22,17 @@ pub enum TargetError {
     },
     #[error("Failed to find home directory")]
     NoHomeDir,
+    #[error("Claude CLI 配置目录不存在：{path}\n\n可能原因：\n- {reason}\n\n建议：\n- {suggestion}")]
+    ClaudeConfigDirNotFound {
+        path: PathBuf,
+        reason: String,
+        suggestion: String,
+    },
+    #[error("Claude CLI 配置格式错误：{path}\n{details}\n\n配置文件未被修改，请手动修复后重试")]
+    ClaudeConfigInvalid {
+        path: PathBuf,
+        details: String,
+    },
 }
 
 pub struct TargetConfig {

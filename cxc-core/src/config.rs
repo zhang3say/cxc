@@ -43,6 +43,18 @@ pub enum ConfigError {
     CannotRemoveActive(String),
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct ClaudeModels {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opus: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sonnet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub haiku: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fable: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Provider {
     pub name: String,
@@ -59,6 +71,8 @@ pub struct Provider {
     pub latency_ms: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claude_models: Option<ClaudeModels>,
 }
 
 fn default_wire_api() -> String {
@@ -74,6 +88,10 @@ pub struct Config {
     pub codex_source: Option<String>,
     #[serde(default)]
     pub codex_custom_dir: String,
+    #[serde(default)]
+    pub claude_source: Option<String>,
+    #[serde(default)]
+    pub claude_custom_dir: String,
 }
 
 pub fn config_path() -> Result<PathBuf, ConfigError> {
@@ -258,6 +276,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         };
         add_provider(&mut cfg, p).unwrap();
 
@@ -280,6 +299,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         };
         add_provider(&mut cfg, p.clone()).unwrap();
         let err = add_provider(&mut cfg, p);
@@ -300,6 +320,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         add_provider(&mut cfg, Provider {
             name: "b".to_string(),
@@ -311,6 +332,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         assert_eq!(cfg.active, "a");
@@ -330,6 +352,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         add_provider(&mut cfg, Provider {
             name: "b".to_string(),
@@ -341,6 +364,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         set_active(&mut cfg, "b").unwrap();
         remove_provider(&mut cfg, "a").unwrap();
@@ -362,6 +386,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         let err = remove_provider(&mut cfg, "a");
@@ -382,6 +407,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         let err = remove_provider(&mut cfg, "nonexistent");
@@ -402,6 +428,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         add_provider(&mut cfg, Provider {
             name: "b".to_string(),
@@ -413,6 +440,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         set_active(&mut cfg, "b").unwrap();
@@ -433,6 +461,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -455,6 +484,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         use std::os::unix::fs::PermissionsExt;
@@ -476,6 +506,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         update_test_result(&mut cfg, "a", 123, true).unwrap();
@@ -499,6 +530,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -520,6 +552,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         let updated = Provider {
@@ -532,6 +565,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         };
         edit_provider(&mut cfg, "a", updated).unwrap();
 
@@ -556,6 +590,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         add_provider(&mut cfg, Provider {
             name: "b".to_string(),
@@ -567,6 +602,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         set_active(&mut cfg, "a").unwrap();
 
@@ -580,6 +616,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         };
         edit_provider(&mut cfg, "a", updated).unwrap();
 
@@ -602,6 +639,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
         add_provider(&mut cfg, Provider {
             name: "b".to_string(),
@@ -613,6 +651,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         }).unwrap();
 
         let updated = Provider {
@@ -625,6 +664,7 @@ mod tests {
             last_test: None,
             latency_ms: None,
             last_ok: None,
+            claude_models: None,
         };
         let err = edit_provider(&mut cfg, "a", updated);
         assert!(err.is_err());

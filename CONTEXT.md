@@ -44,3 +44,15 @@ The execution environment of the Target Tool (specifically Codex). It determines
 
 An optional directory path configuration in CXC. Used when the Codex config files reside in a non-standard path, such as inside a specific WSL distribution (accessed via Windows UNC paths like `\\wsl.localhost\Ubuntu\home\<user>\.codex`).
 
+## Claude CLI Adapter (Claude CLI 适配器)
+
+A Target Tool adapter that manages Claude CLI configuration. Unlike Codex which uses separate TOML and JSON files, Claude CLI uses a single `settings.json` file with an `env` object containing environment variables (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and model configurations).
+
+## Claude Source (Claude 来源)
+
+Similar to Codex Source, determines which Claude CLI configuration to modify. On Windows, can be "app" (native Windows config at `%USERPROFILE%\.claude\`) or "wsl" (WSL config at `~/.claude/`). On Linux/WSL, "wsl" means local config, "app" means Windows host config accessed via `/mnt/c/`.
+
+## Claude Models Configuration (Claude 模型配置)
+
+An optional multi-model configuration for Claude CLI providers. Allows mapping different model tiers (Opus, Sonnet, Haiku, Fable) to specific model IDs. When not configured, all tiers fall back to the Provider's primary `model` field. This enables providers like DeepSeek to map high-performance models (v4-pro) to Opus/Sonnet and fast models (v4-flash) to Haiku, matching the official provider recommendations.
+
