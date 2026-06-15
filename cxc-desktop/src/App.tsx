@@ -38,6 +38,8 @@ import {
   LayoutGrid,
   Settings,
   Globe,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface Provider {
@@ -286,6 +288,7 @@ function App() {
   const [showForm, setShowForm] = useState<"add" | "edit" | null>(null);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [formValues, setFormValues] = useState(initialFormValues);
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
 
   // Model Discovery State
   const [fetchingModels, setFetchingModels] = useState<boolean>(false);
@@ -375,6 +378,7 @@ function App() {
     setFetchError(null);
     setShowForm("add");
     setEditingName(null);
+    setShowApiKey(false);
   }
 
   function openEditForm(p: Provider) {
@@ -390,6 +394,7 @@ function App() {
     setFetchError(null);
     setShowForm("edit");
     setEditingName(p.name);
+    setShowApiKey(false);
   }
 
   async function handleFetchModels() {
@@ -1297,15 +1302,28 @@ function App() {
               <Label htmlFor="form-key" className="text-xs font-bold text-muted-foreground">
                 {t.apiKeyLabel}
               </Label>
-              <Input
-                id="form-key"
-                type="password"
-                required
-                value={formValues.api_key}
-                onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
-                placeholder="sk-••••••••••••"
-                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
-              />
+              <div className="relative">
+                <Input
+                  id="form-key"
+                  type={showApiKey ? "text" : "password"}
+                  required
+                  value={formValues.api_key}
+                  onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
+                  placeholder="sk-••••••••••••"
+                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm pr-9 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                >
+                  {showApiKey ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <div className="space-y-1">
