@@ -249,6 +249,7 @@ impl ClaudeAdapter {
             .and_then(|m| m.fable.as_ref())
             .unwrap_or(&provider.model);
 
+        env.insert("ANTHROPIC_MODEL".to_string(), json!(config.model));
         env.insert("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), json!(opus));
         env.insert("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), json!(sonnet));
         env.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
@@ -299,8 +300,9 @@ impl TargetAdapter for ClaudeAdapter {
             .unwrap_or("")
             .to_string();
 
-        // Read model (prefer OPUS, then SONNET, FABLE, HAIKU)
-        let model = env.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        // Read model (prefer ANTHROPIC_MODEL, then OPUS, SONNET, FABLE, HAIKU)
+        let model = env.get("ANTHROPIC_MODEL")
+            .or_else(|| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
             .or_else(|| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
             .or_else(|| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
             .or_else(|| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
@@ -468,6 +470,7 @@ mod tests {
         let settings: serde_json::Value = serde_json::from_str(&data).unwrap();
         let env = settings["env"].as_object().unwrap();
 
+        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek-v4-pro");
         assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "deepseek-v4-pro[1m]");
         assert_eq!(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "deepseek-v4-pro[1m]");
         assert_eq!(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "deepseek-v4-flash");
