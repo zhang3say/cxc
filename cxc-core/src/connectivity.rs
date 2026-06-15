@@ -184,7 +184,7 @@ impl Tester {
                 role: "user".to_string(),
                 content: "say hi".to_string(),
             }],
-            max_tokens: 1,
+            max_tokens: 1024,
         };
 
         let start = Instant::now();
