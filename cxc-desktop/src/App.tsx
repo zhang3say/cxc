@@ -545,6 +545,7 @@ function App() {
       const newConfig = await invoke<Config>("edit_provider", {
         oldName: quickSwitchProvider.name,
         updated: updatedProvider,
+        targetTool,
       });
       setConfig(newConfig);
       handleCloseQuickSwitch();
