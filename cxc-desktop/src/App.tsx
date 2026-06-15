@@ -163,7 +163,8 @@ const locales = {
     quickSwitchTooltip: "点击快速切换模型",
     endpointTooltip: "Ctrl + 左键：在浏览器中打开\n普通左键：复制到剪贴板",
     copiedToClipboard: "已复制到剪贴板",
-    advancedSettings: "高级配置"
+    advancedSettings: "高级配置",
+    defaultModelPlaceholder: "-- 默认（使用主模型）--"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -248,7 +249,8 @@ const locales = {
     quickSwitchTooltip: "Click to quick switch model",
     endpointTooltip: "Ctrl + Click: open in browser\nClick: copy to clipboard",
     copiedToClipboard: "Copied to clipboard",
-    advancedSettings: "Advanced Settings"
+    advancedSettings: "Advanced Settings",
+    defaultModelPlaceholder: "-- Default (Use Main Model) --"
   }
 };
 
@@ -1568,43 +1570,103 @@ function App() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <Label className="text-[10px] font-semibold text-muted-foreground">Opus</Label>
-                          <Input
-                            type="text"
-                            value={formValues.claude_models?.opus || ""}
-                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
-                            placeholder="e.g. claude-3-opus-20240229"
-                            className="h-7 text-xs rounded shadow-sm"
-                          />
+                          {fetchedModels.length > 0 ? (
+                            <select
+                              value={formValues.claude_models?.opus || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
+                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                            >
+                              <option value="">{t.defaultModelPlaceholder}</option>
+                              {fetchedModels.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={formValues.claude_models?.opus || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
+                              placeholder="e.g. claude-3-opus-20240229"
+                              className="h-7 text-xs rounded shadow-sm"
+                            />
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label className="text-[10px] font-semibold text-muted-foreground">Sonnet</Label>
-                          <Input
-                            type="text"
-                            value={formValues.claude_models?.sonnet || ""}
-                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
-                            placeholder="e.g. claude-3-5-sonnet-20240620"
-                            className="h-7 text-xs rounded shadow-sm"
-                          />
+                          {fetchedModels.length > 0 ? (
+                            <select
+                              value={formValues.claude_models?.sonnet || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
+                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                            >
+                              <option value="">{t.defaultModelPlaceholder}</option>
+                              {fetchedModels.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={formValues.claude_models?.sonnet || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
+                              placeholder="e.g. claude-3-5-sonnet-20240620"
+                              className="h-7 text-xs rounded shadow-sm"
+                            />
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label className="text-[10px] font-semibold text-muted-foreground">Haiku</Label>
-                          <Input
-                            type="text"
-                            value={formValues.claude_models?.haiku || ""}
-                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
-                            placeholder="e.g. claude-3-haiku-20240307"
-                            className="h-7 text-xs rounded shadow-sm"
-                          />
+                          {fetchedModels.length > 0 ? (
+                            <select
+                              value={formValues.claude_models?.haiku || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
+                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                            >
+                              <option value="">{t.defaultModelPlaceholder}</option>
+                              {fetchedModels.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={formValues.claude_models?.haiku || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
+                              placeholder="e.g. claude-3-haiku-20240307"
+                              className="h-7 text-xs rounded shadow-sm"
+                            />
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label className="text-[10px] font-semibold text-muted-foreground">Fable</Label>
-                          <Input
-                            type="text"
-                            value={formValues.claude_models?.fable || ""}
-                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
-                            placeholder="Custom mapping..."
-                            className="h-7 text-xs rounded shadow-sm"
-                          />
+                          {fetchedModels.length > 0 ? (
+                            <select
+                              value={formValues.claude_models?.fable || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
+                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                            >
+                              <option value="">{t.defaultModelPlaceholder}</option>
+                              {fetchedModels.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={formValues.claude_models?.fable || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
+                              placeholder="Custom mapping..."
+                              className="h-7 text-xs rounded shadow-sm"
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
