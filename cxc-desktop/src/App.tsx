@@ -708,134 +708,136 @@ function App() {
             {filteredProviders.length > 0 ? (
               viewMode === "list" ? (
                 /* Table Database Layout */
-                <div className="border border-border rounded-xl bg-card overflow-hidden divide-y divide-border shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                  {/* Table Header */}
-                  <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 gap-4">
-                    <div className="w-6 shrink-0" />
-                    <div className="w-40 shrink-0 pr-4">{t.providerNameCol}</div>
-                    <div className="flex-1 min-w-0 pr-4">{t.endpointCol}</div>
-                    <div className="w-32 shrink-0 pr-4">{t.modelCol}</div>
-                    <div className="w-36 shrink-0 pr-4">{t.statusLatencyCol}</div>
-                    <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
-                    <div className="w-24 shrink-0 text-center">{t.activeCol}</div>
-                  </div>
+                <div className="border border-border rounded-xl bg-card overflow-x-auto shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                  <div className="min-w-[850px] divide-y divide-border">
+                    {/* Table Header */}
+                    <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 gap-4">
+                      <div className="w-6 shrink-0" />
+                      <div className="w-40 shrink-0 pr-4">{t.providerNameCol}</div>
+                      <div className="flex-1 min-w-0 pr-4">{t.endpointCol}</div>
+                      <div className="w-32 shrink-0 pr-4">{t.modelCol}</div>
+                      <div className="w-36 shrink-0 pr-4">{t.statusLatencyCol}</div>
+                      <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
+                      <div className="w-24 shrink-0 text-center">{t.activeCol}</div>
+                    </div>
 
-                  {filteredProviders.map((p) => {
-                    const isActive = config?.active === p.name;
-                    const isThisSwitching = switching === p.name;
-                    const isTesting = testingProvider === p.name || testingAll;
+                    {filteredProviders.map((p) => {
+                      const isActive = config?.active === p.name;
+                      const isThisSwitching = switching === p.name;
+                      const isTesting = testingProvider === p.name || testingAll;
 
-                    return (
-                      <div
-                        key={p.name}
-                        className={`flex flex-col sm:flex-row sm:items-center px-4 py-2.5 gap-3 sm:gap-4 transition-colors hover:bg-muted/30 group relative ${
-                          isActive ? "bg-primary/[0.02] dark:bg-primary/[0.04]" : ""
-                        } ${isTesting ? "opacity-80" : ""}`}
-                      >
-                        {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" />}
+                      return (
+                        <div
+                          key={p.name}
+                          className={`flex flex-col sm:flex-row sm:items-center px-4 py-2.5 gap-3 sm:gap-4 transition-colors hover:bg-muted/30 group relative ${
+                            isActive ? "bg-primary/[0.02] dark:bg-primary/[0.04]" : ""
+                          } ${isTesting ? "opacity-80" : ""}`}
+                        >
+                          {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" />}
 
-                        {/* Active dot column */}
-                        <div className="hidden sm:flex items-center justify-center w-6 size-5 shrink-0">
-                          {isActive ? (
-                            <span className="size-1.5 rounded-full bg-primary animate-pulse" />
-                          ) : (
-                            <span className="size-1.5 rounded-full bg-muted-foreground/30" />
-                          )}
-                        </div>
+                          {/* Active dot column */}
+                          <div className="hidden sm:flex items-center justify-center w-6 size-5 shrink-0">
+                            {isActive ? (
+                              <span className="size-1.5 rounded-full bg-primary animate-pulse" />
+                            ) : (
+                              <span className="size-1.5 rounded-full bg-muted-foreground/30" />
+                            )}
+                          </div>
 
-                        {/* Name & remark column */}
-                        <div className="w-full sm:w-40 shrink-0 truncate pr-4">
-                          <span className="text-sm font-bold text-foreground/90 tracking-tight block truncate" title={p.name}>
-                            {p.name}
-                          </span>
-                          {p.remark && (
-                            <p className="text-[11px] text-muted-foreground/75 truncate mt-0.5" title={p.remark}>
-                              {p.remark}
-                            </p>
-                          )}
-                        </div>
+                          {/* Name & remark column */}
+                          <div className="w-full sm:w-40 shrink-0 truncate pr-4">
+                            <span className="text-sm font-bold text-foreground/90 tracking-tight block truncate" title={p.name}>
+                              {p.name}
+                            </span>
+                            {p.remark && (
+                              <p className="text-[11px] text-muted-foreground/75 truncate mt-0.5" title={p.remark}>
+                                {p.remark}
+                              </p>
+                            )}
+                          </div>
 
-                        {/* Base URL column */}
-                        <div className="flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 truncate flex items-center gap-1.5">
-                          <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
-                          <span className="truncate" title={p.base_url}>{p.base_url}</span>
-                        </div>
+                          {/* Base URL column */}
+                          <div className="flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 truncate flex items-center gap-1.5">
+                            <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
+                            <span className="truncate" title={p.base_url}>{p.base_url}</span>
+                          </div>
 
-                        {/* Model column */}
-                        <div className="w-full sm:w-32 shrink-0 pr-4 text-xs flex items-center gap-1.5">
-                          <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
-                          <span className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[11px] truncate" title={p.model}>
-                            {p.model}
-                          </span>
-                        </div>
+                          {/* Model column */}
+                          <div className="w-full sm:w-32 shrink-0 pr-4 text-xs flex items-center gap-1.5">
+                            <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
+                            <span className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[11px] truncate" title={p.model}>
+                              {p.model}
+                            </span>
+                          </div>
 
-                        {/* Latency & Status column using renderStatus */}
-                        <div className="w-full sm:w-36 shrink-0 pr-4 text-xs flex items-center gap-1.5">
-                          <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Status:</span>
-                          {renderStatus(p, isTesting)}
-                        </div>
+                          {/* Latency & Status column using renderStatus */}
+                          <div className="w-full sm:w-36 shrink-0 pr-4 text-xs flex items-center gap-1.5">
+                            <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Status:</span>
+                            {renderStatus(p, isTesting)}
+                          </div>
 
-                        {/* Quiet action buttons column */}
-                        <div className="w-full sm:w-24 shrink-0 pr-4 flex items-center justify-end sm:justify-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => handleTestProvider(p.name)}
-                            disabled={testingProvider !== null || testingAll || switching !== null}
-                            className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            title={t.testConnTitle}
-                          >
-                            <Activity className="size-3" />
-                          </Button>
-
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => openEditForm(p)}
-                            disabled={testingProvider !== null || testingAll || switching !== null}
-                            className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            title={t.editConnTitle}
-                          >
-                            <Edit2 className="size-3" />
-                          </Button>
-
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => handleDeleteProvider(p.name)}
-                            disabled={isActive || switching !== null || testingAll || testingProvider !== null}
-                            className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
-                            title={isActive ? t.activeDeleteTooltip : t.deleteConnTitle}
-                          >
-                            <Trash2 className="size-3" />
-                          </Button>
-                        </div>
-
-                        {/* Switch Active Trigger column */}
-                        <div className="w-full sm:w-24 shrink-0 flex justify-end">
-                          {!isActive ? (
+                          {/* Quiet action buttons column */}
+                          <div className="w-full sm:w-24 shrink-0 pr-4 flex items-center justify-end sm:justify-center gap-1">
                             <Button
-                              size="sm"
-                              onClick={() => handleSwitch(p.name)}
-                              disabled={switching !== null || testingAll || testingProvider !== null}
-                              className="w-full text-[10px] h-6 bg-card text-foreground border border-border rounded hover:bg-muted font-medium shadow-none transition-all duration-200 active:scale-95"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleTestProvider(p.name)}
+                              disabled={testingProvider !== null || testingAll || switching !== null}
+                              className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title={t.testConnTitle}
                             >
-                              {isThisSwitching ? (
-                                <Loader2 className="size-2.5 animate-spin text-muted-foreground" />
-                              ) : (
-                                t.switchBtn
-                              )}
+                              <Activity className="size-3" />
                             </Button>
-                          ) : (
-                            <div className="flex items-center justify-center gap-1 h-6 border border-primary/20 bg-primary/5 text-primary rounded-full text-[10px] font-bold px-2.5 py-0.5 w-full">
-                              <Check className="size-2.5 shrink-0" />
-                              {t.activeLabel}
-                            </div>
-                          )}
+
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => openEditForm(p)}
+                              disabled={testingProvider !== null || testingAll || switching !== null}
+                              className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title={t.editConnTitle}
+                            >
+                              <Edit2 className="size-3" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleDeleteProvider(p.name)}
+                              disabled={isActive || switching !== null || testingAll || testingProvider !== null}
+                              className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
+                              title={isActive ? t.activeDeleteTooltip : t.deleteConnTitle}
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+
+                          {/* Switch Active Trigger column */}
+                          <div className="w-full sm:w-24 shrink-0 flex justify-end">
+                            {!isActive ? (
+                              <Button
+                                size="sm"
+                                onClick={() => handleSwitch(p.name)}
+                                disabled={switching !== null || testingAll || testingProvider !== null}
+                                className="w-full text-[10px] h-6 bg-card text-foreground border border-border rounded hover:bg-muted font-medium shadow-none transition-all duration-200 active:scale-95"
+                              >
+                                {isThisSwitching ? (
+                                  <Loader2 className="size-2.5 animate-spin text-muted-foreground" />
+                                ) : (
+                                  t.switchBtn
+                                )}
+                              </Button>
+                            ) : (
+                              <div className="flex items-center justify-center gap-1 h-6 border border-primary/20 bg-primary/5 text-primary rounded-full text-[10px] font-bold px-2.5 py-0.5 w-full">
+                                <Check className="size-2.5 shrink-0" />
+                                {t.activeLabel}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 /* Card Grid View Layout */
