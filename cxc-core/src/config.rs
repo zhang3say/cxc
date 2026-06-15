@@ -53,6 +53,8 @@ pub struct ClaudeModels {
     pub haiku: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fable: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

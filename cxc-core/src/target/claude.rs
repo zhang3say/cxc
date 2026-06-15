@@ -255,6 +255,12 @@ impl ClaudeAdapter {
         env.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
         env.insert("ANTHROPIC_DEFAULT_FABLE_MODEL".to_string(), json!(fable));
 
+        if let Some(sub) = provider.claude_models.as_ref().and_then(|m| m.subagent.as_ref()).filter(|s| !s.is_empty()) {
+            env.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(sub));
+        } else {
+            env.remove("CLAUDE_CODE_SUBAGENT_MODEL");
+        }
+
         // Write settings
         let out = serde_json::to_string_pretty(&settings)
             .map_err(|e| TargetError::SerializeError(e.to_string()))?;
@@ -460,6 +466,7 @@ mod tests {
                 sonnet: Some("deepseek-v4-pro[1m]".to_string()),
                 haiku: Some("deepseek-v4-flash".to_string()),
                 fable: Some("deepseek-v4-pro[1m]".to_string()),
+                subagent: None,
             }),
         };
         adapter.write_provider(&provider).unwrap();

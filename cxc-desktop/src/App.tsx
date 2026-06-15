@@ -48,6 +48,7 @@ interface ClaudeModels {
   sonnet?: string;
   haiku?: string;
   fable?: string;
+  subagent?: string;
 }
 
 interface Provider {
@@ -266,6 +267,7 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
     sonnet: "",
     haiku: "",
     fable: "",
+    subagent: "",
   },
 };
 
@@ -452,6 +454,7 @@ function App() {
         sonnet: "",
         haiku: "",
         fable: "",
+        subagent: "",
       },
     });
     setFetchedModels([]);
@@ -1665,6 +1668,34 @@ function App() {
                               value={formValues.claude_models?.fable || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
                               placeholder="Custom mapping..."
+                              className="h-7 text-xs rounded shadow-sm"
+                            />
+                          )}
+                        </div>
+                        <div className="space-y-1 col-span-2 pt-1 border-t border-border/50 mt-1">
+                          <Label className="text-[10px] font-semibold text-muted-foreground flex justify-between items-center">
+                            <span>Subagent</span>
+                            <span className="font-normal opacity-70">{lang === "zh" ? "(不填则继承主模型)" : "(Leave empty to inherit)"}</span>
+                          </Label>
+                          {fetchedModels.length > 0 ? (
+                            <select
+                              value={formValues.claude_models?.subagent || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: e.target.value } })}
+                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                            >
+                              <option value="">{t.defaultModelPlaceholder}</option>
+                              {fetchedModels.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={formValues.claude_models?.subagent || ""}
+                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: e.target.value } })}
+                              placeholder="e.g. claude-3-haiku-20240307"
                               className="h-7 text-xs rounded shadow-sm"
                             />
                           )}
