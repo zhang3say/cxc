@@ -40,6 +40,7 @@ import {
   Globe,
   Eye,
   EyeOff,
+  ChevronDown,
 } from "lucide-react";
 
 interface ClaudeModels {
@@ -161,7 +162,8 @@ const locales = {
     retryBtn: "重试",
     quickSwitchTooltip: "点击快速切换模型",
     endpointTooltip: "Ctrl + 左键：在浏览器中打开\n普通左键：复制到剪贴板",
-    copiedToClipboard: "已复制到剪贴板"
+    copiedToClipboard: "已复制到剪贴板",
+    advancedSettings: "高级配置"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -245,7 +247,8 @@ const locales = {
     retryBtn: "Retry",
     quickSwitchTooltip: "Click to quick switch model",
     endpointTooltip: "Ctrl + Click: open in browser\nClick: copy to clipboard",
-    copiedToClipboard: "Copied to clipboard"
+    copiedToClipboard: "Copied to clipboard",
+    advancedSettings: "Advanced Settings"
   }
 };
 
@@ -335,6 +338,7 @@ function App() {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [formValues, setFormValues] = useState(initialFormValues);
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
   // Model Discovery State
   const [fetchingModels, setFetchingModels] = useState<boolean>(false);
@@ -430,6 +434,7 @@ function App() {
     setShowForm("add");
     setEditingName(null);
     setShowApiKey(false);
+    setShowAdvanced(false);
   }
 
   function openEditForm(p: Provider) {
@@ -452,6 +457,7 @@ function App() {
     setShowForm("edit");
     setEditingName(p.name);
     setShowApiKey(false);
+    setShowAdvanced(false);
   }
 
   async function handleFetchModels() {
@@ -1424,201 +1430,220 @@ function App() {
           </DialogHeader>
 
           <form onSubmit={handleSubmitForm} className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="form-name" className="text-xs font-bold text-muted-foreground">
-                {t.nameLabel}
-              </Label>
-              <Input
-                id="form-name"
-                type="text"
-                required
-                value={formValues.name}
-                onChange={(e) => setFormValues({ ...formValues, name: e.target.value })}
-                placeholder={t.namePlaceholder}
-                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="form-url" className="text-xs font-bold text-muted-foreground">
-                {t.baseUrlLabel}
-              </Label>
-              <Input
-                id="form-url"
-                type="url"
-                required
-                value={formValues.base_url}
-                onChange={(e) => setFormValues({ ...formValues, base_url: e.target.value })}
-                placeholder="https://api.example.com/v1"
-                className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="form-key" className="text-xs font-bold text-muted-foreground">
-                {t.apiKeyLabel}
-              </Label>
-              <div className="relative">
-                <Input
-                  id="form-key"
-                  type={showApiKey ? "text" : "password"}
-                  required
-                  value={formValues.api_key}
-                  onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
-                  placeholder="sk-••••••••••••"
-                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm pr-9 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                >
-                  {showApiKey ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center justify-between pb-1">
-                <Label htmlFor="form-model" className="text-xs font-bold text-muted-foreground">
-                  {t.modelLabel}
+            <div className="max-h-[50vh] sm:max-h-[55vh] overflow-y-auto pr-2 -mr-2 space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="form-name" className="text-xs font-bold text-muted-foreground">
+                  {t.nameLabel}
                 </Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={handleFetchModels}
-                  disabled={fetchingModels || !formValues.base_url || !formValues.api_key}
-                  className="h-6 text-[10px] border-border bg-card text-muted-foreground hover:bg-muted font-bold px-2 rounded-md shadow-sm transition-all"
-                >
-                  {fetchingModels ? (
-                    <>
-                      <Loader2 className="size-2.5 animate-spin mr-1" />
-                      {t.discovering}
-                    </>
-                  ) : (
-                    <>
-                      <Compass className="size-2.5 mr-1" />
-                      {t.discoverModels}
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {fetchedModels.length > 0 ? (
-                <select
-                  id="form-model-select"
-                  value={formValues.model}
-                  onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                  className="flex h-9 w-full rounded-[4px] border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
-                >
-                  <option value="">{t.selectModelDefault}</option>
-                  {fetchedModels.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              ) : (
                 <Input
-                  id="form-model"
+                  id="form-name"
                   type="text"
-                  required={targetTool === "codex"}
-                  value={formValues.model}
-                  onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                  placeholder="e.g. gpt-4o"
+                  required
+                  value={formValues.name}
+                  onChange={(e) => setFormValues({ ...formValues, name: e.target.value })}
+                  placeholder={t.namePlaceholder}
                   className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
                 />
-              )}
-              {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
-            </div>
+              </div>
 
-            {targetTool === "claude" && (
-              <div className="space-y-2 border border-border rounded-lg p-3 bg-muted/20">
-                <Label className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                  <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]">Optional</span>
-                  Claude Models Override
+              <div className="space-y-1">
+                <Label htmlFor="form-url" className="text-xs font-bold text-muted-foreground">
+                  {t.baseUrlLabel}
                 </Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-semibold text-muted-foreground">Opus</Label>
-                    <Input
-                      type="text"
-                      value={formValues.claude_models?.opus || ""}
-                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
-                      placeholder="e.g. claude-3-opus-20240229"
-                      className="h-7 text-xs rounded shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-semibold text-muted-foreground">Sonnet</Label>
-                    <Input
-                      type="text"
-                      value={formValues.claude_models?.sonnet || ""}
-                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
-                      placeholder="e.g. claude-3-5-sonnet-20240620"
-                      className="h-7 text-xs rounded shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-semibold text-muted-foreground">Haiku</Label>
-                    <Input
-                      type="text"
-                      value={formValues.claude_models?.haiku || ""}
-                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
-                      placeholder="e.g. claude-3-haiku-20240307"
-                      className="h-7 text-xs rounded shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-semibold text-muted-foreground">Fable</Label>
-                    <Input
-                      type="text"
-                      value={formValues.claude_models?.fable || ""}
-                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
-                      placeholder="Custom mapping..."
-                      className="h-7 text-xs rounded shadow-sm"
-                    />
-                  </div>
+                <Input
+                  id="form-url"
+                  type="url"
+                  required
+                  value={formValues.base_url}
+                  onChange={(e) => setFormValues({ ...formValues, base_url: e.target.value })}
+                  placeholder="https://api.example.com/v1"
+                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="form-key" className="text-xs font-bold text-muted-foreground">
+                  {t.apiKeyLabel}
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="form-key"
+                    type={showApiKey ? "text" : "password"}
+                    required
+                    value={formValues.api_key}
+                    onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
+                    placeholder="sk-••••••••••••"
+                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm pr-9 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                  >
+                    {showApiKey ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </button>
                 </div>
               </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="form-wire" className="text-xs font-bold text-muted-foreground">
-                  {t.wireApiLabel}
-                </Label>
-                <Input
-                  id="form-wire"
-                  type="text"
-                  value={formValues.wire_api}
-                  onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
-                  placeholder="responses"
-                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
-                />
-              </div>
 
               <div className="space-y-1">
-                <Label htmlFor="form-remark" className="text-xs font-bold text-muted-foreground">
-                  {t.remarkLabel}
-                </Label>
-                <Input
-                  id="form-remark"
-                  type="text"
-                  value={formValues.remark}
-                  onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
-                  placeholder={t.remarkPlaceholder}
-                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
-                />
+                <div className="flex items-center justify-between pb-1">
+                  <Label htmlFor="form-model" className="text-xs font-bold text-muted-foreground">
+                    {t.modelLabel}
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={handleFetchModels}
+                    disabled={fetchingModels || !formValues.base_url || !formValues.api_key}
+                    className="h-6 text-[10px] border-border bg-card text-muted-foreground hover:bg-muted font-bold px-2 rounded-md shadow-sm transition-all"
+                  >
+                    {fetchingModels ? (
+                      <>
+                        <Loader2 className="size-2.5 animate-spin mr-1" />
+                        {t.discovering}
+                      </>
+                    ) : (
+                      <>
+                        <Compass className="size-2.5 mr-1" />
+                        {t.discoverModels}
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {fetchedModels.length > 0 ? (
+                  <select
+                    id="form-model-select"
+                    value={formValues.model}
+                    onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
+                    className="flex h-9 w-full rounded-[4px] border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                  >
+                    <option value="">{t.selectModelDefault}</option>
+                    {fetchedModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="form-model"
+                    type="text"
+                    required={targetTool === "codex"}
+                    value={formValues.model}
+                    onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
+                    placeholder="e.g. gpt-4o"
+                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                  />
+                )}
+                {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
               </div>
+
+              {/* Advanced Settings Toggle Button */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold transition-colors focus:outline-none py-1.5 cursor-pointer"
+                >
+                  <ChevronDown className={`size-3.5 transition-transform duration-200 ${showAdvanced ? "rotate-180 text-primary" : ""}`} />
+                  <span>{t.advancedSettings}</span>
+                </button>
+              </div>
+
+              {/* Collapsible Advanced Form Fields */}
+              {showAdvanced && (
+                <div className="space-y-4 pt-3 border-t border-border/40 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {targetTool === "claude" && (
+                    <div className="space-y-2 border border-border rounded-lg p-3 bg-muted/20">
+                      <Label className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]">Optional</span>
+                        Claude Models Override
+                      </Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-muted-foreground">Opus</Label>
+                          <Input
+                            type="text"
+                            value={formValues.claude_models?.opus || ""}
+                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
+                            placeholder="e.g. claude-3-opus-20240229"
+                            className="h-7 text-xs rounded shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-muted-foreground">Sonnet</Label>
+                          <Input
+                            type="text"
+                            value={formValues.claude_models?.sonnet || ""}
+                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
+                            placeholder="e.g. claude-3-5-sonnet-20240620"
+                            className="h-7 text-xs rounded shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-muted-foreground">Haiku</Label>
+                          <Input
+                            type="text"
+                            value={formValues.claude_models?.haiku || ""}
+                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
+                            placeholder="e.g. claude-3-haiku-20240307"
+                            className="h-7 text-xs rounded shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-muted-foreground">Fable</Label>
+                          <Input
+                            type="text"
+                            value={formValues.claude_models?.fable || ""}
+                            onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
+                            placeholder="Custom mapping..."
+                            className="h-7 text-xs rounded shadow-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label htmlFor="form-wire" className="text-xs font-bold text-muted-foreground">
+                        {t.wireApiLabel}
+                      </Label>
+                      <Input
+                        id="form-wire"
+                        type="text"
+                        value={formValues.wire_api}
+                        onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
+                        placeholder="responses"
+                        className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor="form-remark" className="text-xs font-bold text-muted-foreground">
+                        {t.remarkLabel}
+                      </Label>
+                      <Input
+                        id="form-remark"
+                        type="text"
+                        value={formValues.remark}
+                        onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
+                        placeholder={t.remarkPlaceholder}
+                        className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <DialogFooter className="pt-3">
+            <DialogFooter className="pt-3 border-t border-border/40">
               <div className="flex w-full justify-end gap-2">
                 <Button
                   type="button"
