@@ -127,7 +127,14 @@ const locales = {
     fillRequired: "请填写所有必填字段（名称、Base URL、API Key、模型）",
     fillRequiredDiscovery: "请先填写 Base URL 和 API Key",
     noModelsReturned: "接口未返回任何可用模型",
-    fetchingConfig: "正在获取活动配置中..."
+    fetchingConfig: "正在获取活动配置中...",
+    quickSwitchTitle: "快速切换模型",
+    quickSwitchDesc: "正在为节点 \"{name}\" 切换模型...",
+    fetchingModels: "正在拉取可用模型列表...",
+    searchModelPlaceholder: "搜索模型...",
+    noModelsFound: "未找到匹配的模型",
+    retryBtn: "重试",
+    quickSwitchTooltip: "点击快速切换模型"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -197,7 +204,14 @@ const locales = {
     fillRequired: "Please fill in all required fields (Name, Base URL, API Key, Model)",
     fillRequiredDiscovery: "Please fill in Base URL and API Key first",
     noModelsReturned: "No models returned from endpoint",
-    fetchingConfig: "Fetching active configuration..."
+    fetchingConfig: "Fetching active configuration...",
+    quickSwitchTitle: "Quick Switch Model",
+    quickSwitchDesc: "Switching model for provider \"{name}\"...",
+    fetchingModels: "Fetching available models...",
+    searchModelPlaceholder: "Search models...",
+    noModelsFound: "No matching models found",
+    retryBtn: "Retry",
+    quickSwitchTooltip: "Click to quick switch model"
   }
 };
 
@@ -276,6 +290,13 @@ function App() {
   // Connectivity Test State
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [testingAll, setTestingAll] = useState<boolean>(false);
+
+  // Quick Model Switch State
+  const [quickSwitchProvider, setQuickSwitchProvider] = useState<Provider | null>(null);
+  const [quickSwitchFetching, setQuickSwitchFetching] = useState<boolean>(false);
+  const [quickSwitchModels, setQuickSwitchModels] = useState<string[]>([]);
+  const [quickSwitchError, setQuickSwitchError] = useState<string | null>(null);
+  const [quickSwitchSearch, setQuickSwitchSearch] = useState<string>("");
 
   // Apply theme
   useEffect(() => {
@@ -387,6 +408,73 @@ function App() {
     }
   }
 
+  async function handleQuickFetchModels(p: Provider) {
+    setQuickSwitchProvider(p);
+    setQuickSwitchFetching(true);
+    setQuickSwitchError(null);
+    setQuickSwitchModels([]);
+    setQuickSwitchSearch("");
+    try {
+      const models = await invoke<string[]>("fetch_models", {
+        baseUrl: p.base_url,
+        apiKey: p.api_key,
+      });
+      if (models.length === 0) {
+        setQuickSwitchError(t.noModelsReturned || "No models returned from endpoint");
+      } else {
+        setQuickSwitchModels(models);
+      }
+    } catch (e: any) {
+      setQuickSwitchError(e.toString());
+    } finally {
+      setQuickSwitchFetching(false);
+    }
+  }
+
+  async function handleRetryQuickFetch() {
+    if (!quickSwitchProvider) return;
+    setQuickSwitchFetching(true);
+    setQuickSwitchError(null);
+    try {
+      const models = await invoke<string[]>("fetch_models", {
+        baseUrl: quickSwitchProvider.base_url,
+        apiKey: quickSwitchProvider.api_key,
+      });
+      if (models.length === 0) {
+        setQuickSwitchError(t.noModelsReturned || "No models returned from endpoint");
+      } else {
+        setQuickSwitchModels(models);
+      }
+    } catch (e: any) {
+      setQuickSwitchError(e.toString());
+    } finally {
+      setQuickSwitchFetching(false);
+    }
+  }
+
+  function handleCloseQuickSwitch() {
+    setQuickSwitchProvider(null);
+    setQuickSwitchFetching(false);
+    setQuickSwitchModels([]);
+    setQuickSwitchError(null);
+    setQuickSwitchSearch("");
+  }
+
+  async function handleSelectQuickModel(model: string) {
+    if (!quickSwitchProvider) return;
+    try {
+      const updatedProvider = { ...quickSwitchProvider, model };
+      const newConfig = await invoke<Config>("edit_provider", {
+        oldName: quickSwitchProvider.name,
+        updated: updatedProvider,
+      });
+      setConfig(newConfig);
+      handleCloseQuickSwitch();
+    } catch (e: any) {
+      setQuickSwitchError(e.toString());
+    }
+  }
+
   async function handleSubmitForm(e: React.FormEvent) {
     e.preventDefault();
     if (!formValues.name || !formValues.base_url || !formValues.api_key || !formValues.model) {
@@ -485,6 +573,10 @@ function App() {
       p.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.remark && p.remark.toLowerCase().includes(searchQuery.toLowerCase()))
   ) || [];
+
+  const filteredQuickSwitchModels = quickSwitchModels.filter((model) =>
+    model.toLowerCase().includes(quickSwitchSearch.toLowerCase())
+  );
 
   // Latency & status render helper using Notion's decorative sticker palette + dot indicator
   const renderStatus = (p: Provider, isTesting: boolean) => {
@@ -765,7 +857,11 @@ function App() {
                           {/* Model column */}
                           <div className="w-full sm:w-32 shrink-0 pr-4 text-xs flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
-                            <span className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[11px] truncate" title={p.model}>
+                            <span
+                              onClick={() => handleQuickFetchModels(p)}
+                              className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[11px] cursor-pointer hover:bg-muted/85 hover:border-primary/30 transition-all truncate"
+                              title={t.quickSwitchTooltip}
+                            >
                               {p.model}
                             </span>
                           </div>
@@ -893,7 +989,13 @@ function App() {
                             </div>
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Model:</span>
-                              <span className="font-semibold text-foreground/80 truncate max-w-[150px]" title={p.model}>{p.model}</span>
+                              <span
+                                onClick={() => handleQuickFetchModels(p)}
+                                className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[10px] cursor-pointer hover:bg-muted/80 hover:border-primary/30 transition-all truncate max-w-[150px]"
+                                title={t.quickSwitchTooltip}
+                              >
+                                {p.model}
+                              </span>
                             </div>
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Key:</span>
@@ -1267,6 +1369,101 @@ function App() {
               </div>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Model Switch Dialog */}
+      <Dialog open={quickSwitchProvider !== null} onOpenChange={(open) => !open && handleCloseQuickSwitch()}>
+        <DialogContent className="sm:max-w-md bg-card border border-border rounded-xl shadow-xl p-5 gap-4">
+          <DialogHeader className="gap-1.5">
+            <DialogTitle className="text-base font-bold tracking-tight">
+              {t.quickSwitchTitle}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {t.quickSwitchDesc.replace("{name}", quickSwitchProvider?.name || "")}
+            </DialogDescription>
+          </DialogHeader>
+
+          {quickSwitchFetching ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <Loader2 className="size-6 animate-spin text-muted-foreground/60" />
+              <p className="text-xs text-muted-foreground font-medium">{t.fetchingModels}</p>
+            </div>
+          ) : quickSwitchError ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-red-200/60 bg-red-500/5 p-3 dark:border-red-900/40 dark:bg-red-950/10 text-red-600 dark:text-red-400 text-xs leading-normal">
+                {quickSwitchError}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRetryQuickFetch}
+                  className="h-8 text-xs font-semibold rounded-full"
+                >
+                  {t.retryBtn}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCloseQuickSwitch}
+                  className="h-8 text-xs font-semibold rounded-full"
+                >
+                  {t.cancelBtn}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Search filter for models */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 pointer-events-none" />
+                <Input
+                  type="text"
+                  placeholder={t.searchModelPlaceholder}
+                  value={quickSwitchSearch}
+                  onChange={(e) => setQuickSwitchSearch(e.target.value)}
+                  className="pl-8 h-8 w-full bg-card border-border rounded-md placeholder-muted-foreground/50 text-xs"
+                />
+              </div>
+
+              {/* Scrollable list of models */}
+              <div className="border border-border rounded-lg max-h-60 overflow-y-auto divide-y divide-border bg-muted/10">
+                {filteredQuickSwitchModels.length > 0 ? (
+                  filteredQuickSwitchModels.map((model) => {
+                    const isCurrent = quickSwitchProvider?.model === model;
+                    return (
+                      <button
+                        key={model}
+                        onClick={() => handleSelectQuickModel(model)}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center justify-between hover:bg-muted/60 ${
+                          isCurrent ? "font-semibold text-primary bg-primary/[0.02]" : "text-foreground/80"
+                        }`}
+                      >
+                        <span className="truncate pr-4">{model}</span>
+                        {isCurrent && <Check className="size-3.5 text-primary shrink-0" />}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-6 text-xs text-muted-foreground">
+                    {t.noModelsFound}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCloseQuickSwitch}
+                  className="h-8 text-xs font-semibold rounded-full border border-border bg-card text-muted-foreground hover:bg-muted"
+                >
+                  {t.cancelBtn}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
