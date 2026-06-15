@@ -71,14 +71,18 @@ fn delete_provider(app_handle: tauri::AppHandle, name: String, target_tool: Stri
 
 #[tauri::command]
 async fn test_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let p = config::get_provider(&cfg, &target_tool, &name)
-        .ok_or_else(|| format!("provider \"{}\" not found", name))?
-        .clone();
+    let p = {
+        let cfg = config::load().map_err(|e| e.to_string())?;
+        config::get_provider(&cfg, &target_tool, &name)
+            .ok_or_else(|| format!("provider \"{}\" not found", name))?
+            .clone()
+    };
 
     let tester = cxc_core::connectivity::Tester::new();
     let res = tester.test(&p.base_url, &p.api_key, &p.model).await;
 
+    // Reload config AFTER the await to prevent overwriting other concurrent tests
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
     config::update_test_result(&mut cfg, &target_tool, &name, res.latency_ms, res.ok).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
 

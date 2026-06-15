@@ -42,6 +42,13 @@ import {
   EyeOff,
 } from "lucide-react";
 
+interface ClaudeModels {
+  opus?: string;
+  sonnet?: string;
+  haiku?: string;
+  fable?: string;
+}
+
 interface Provider {
   name: string;
   base_url: string;
@@ -52,6 +59,7 @@ interface Provider {
   last_test?: string;
   latency_ms?: number;
   last_ok?: boolean;
+  claude_models?: ClaudeModels;
 }
 
 interface Config {
@@ -241,13 +249,19 @@ const locales = {
   }
 };
 
-const initialFormValues = {
+const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> = {
   name: "",
   base_url: "",
   api_key: "",
   model: "",
   wire_api: "responses",
   remark: "",
+  claude_models: {
+    opus: "",
+    sonnet: "",
+    haiku: "",
+    fable: "",
+  },
 };
 
 function App() {
@@ -426,6 +440,12 @@ function App() {
       model: p.model,
       wire_api: p.wire_api,
       remark: p.remark || "",
+      claude_models: p.claude_models || {
+        opus: "",
+        sonnet: "",
+        haiku: "",
+        fable: "",
+      },
     });
     setFetchedModels([]);
     setFetchError(null);
@@ -1507,7 +1527,7 @@ function App() {
                 <Input
                   id="form-model"
                   type="text"
-                  required
+                  required={targetTool === "codex"}
                   value={formValues.model}
                   onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
                   placeholder="e.g. gpt-4o"
@@ -1516,6 +1536,57 @@ function App() {
               )}
               {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
             </div>
+
+            {targetTool === "claude" && (
+              <div className="space-y-2 border border-border rounded-lg p-3 bg-muted/20">
+                <Label className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                  <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]">Optional</span>
+                  Claude Models Override
+                </Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Opus</Label>
+                    <Input
+                      type="text"
+                      value={formValues.claude_models?.opus || ""}
+                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
+                      placeholder="e.g. claude-3-opus-20240229"
+                      className="h-7 text-xs rounded shadow-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Sonnet</Label>
+                    <Input
+                      type="text"
+                      value={formValues.claude_models?.sonnet || ""}
+                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
+                      placeholder="e.g. claude-3-5-sonnet-20240620"
+                      className="h-7 text-xs rounded shadow-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Haiku</Label>
+                    <Input
+                      type="text"
+                      value={formValues.claude_models?.haiku || ""}
+                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
+                      placeholder="e.g. claude-3-haiku-20240307"
+                      className="h-7 text-xs rounded shadow-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Fable</Label>
+                    <Input
+                      type="text"
+                      value={formValues.claude_models?.fable || ""}
+                      onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
+                      placeholder="Custom mapping..."
+                      className="h-7 text-xs rounded shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
