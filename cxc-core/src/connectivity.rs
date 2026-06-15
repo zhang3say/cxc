@@ -320,15 +320,35 @@ struct ModelEntry {
 /// Returns `Ok(vec![])` if the endpoint returns an empty list.
 /// Returns `Err` on network failure or non-2xx status.
 pub async fn fetch_models(base_url: &str, api_key: &str) -> anyhow::Result<Vec<String>> {
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let trimmed = base_url.trim().trim_end_matches('/');
+    
+    // 1. 尝试直接拼接 /models
+    let url1 = format!("{}/models", trimmed);
+    match do_fetch_models(&url1, api_key).await {
+        Ok(models) => Ok(models),
+        Err(e) => {
+            // 2. 如果失败，且 URL 中没有 /v1，我们自动尝试 /v1/models 进行自愈
+            if !trimmed.ends_with("/v1") {
+                let url2 = format!("{}/v1/models", trimmed);
+                if let Ok(models) = do_fetch_models(&url2, api_key).await {
+                    return Ok(models);
+                }
+            }
+            Err(e)
+        }
+    }
+}
+
+async fn do_fetch_models(url: &str, api_key: &str) -> anyhow::Result<Vec<String>> {
     let client = Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| Client::new());
 
     let resp = client
-        .get(&url)
+        .get(url)
         .header("Authorization", format!("Bearer {}", api_key))
+        .header("x-api-key", api_key)
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("network error: {}", e))?;
@@ -338,12 +358,66 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> anyhow::Result<Vec<S
         return Err(anyhow::anyhow!("HTTP {} from /models", status.as_u16()));
     }
 
-    let models_resp: ModelsResponse = resp
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to parse /models response: {}", e))?;
+    let raw_text = resp.text().await
+        .map_err(|e| anyhow::anyhow!("failed to read response text: {}", e))?;
 
-    Ok(models_resp.data.into_iter().map(|m| m.id).collect())
+    let trimmed_text = raw_text.trim();
+
+    // 检查是否返回了 HTML 内容（有些单页应用在未匹配路径时会重定向到首页 HTML）
+    if trimmed_text.starts_with("<!doctype") || trimmed_text.starts_with("<html") || trimmed_text.starts_with("<!DOCTYPE") {
+        return Err(anyhow::anyhow!("接口未提供有效的模型列表服务，返回了网页 HTML 内容"));
+    }
+
+    // 1. 尝试解析为标准的 OpenAI `{ data: [{ id: "model-name" }] }` 格式
+    if let Ok(openai_resp) = serde_json::from_str::<ModelsResponse>(trimmed_text) {
+        return Ok(openai_resp.data.into_iter().map(|m| m.id).collect());
+    }
+
+    // 2. 尝试解析为直接的扁平数组 `["model-1", "model-2"]`
+    if let Ok(flat_list) = serde_json::from_str::<Vec<String>>(trimmed_text) {
+        return Ok(flat_list);
+    }
+
+    // 3. 尝试解析为包含字符串数组的 data 字段，例如 `{ "data": ["model-1", "model-2"] }`
+    #[derive(Deserialize)]
+    struct AlternateResponse {
+        data: Vec<String>,
+    }
+    if let Ok(alt_resp) = serde_json::from_str::<AlternateResponse>(trimmed_text) {
+        return Ok(alt_resp.data);
+    }
+
+    // 4. 尝试解析为通用 Value，以提取可能的 model 信息
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed_text) {
+        if let Some(models_val) = val.get("models") {
+            if let Some(arr) = models_val.as_array() {
+                let mut list = Vec::new();
+                for item in arr {
+                    if let Some(s) = item.as_str() {
+                        list.push(s.to_string());
+                    } else if let Some(id_val) = item.get("id").and_then(|id| id.as_str()) {
+                        list.push(id_val.to_string());
+                    }
+                }
+                if !list.is_empty() {
+                    return Ok(list);
+                }
+            }
+        }
+    }
+
+    // 解析失败，输出具体的响应文本前缀以供排查
+    let truncated_text = if trimmed_text.chars().count() > 150 {
+        let prefix: String = trimmed_text.chars().take(150).collect();
+        format!("{}...", prefix)
+    } else {
+        trimmed_text.to_string()
+    };
+
+    Err(anyhow::anyhow!(
+        "failed to parse /models response: error decoding JSON. Raw response:\n{}",
+        truncated_text
+    ))
 }
 
 #[derive(Serialize)]
