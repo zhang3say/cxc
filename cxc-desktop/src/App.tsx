@@ -805,11 +805,10 @@ function App() {
           {/* Add Provider Button */}
           <Button
             onClick={openAddForm}
-            className="h-8 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-medium text-xs transition-all"
+            className="h-8 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-medium text-xs transition-all flex items-center gap-1"
             title={t.addProvider}
           >
-            <Plus className="size-3.5 mr-1" />
-            <span>{lang === "zh" ? "添加" : "Add"}</span>
+            <Plus className="size-3.5" /><span>{lang === "zh" ? "添加" : "Add"}</span>
           </Button>
 
           <div className="h-4 w-px bg-border/60 mx-0.5" />
@@ -1204,8 +1203,8 @@ function App() {
                   </p>
                 </div>
                 {!searchQuery && (
-                  <Button onClick={openAddForm} className="mt-3 h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm">
-                    <Plus className="size-3.5 mr-1" /> {t.addProvider}
+                  <Button onClick={openAddForm} className="mt-3 h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm flex items-center gap-1">
+                    <Plus className="size-3.5" />{t.addProvider}
                   </Button>
                 )}
               </div>
