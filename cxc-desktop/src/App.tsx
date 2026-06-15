@@ -723,7 +723,7 @@ function App() {
                   {filteredProviders.map((p) => {
                     const isActive = config?.active === p.name;
                     const isThisSwitching = switching === p.name;
-                    const isTesting = testingProvider === p.name || (testingAll && !isActive);
+                    const isTesting = testingProvider === p.name || testingAll;
 
                     return (
                       <div
@@ -843,7 +843,7 @@ function App() {
                   {filteredProviders.map((p) => {
                     const isActive = config?.active === p.name;
                     const isThisSwitching = switching === p.name;
-                    const isTesting = testingProvider === p.name || (testingAll && !isActive);
+                    const isTesting = testingProvider === p.name || testingAll;
 
                     return (
                       <Card
