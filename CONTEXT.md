@@ -30,7 +30,7 @@ The act of querying a Provider's `GET /models` endpoint to retrieve the list of 
 
 ## Desktop App（桌面端应用）
 
-The graphical user interface (GUI) of CXC built with Tauri. It provides a visual dashboard for managing, testing, and switching Providers.
+The graphical user interface (GUI) of CXC built with Tauri. It features a frameless, integrated visual canvas that adapts to the host operating system's native window controls and vibrancy physics. It enforces desktop application behavior by preventing browser-specific interactions and intelligently distributing notifications between lightweight in-app toasts and system-level OS notifications.
 
 ## System Tray（系统托盘）
 
