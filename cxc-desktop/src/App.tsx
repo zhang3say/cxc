@@ -1143,14 +1143,14 @@ function App() {
                   ? "border border-border rounded-xl bg-card overflow-x-auto shadow-[0_1px_3px_rgba(0,0,0,0.02)]" 
                   : "overflow-x-auto"
                 }>
-                  <div className="min-w-[850px] divide-y divide-border">
+                  <div className="w-full divide-y divide-border">
                     {/* Table Header */}
                     <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 gap-4">
                       <div className="w-6 shrink-0" />
-                      <div className="w-40 shrink-0 pr-4">{t.providerNameCol}</div>
-                      <div className="flex-1 min-w-0 pr-4">{t.endpointCol}</div>
-                      <div className="w-32 shrink-0 pr-4">{t.modelCol}</div>
-                      <div className="w-36 shrink-0 pr-4">{t.statusLatencyCol}</div>
+                      <div className="w-32 sm:w-36 shrink-0 pr-4">{t.providerNameCol}</div>
+                      <div className="hidden lg:flex flex-1 min-w-0 pr-4">{t.endpointCol}</div>
+                      <div className="w-24 sm:w-28 shrink-0 pr-4">{t.modelCol}</div>
+                      <div className="w-28 sm:w-32 shrink-0 pr-4">{t.statusLatencyCol}</div>
                       <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
                       <div className="w-24 shrink-0 text-center">{t.activeCol}</div>
                     </div>
@@ -1179,7 +1179,7 @@ function App() {
                           </div>
 
                           {/* Name & remark column */}
-                          <div className="w-full sm:w-40 shrink-0 truncate pr-4">
+                          <div className="w-full sm:w-36 shrink-0 truncate pr-4">
                             <span className="text-sm font-bold text-foreground/90 tracking-tight block truncate" title={p.name}>
                               {p.name}
                             </span>
@@ -1191,11 +1191,11 @@ function App() {
                           </div>
 
                           {/* Base URL column */}
-                          <div className="flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 truncate flex items-center gap-1.5">
+                          <div className="flex sm:hidden lg:flex flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
                             <span
                               onClick={(e) => handleEndpointClick(e, p.base_url)}
-                              className="truncate cursor-pointer hover:text-primary hover:underline transition-colors"
+                              className="flex-1 min-w-0 truncate cursor-pointer hover:text-primary hover:underline transition-colors"
                               title={t.endpointTooltip}
                             >
                               {p.base_url}
@@ -1203,7 +1203,7 @@ function App() {
                           </div>
 
                           {/* Model column */}
-                          <div className="w-full sm:w-32 shrink-0 pr-4 text-xs flex items-center gap-1.5">
+                          <div className="w-full sm:w-28 shrink-0 pr-4 text-xs flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
                             <span
                               onClick={() => handleQuickFetchModels(p)}
@@ -1219,7 +1219,7 @@ function App() {
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
-                          <div className="w-full sm:w-36 shrink-0 pr-4 text-xs flex items-center gap-1.5">
+                          <div className="w-full sm:w-32 shrink-0 pr-4 text-xs flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Status:</span>
                             {renderStatus(p, isTesting)}
                           </div>
