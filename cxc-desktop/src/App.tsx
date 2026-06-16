@@ -864,7 +864,10 @@ function App() {
     return (
       <>
         {/* Unified Single-Bar Header */}
-        <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)] cxc-drag">
+        <header className={vibeMode === "standard"
+          ? "sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)] cxc-drag"
+          : "sticky top-0 z-40 w-full px-6 py-3.5 flex items-center justify-between cxc-drag bg-transparent border-none shadow-none"
+        }>
           <div className="flex items-center gap-3 cxc-no-drag">
             {/* 仅在无标题栏一体化模式下显示 macOS 红绿灯窗口控制 */}
             {vibeMode !== "standard" && <WindowControls />}
@@ -1054,7 +1057,10 @@ function App() {
             {filteredProviders.length > 0 ? (
               viewMode === "list" ? (
                 /* Table Database Layout */
-                <div className="border border-border rounded-xl bg-card overflow-x-auto shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                <div className={vibeMode === "standard" 
+                  ? "border border-border rounded-xl bg-card overflow-x-auto shadow-[0_1px_3px_rgba(0,0,0,0.02)]" 
+                  : "overflow-x-auto"
+                }>
                   <div className="min-w-[850px] divide-y divide-border">
                     {/* Table Header */}
                     <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 gap-4">
@@ -1206,10 +1212,16 @@ function App() {
                     return (
                       <Card
                         key={p.name}
-                        className={`relative flex flex-col justify-between overflow-hidden bg-card border transition-all duration-200 hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:-translate-y-[1px] ${
+                        className={`relative flex flex-col justify-between overflow-hidden transition-all duration-200 hover:-translate-y-[1px] ${
+                          vibeMode === "standard"
+                            ? "bg-card border border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
+                            : "bg-card/30 backdrop-blur-md border border-white/10 dark:border-white/5"
+                        } ${
                           isActive
-                            ? "border-primary/45 border-l-4 border-l-primary ring-1 ring-primary/10 shadow-sm"
-                            : "border-border"
+                            ? vibeMode === "standard"
+                              ? "border-primary/45 border-l-4 border-l-primary ring-1 ring-primary/10 shadow-sm"
+                              : "border-primary/40 border-l-[3px] border-l-primary ring-1 ring-primary/5 shadow-sm bg-primary/[0.03]"
+                            : ""
                         } ${isTesting ? "opacity-80 animate-pulse" : ""}`}
                       >
                         {/* Header of Card */}
@@ -2080,13 +2092,13 @@ function App() {
         }
         
         /* 6. 卡片视图下的一体化 (Card Grid) */
-        .vibe-integrated .grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-3.gap-4 .bg-card {
+        .vibe-integrated .grid .bg-card {
           background-color: rgba(255, 255, 255, 0.28) !important;
           backdrop-filter: blur(14px) !important;
           border-color: rgba(255, 255, 255, 0.2) !important;
           box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.02) !important;
         }
-        .dark .vibe-integrated .grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-3.gap-4 .bg-card {
+        .dark .vibe-integrated .grid .bg-card {
           background-color: rgba(26, 26, 26, 0.3) !important;
           border-color: rgba(255, 255, 255, 0.04) !important;
           box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.2) !important;
