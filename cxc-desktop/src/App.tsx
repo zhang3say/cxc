@@ -506,6 +506,9 @@ function App() {
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // 顶栏滚动收缩及半透明模糊控制状态
+  const [isScrolled, setIsScrolled] = useState<boolean>(false);
+
   // 一体化背景板原型方案状态
   const [vibeMode] = useState<"standard" | "acrylic" | "mica" | "aurora">(() => {
     return (localStorage.getItem("cxc-vibe-mode") as any) || "mica";
@@ -604,7 +607,7 @@ function App() {
   const getWindowClasses = () => {
     const base = "flex flex-col text-foreground transition-all duration-300 relative select-none ";
     
-    const layout = "w-full min-h-screen ";
+    const layout = "w-full h-screen overflow-hidden ";
       
     if (vibeMode === "standard") {
       return base + layout + " bg-background";
@@ -1127,10 +1130,15 @@ function App() {
     return (
       <>
         {/* Unified Single-Bar Header */}
-        <header className={vibeMode === "standard"
-          ? "sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)] cxc-drag"
-          : "sticky top-0 z-40 w-full px-6 py-3.5 flex items-center justify-between cxc-drag bg-transparent border-none shadow-none"
-        }>
+        <header className={`sticky top-0 z-40 w-full transition-all duration-300 cxc-drag flex items-center justify-between px-6 ${
+          vibeMode === "standard"
+            ? `py-2 bg-card/75 backdrop-blur-md border-b shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${isScrolled ? "border-border shadow-md" : "border-border/80"}`
+            : `py-3.5 border-b transition-all duration-300 ${
+                isScrolled
+                  ? "bg-background/40 dark:bg-background/25 backdrop-blur-lg border-border/30 shadow-[0_4px_12px_rgba(0,0,0,0.03)]"
+                  : "bg-transparent border-transparent shadow-none"
+              }`
+        }`}>
           <div className="flex items-center gap-2.5 cxc-no-drag">
             {/* 仅在无标题栏一体化模式下显示 macOS 红绿灯窗口控制 */}
             {vibeMode !== "standard" && <WindowControls />}
@@ -1253,8 +1261,13 @@ function App() {
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="max-w-[1800px] w-full mx-auto px-6 py-4 space-y-6">
+      {/* Scroll Wrapper */}
+      <div 
+        className="flex-1 w-full overflow-y-auto custom-scrollbar"
+        onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}
+      >
+        {/* Main Container */}
+        <main className="max-w-[1800px] w-full mx-auto px-6 py-4 space-y-6">
         {/* Error Alert */}
         {error && (
           <div className="rounded-xl border border-red-200/60 bg-red-500/5 p-4 dark:border-red-900/40 dark:bg-red-950/10 text-red-600 dark:text-red-400 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -1604,6 +1617,7 @@ function App() {
           </section>
         )}
       </main>
+      </div>
 
       {/* Settings Dialog Modal (Notion-style Settings) */}
       <Dialog open={showSettings} onOpenChange={(open) => !open && setShowSettings(false)}>
