@@ -271,6 +271,97 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
   },
 };
 
+const mockConfig: Config = {
+  active: "Official",
+  providers: [],
+  codex_active: "PatewayAI",
+  codex_providers: [
+    {
+      name: "Official",
+      base_url: "https://claude.ai/download",
+      model: "claude-3-5-sonnet",
+      api_key: "sk-official-key-placeholder",
+      wire_api: "responses",
+      remark: "Official client link",
+      latency_ms: 12,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    },
+    {
+      name: "PatewayAI",
+      base_url: "https://pateway.ai",
+      model: "claude-3-5-sonnet",
+      api_key: "sk-pateway-key-placeholder",
+      wire_api: "responses",
+      remark: "Fast API proxy",
+      latency_ms: 45,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    },
+    {
+      name: "ClaudeAPI",
+      base_url: "https://claudeapi.com",
+      model: "claude-3-5-sonnet-v2",
+      api_key: "sk-claudeapi-key-placeholder",
+      wire_api: "responses",
+      remark: "Claude native API endpoint",
+      latency_ms: 210,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    },
+    {
+      name: "Codex OAuth",
+      base_url: "http://localhost:3000",
+      model: "gpt-4o",
+      api_key: "sk-local-key-placeholder",
+      wire_api: "responses",
+      remark: "Account provider via Local Routing",
+      last_ok: undefined,
+      last_test: undefined
+    }
+  ],
+  claude_active: "ClaudeAPI",
+  claude_providers: [
+    {
+      name: "Official",
+      base_url: "https://claude.ai/download",
+      model: "claude-3-5-sonnet",
+      api_key: "sk-official-key-placeholder",
+      wire_api: "responses",
+      remark: "Official client link",
+      latency_ms: 12,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    },
+    {
+      name: "PatewayAI",
+      base_url: "https://pateway.ai",
+      model: "claude-3-5-sonnet",
+      api_key: "sk-pateway-key-placeholder",
+      wire_api: "responses",
+      remark: "Fast API proxy",
+      latency_ms: 45,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    },
+    {
+      name: "ClaudeAPI",
+      base_url: "https://claudeapi.com",
+      model: "claude-3-5-sonnet-v2",
+      api_key: "sk-claudeapi-key-placeholder",
+      wire_api: "responses",
+      remark: "Claude native API endpoint",
+      latency_ms: 210,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    }
+  ],
+  codex_source: "app",
+  codex_custom_dir: "",
+  claude_source: "wsl",
+  claude_custom_dir: "",
+};
+
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -521,7 +612,17 @@ function App() {
       setClaudeSource(cfg.claude_source || "wsl");
       setClaudeCustomDir(cfg.claude_custom_dir || "");
     } catch (e: any) {
-      setError(e.toString());
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (!isTauri) {
+        // Fallback to mock config in browser
+        setConfig(mockConfig);
+        setSettingsSource(mockConfig.codex_source || "app");
+        setSettingsCustomDir(mockConfig.codex_custom_dir || "");
+        setClaudeSource(mockConfig.claude_source || "wsl");
+        setClaudeCustomDir(mockConfig.claude_custom_dir || "");
+      } else {
+        setError(e.toString());
+      }
     } finally {
       setLoading(false);
     }
@@ -531,11 +632,23 @@ function App() {
     try {
       setSwitching(name);
       setError(null);
-      const updatedCfg = await invoke<Config>("switch_provider", {
-        name,
-        targetTool
-      });
-      setConfig(updatedCfg);
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (!isTauri && config) {
+        // Simulate local switch
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const updated = {
+          ...config,
+          codex_active: targetTool === "codex" ? name : config.codex_active,
+          claude_active: targetTool === "claude" ? name : config.claude_active,
+        };
+        setConfig(updated);
+      } else {
+        const updatedCfg = await invoke<Config>("switch_provider", {
+          name,
+          targetTool
+        });
+        setConfig(updatedCfg);
+      }
     } catch (e: any) {
       setError(e.toString());
     } finally {
@@ -737,8 +850,28 @@ function App() {
     try {
       setTestingProviders(prev => ({ ...prev, [name]: true }));
       setError(null);
-      const updatedCfg = await invoke<Config>("test_provider", { name, targetTool });
-      setConfig(updatedCfg);
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (!isTauri && config) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        const targetListKey = targetTool === "codex" ? "codex_providers" : "claude_providers";
+        const providers = [...config[targetListKey]];
+        const index = providers.findIndex((p) => p.name === name);
+        if (index !== -1) {
+          providers[index] = {
+            ...providers[index],
+            latency_ms: Math.floor(Math.random() * 200) + 20,
+            last_ok: true,
+            last_test: new Date().toISOString(),
+          };
+        }
+        setConfig({
+          ...config,
+          [targetListKey]: providers,
+        });
+      } else {
+        const updatedCfg = await invoke<Config>("test_provider", { name, targetTool });
+        setConfig(updatedCfg);
+      }
     } catch (e: any) {
       setError(e.toString());
     } finally {
@@ -1139,13 +1272,10 @@ function App() {
             {filteredProviders.length > 0 ? (
               viewMode === "list" ? (
                 /* Table Database Layout */
-                <div className={vibeMode === "standard" 
-                  ? "border border-border rounded-xl bg-card overflow-x-auto shadow-[0_1px_3px_rgba(0,0,0,0.02)]" 
-                  : "overflow-x-auto"
-                }>
-                  <div className="w-full divide-y divide-border">
+                <div className="overflow-x-auto">
+                  <div className="w-full min-w-[800px] flex flex-col gap-2.5 pb-2.5 px-3.5">
                     {/* Table Header */}
-                    <div className="hidden sm:flex items-center px-4 py-2 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 gap-4">
+                    <div className="hidden sm:flex items-center px-4 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider gap-4 opacity-70">
                       <div className="w-6 shrink-0" />
                       <div className="w-32 sm:w-36 shrink-0 pr-4">{t.providerNameCol}</div>
                       <div className="hidden lg:flex flex-1 min-w-0 pr-4">{t.endpointCol}</div>
@@ -1163,11 +1293,26 @@ function App() {
                       return (
                         <div
                           key={p.name}
-                          className={`flex flex-col sm:flex-row sm:items-center px-4 py-2.5 gap-3 sm:gap-4 transition-colors hover:bg-muted/30 group relative ${
-                            isActive ? "bg-primary/[0.02] dark:bg-primary/[0.04]" : ""
+                          className={`flex flex-col sm:flex-row sm:items-center px-4 py-3 gap-3 sm:gap-4 rounded-xl border transition-all duration-200 group relative ${
+                            vibeMode === "standard"
+                              ? isActive
+                                ? "bg-primary/[0.04] border-primary/55 ring-1 ring-primary/5 shadow-[0_2px_10px_rgba(59,130,246,0.05)]"
+                                : "bg-card border-border hover:border-border/80 hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
+                              : isActive
+                                ? "bg-primary/[0.06] dark:bg-primary/[0.09] border-primary/45 ring-1 ring-primary/5 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                                : "bg-card/25 backdrop-blur-md border-border/40 hover:border-border/70 hover:bg-card/35 dark:border-white/5 dark:hover:border-white/10"
                           } ${isTesting ? "opacity-80" : ""}`}
                         >
-                          {isActive && vibeMode === "standard" && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" />}
+                          {/* 启用后在右侧外边框中线悬浮的客户端类型徽标 */}
+                          {isActive && (
+                            <div className={`absolute -right-2 top-1/2 -translate-y-1/2 size-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shadow-md z-10 border border-background dark:border-card animate-in zoom-in duration-300 select-none ${
+                              targetTool === "codex"
+                                ? "bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/20"
+                                : "bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-500/20"
+                            }`}>
+                              {targetTool === "codex" ? "CX" : "CL"}
+                            </div>
+                          )}
 
                           {/* Active dot column */}
                           <div className="hidden sm:flex items-center justify-center w-6 size-5 shrink-0">
@@ -1298,18 +1443,28 @@ function App() {
                     return (
                       <Card
                         key={p.name}
-                        className={`relative flex flex-col justify-between overflow-hidden transition-all duration-200 hover:-translate-y-[1px] ${
+                        className={`relative flex flex-col justify-between transition-all duration-200 hover:-translate-y-[1px] ${
                           vibeMode === "standard"
                             ? "bg-card border border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
                             : "bg-card/30 backdrop-blur-md border border-white/10 dark:border-white/5"
                         } ${
                           isActive
                             ? vibeMode === "standard"
-                              ? "border-primary/45 border-l-4 border-l-primary ring-1 ring-primary/10 shadow-sm"
-                              : "border-primary/40 border-l-[3px] border-l-primary ring-1 ring-primary/5 shadow-sm bg-primary/[0.03]"
-                            : ""
+                              ? "bg-primary/[0.04] border-primary/55 ring-1 ring-primary/10 shadow-[0_2px_10px_rgba(59,130,246,0.05)]"
+                              : "bg-primary/[0.06] dark:bg-primary/[0.10] border-primary/45 ring-1 ring-primary/5 shadow-sm"
+                            : "overflow-hidden"
                         } ${isTesting ? "opacity-80 animate-pulse" : ""}`}
                       >
+                        {/* 启用后在右侧外边框中线悬浮的客户端类型徽标 */}
+                        {isActive && (
+                          <div className={`absolute -right-2 top-1/2 -translate-y-1/2 size-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shadow-md z-10 border border-background dark:border-card animate-in zoom-in duration-300 select-none ${
+                            targetTool === "codex"
+                              ? "bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/20"
+                              : "bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-500/20"
+                          }`}>
+                            {targetTool === "codex" ? "CX" : "CL"}
+                          </div>
+                        )}
                         {/* Header of Card */}
                         <CardHeader className="pb-2 px-4 pt-4 gap-0.5">
                           <div className="flex items-start justify-between gap-1.5">
