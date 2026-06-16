@@ -1303,17 +1303,6 @@ function App() {
                                 : "bg-card/25 backdrop-blur-md border-border/40 hover:border-border/70 hover:bg-card/35 dark:border-white/5 dark:hover:border-white/10"
                           } ${isTesting ? "opacity-80" : ""}`}
                         >
-                          {/* 启用后在右侧外边框中线悬浮的客户端类型徽标 */}
-                          {isActive && (
-                            <div className={`absolute -right-2 top-1/2 -translate-y-1/2 size-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shadow-md z-10 border border-background dark:border-card animate-in zoom-in duration-300 select-none ${
-                              targetTool === "codex"
-                                ? "bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/20"
-                                : "bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-500/20"
-                            }`}>
-                              {targetTool === "codex" ? "CX" : "CL"}
-                            </div>
-                          )}
-
                           {/* Active dot column */}
                           <div className="hidden sm:flex items-center justify-center w-6 size-5 shrink-0">
                             {isActive ? (
@@ -1455,16 +1444,6 @@ function App() {
                             : "overflow-hidden"
                         } ${isTesting ? "opacity-80 animate-pulse" : ""}`}
                       >
-                        {/* 启用后在右侧外边框中线悬浮的客户端类型徽标 */}
-                        {isActive && (
-                          <div className={`absolute -right-2 top-1/2 -translate-y-1/2 size-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shadow-md z-10 border border-background dark:border-card animate-in zoom-in duration-300 select-none ${
-                            targetTool === "codex"
-                              ? "bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/20"
-                              : "bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-500/20"
-                          }`}>
-                            {targetTool === "codex" ? "CX" : "CL"}
-                          </div>
-                        )}
                         {/* Header of Card */}
                         <CardHeader className="pb-2 px-4 pt-4 gap-0.5">
                           <div className="flex items-start justify-between gap-1.5">
