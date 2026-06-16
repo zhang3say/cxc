@@ -595,7 +595,7 @@ function App() {
   const getWindowClasses = () => {
     const base = "flex flex-col text-foreground transition-all duration-300 relative select-none ";
     
-    const layout = "w-full min-h-screen";
+    const layout = "w-full min-h-screen ";
       
     if (vibeMode === "standard") {
       return base + layout + " bg-background";
