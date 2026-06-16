@@ -1130,7 +1130,10 @@ function App() {
             <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
               <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
             </div>
-          <h1 className="text-sm font-black tracking-tight text-foreground/95 leading-none shrink-0">
+          <h1 
+            className="text-sm font-black tracking-tighter shrink-0 bg-gradient-to-r from-[#0075de] to-[#00a3ff] dark:from-[#2eaadc] dark:to-[#0075de] bg-clip-text text-transparent select-none leading-none"
+            style={{ fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace" }}
+          >
             CXC
           </h1>
 
