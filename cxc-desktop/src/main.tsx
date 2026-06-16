@@ -69,6 +69,7 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
   };
 
   (window as any).__TAURI_INTERNALS__ = {
+    isMock: true,
     transformCallback: (callback: any, once: boolean) => {
       console.log("Mock transformCallback registered", callback, once);
       return Math.floor(Math.random() * 1000000);

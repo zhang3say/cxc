@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Card,
   CardHeader,
@@ -570,9 +571,8 @@ function App() {
   }, [theme]);
 
   const handleWindowAction = async (action: "minimize" | "maximize" | "close") => {
-    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock")) {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.isMock) {
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const appWindow = getCurrentWindow();
         if (action === "minimize") {
           await appWindow.minimize();
