@@ -363,6 +363,29 @@ function App() {
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // 一体化背景板原型方案状态
+  const [vibeMode, setVibeMode] = useState<"standard" | "acrylic" | "mica" | "aurora">(() => {
+    return (localStorage.getItem("cxc-vibe-mode") as any) || "acrylic";
+  });
+  
+  const [simulateDesktop, setSimulateDesktop] = useState<boolean>(() => {
+    // 默认在浏览器里预览时模拟桌面
+    const isMock = typeof window !== "undefined" && (
+      !(window as any).__TAURI__ || 
+      !(window as any).__TAURI_INTERNALS__ || 
+      (window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock")
+    );
+    return isMock;
+  });
+
+  const [desktopWallpaper, setDesktopWallpaper] = useState<"sequoia" | "nebula" | "dark-slate">("sequoia");
+  const [vibePanelOpen, setVibePanelOpen] = useState<boolean>(false);
+
+  // 保存 vibeMode 并在根元素上应用相应的 CSS 类
+  useEffect(() => {
+    localStorage.setItem("cxc-vibe-mode", vibeMode);
+  }, [vibeMode]);
+
   // Apply theme
   useEffect(() => {
     const root = window.document.documentElement;
@@ -373,6 +396,59 @@ function App() {
     }
     localStorage.setItem("cxc-theme", theme);
   }, [theme]);
+
+  const handleWindowAction = async (action: "minimize" | "maximize" | "close") => {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock")) {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+        if (action === "minimize") {
+          await appWindow.minimize();
+        } else if (action === "maximize") {
+          await appWindow.toggleMaximize();
+        } else if (action === "close") {
+          await appWindow.close();
+        }
+      } catch (err) {
+        console.error("Window action failed:", err);
+      }
+    } else {
+      const zh = lang === "zh";
+      const actionText = action === "minimize" ? (zh ? "最小化" : "Minimize") : action === "maximize" ? (zh ? "最大化" : "Maximize") : (zh ? "关闭" : "Close");
+      setToastMessage(`${zh ? "模拟窗口操作" : "Mock window action"}: ${actionText}`);
+      setTimeout(() => setToastMessage(null), 2000);
+    }
+  };
+
+  const getWindowClasses = () => {
+    const base = "flex flex-col text-foreground transition-all duration-300 relative select-none ";
+    
+    // 如果是模拟桌面，应用固定大小、阴影、圆角和细边框；如果是全屏，占据全部高度
+    const layout = simulateDesktop 
+      ? "w-[1024px] h-[680px] rounded-2xl shadow-[0_35px_80px_-15px_rgba(0,0,0,0.65)] border border-white/10 overflow-hidden" 
+      : "w-full min-h-screen";
+      
+    if (vibeMode === "standard") {
+      return base + layout + " bg-background";
+    }
+    
+    const vibeClass = "vibe-integrated ";
+    if (vibeMode === "acrylic") {
+      return base + layout + vibeClass + " bg-background/55 backdrop-blur-[24px] saturate-[1.25]";
+    }
+    
+    if (vibeMode === "mica") {
+      return base + layout + vibeClass + (theme === "dark" 
+        ? " bg-[#151515]/85 backdrop-blur-[20px] saturate-[1.15]"
+        : " bg-[#f6f5f4]/80 backdrop-blur-[20px] saturate-[1.1]");
+    }
+    
+    if (vibeMode === "aurora") {
+      return base + layout + vibeClass + " bg-background/30 backdrop-blur-[35px]";
+    }
+    
+    return base + layout;
+  };
 
   // Load config & subscribe to tray events
   useEffect(() => {
@@ -750,15 +826,53 @@ function App() {
     );
   };
 
-  return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
-      {/* Unified Single-Bar Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-        <div className="flex items-center gap-3">
-          {/* Logo with official CXC image */}
-          <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
-            <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
-          </div>
+  const renderAppContent = () => {
+    // 渲染 macOS 控制按钮（红绿灯）的子组件
+    const WindowControls = () => {
+      const [isHovered, setIsHovered] = useState(false);
+      return (
+        <div 
+          className="flex items-center gap-1.5 mr-2 shrink-0 cursor-default select-none cxc-no-drag"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          <button 
+            onClick={() => handleWindowAction("close")}
+            className="relative flex items-center justify-center size-3 rounded-full bg-[#ff5f56] hover:bg-[#e04b40] transition-colors focus:outline-none cursor-pointer"
+            title={lang === "zh" ? "关闭" : "Close"}
+          >
+            {isHovered && <span className="text-[8px] text-[#4c0002] font-bold absolute leading-none">×</span>}
+          </button>
+          <button 
+            onClick={() => handleWindowAction("minimize")}
+            className="relative flex items-center justify-center size-3 rounded-full bg-[#ffbd2e] hover:bg-[#e0a324] transition-colors focus:outline-none cursor-pointer"
+            title={lang === "zh" ? "最小化" : "Minimize"}
+          >
+            {isHovered && <span className="text-[9px] text-[#5c3e00] font-bold absolute leading-none" style={{ top: '-1.5px' }}>-</span>}
+          </button>
+          <button 
+            onClick={() => handleWindowAction("maximize")}
+            className="relative flex items-center justify-center size-3 rounded-full bg-[#27c93f] hover:bg-[#1fa330] transition-colors focus:outline-none cursor-pointer"
+            title={lang === "zh" ? "最大化" : "Maximize"}
+          >
+            {isHovered && <span className="text-[7px] text-[#004d05] font-bold absolute leading-none" style={{ top: '0.5px' }}>+</span>}
+          </button>
+        </div>
+      );
+    };
+
+    return (
+      <>
+        {/* Unified Single-Bar Header */}
+        <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)] cxc-drag">
+          <div className="flex items-center gap-3 cxc-no-drag">
+            {/* 仅在无标题栏一体化模式下显示 macOS 红绿灯窗口控制 */}
+            {vibeMode !== "standard" && <WindowControls />}
+            
+            {/* Logo with official CXC image */}
+            <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
+              <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+            </div>
           <div className="flex flex-col justify-center shrink-0">
             <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none">
               CXC
@@ -1859,8 +1973,321 @@ function App() {
           <span>{toastMessage}</span>
         </div>
       )}
+      </>
+    );
+  };
 
-    </div>
+  return (
+    <>
+      <style>{`
+        /* 全局毛玻璃以及一体化背景的自定义样式覆盖 */
+        @keyframes float-blob-1 {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(60px, -45px) scale(1.1); }
+          66% { transform: translate(-30px, 30px) scale(0.95); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        @keyframes float-blob-2 {
+          0% { transform: translate(0px, 0px) scale(1.15); }
+          50% { transform: translate(-45px, 60px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1.15); }
+        }
+        @keyframes float-blob-3 {
+          0% { transform: translate(0px, 0px) scale(0.95); }
+          33% { transform: translate(-30px, -60px) scale(1.05); }
+          66% { transform: translate(60px, 45px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(0.95); }
+        }
+        .animate-float-blob-1 { animation: float-blob-1 18s infinite alternate ease-in-out; }
+        .animate-float-blob-2 { animation: float-blob-2 22s infinite alternate ease-in-out; }
+        .animate-float-blob-3 { animation: float-blob-3 15s infinite alternate ease-in-out; }
+        
+        .cxc-drag { -webkit-app-region: drag; }
+        .cxc-no-drag { -webkit-app-region: no-drag; }
+        
+        /* 亚克力和云母在暗黑模式和亮色模式下的半透明颜色覆盖 */
+        .vibe-integrated header {
+          background-color: rgba(255, 255, 255, 0.25) !important;
+          backdrop-filter: blur(14px) !important;
+          border-bottom-color: rgba(0, 0, 0, 0.05) !important;
+          box-shadow: none !important;
+        }
+        .dark .vibe-integrated header {
+          background-color: rgba(20, 20, 20, 0.35) !important;
+          border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+        }
+        
+        .vibe-integrated .bg-card {
+          background-color: rgba(255, 255, 255, 0.45) !important;
+          backdrop-filter: blur(10px) !important;
+          border-color: rgba(255, 255, 255, 0.4) !important;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.01) !important;
+        }
+        .dark .vibe-integrated .bg-card {
+          background-color: rgba(26, 26, 26, 0.45) !important;
+          border-color: rgba(255, 255, 255, 0.06) !important;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.05) !important;
+        }
+        
+        /* 输入框毛玻璃适配 */
+        .vibe-integrated input {
+          background-color: rgba(255, 255, 255, 0.6) !important;
+          border-color: rgba(0, 0, 0, 0.08) !important;
+        }
+        .dark .vibe-integrated input {
+          background-color: rgba(255, 255, 255, 0.03) !important;
+          border-color: rgba(255, 255, 255, 0.06) !important;
+        }
+        
+        /* 侧边栏和主背景的微调 */
+        .vibe-integrated .bg-muted\/40 {
+          background-color: rgba(0, 0, 0, 0.04) !important;
+        }
+        .dark .vibe-integrated .bg-muted\/40 {
+          background-color: rgba(255, 255, 255, 0.04) !important;
+        }
+        .vibe-integrated .bg-muted\/10 {
+          background-color: rgba(0, 0, 0, 0.02) !important;
+        }
+        .dark .vibe-integrated .bg-muted\/10 {
+          background-color: rgba(255, 255, 255, 0.02) !important;
+        }
+        .vibe-integrated .border-border {
+          border-color: rgba(0, 0, 0, 0.06) !important;
+        }
+        .dark .vibe-integrated .border-border {
+          border-color: rgba(255, 255, 255, 0.05) !important;
+        }
+        
+        /* 滚动条美化 */
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 5px;
+          height: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(128, 128, 128, 0.2);
+          border-radius: 99px;
+        }
+        .vibe-integrated .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(128, 128, 128, 0.15);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(128, 128, 128, 0.35);
+        }
+      `}</style>
+
+      {simulateDesktop ? (
+        // 模拟桌面容器壳
+        <div className="fixed inset-0 w-screen h-screen z-40 flex flex-col items-center justify-center overflow-hidden font-sans select-none bg-slate-950">
+          {/* 桌面壁纸 */}
+          <div className="absolute inset-0 z-0 transition-all duration-700 ease-in-out scale-100">
+            {desktopWallpaper === "sequoia" && (
+              <div className="w-full h-full bg-gradient-to-tr from-[#5b0e2d] via-[#a82069] to-[#ea580c]" />
+            )}
+            {desktopWallpaper === "nebula" && (
+              <div className="w-full h-full bg-gradient-to-br from-[#0b132b] via-[#1c2541] to-[#3a506b]" />
+            )}
+            {desktopWallpaper === "dark-slate" && (
+              <div className="w-full h-full bg-gradient-to-tr from-[#111827] to-[#374151]" />
+            )}
+            {/* 极光粒子微光 */}
+            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/30 via-transparent to-transparent pointer-events-none" />
+          </div>
+
+          {/* 模拟的 macOS Menu Bar */}
+          <div className="absolute top-0 left-0 right-0 h-6 bg-black/15 backdrop-blur-md border-b border-white/5 text-[10px] text-white/90 px-4 flex items-center justify-between z-10 select-none">
+            <div className="flex items-center gap-3.5 font-semibold">
+              <span className="cursor-pointer"></span>
+              <span className="font-bold cursor-pointer">CXC Desktop</span>
+              <span className="opacity-75 cursor-pointer">{lang === "zh" ? "配置" : "Config"}</span>
+              <span className="opacity-75 cursor-pointer">{lang === "zh" ? "窗口" : "Window"}</span>
+              <span className="opacity-75 cursor-pointer">{lang === "zh" ? "帮助" : "Help"}</span>
+            </div>
+            <div className="flex items-center gap-3.5 font-medium opacity-85">
+              <span>100% 🔋</span>
+              <span>10:14 AM 👤</span>
+            </div>
+          </div>
+
+          {/* 模拟应用窗口壳 */}
+          <div className={getWindowClasses()}>
+            {/* 极光流体背景 */}
+            {vibeMode === "aurora" && (
+              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-30 mix-blend-screen dark:opacity-25">
+                <div className="absolute -top-1/4 -left-1/4 size-[400px] rounded-full bg-purple-600/35 blur-[70px] animate-float-blob-1" />
+                <div className="absolute -bottom-1/4 -right-1/4 size-[450px] rounded-full bg-orange-600/25 blur-[80px] animate-float-blob-2" />
+                <div className="absolute top-1/3 left-1/3 size-[350px] rounded-full bg-cyan-600/30 blur-[60px] animate-float-blob-3" />
+              </div>
+            )}
+            
+            {vibeMode === "mica" && (
+              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-gradient-to-tr from-primary/[0.04] via-transparent to-orange-500/[0.04]" />
+            )}
+
+            {renderAppContent()}
+          </div>
+        </div>
+      ) : (
+        // 正常应用窗口模式 (全屏运行在桌面客户端中)
+        <div className={getWindowClasses()}>
+          {vibeMode === "aurora" && (
+            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-30 mix-blend-screen dark:opacity-25">
+              <div className="absolute -top-1/4 -left-1/4 size-[400px] rounded-full bg-purple-600/35 blur-[70px] animate-float-blob-1" />
+              <div className="absolute -bottom-1/4 -right-1/4 size-[450px] rounded-full bg-orange-600/25 blur-[80px] animate-float-blob-2" />
+              <div className="absolute top-1/3 left-1/3 size-[350px] rounded-full bg-cyan-600/30 blur-[60px] animate-float-blob-3" />
+            </div>
+          )}
+          
+          {vibeMode === "mica" && (
+            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-gradient-to-tr from-primary/[0.04] via-transparent to-orange-500/[0.04]" />
+          )}
+
+          {renderAppContent()}
+        </div>
+      )}
+
+      {/* 背景板一体化控制面板 (Window Vibe Controls) */}
+      <div className="fixed bottom-4 left-4 z-50 select-none text-left">
+        {vibePanelOpen ? (
+          <div className="w-[310px] rounded-2xl bg-card/85 backdrop-blur-xl border border-border shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-200 text-foreground">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-extrabold tracking-wider uppercase text-primary bg-primary/10 px-1.5 py-0.5 rounded animate-pulse">Vibe UI</span>
+                <h3 className="text-xs font-bold text-foreground/90">{lang === "zh" ? "一体化背景原型" : "Window Vibe Prototype"}</h3>
+              </div>
+              <button 
+                onClick={() => setVibePanelOpen(false)}
+                className="size-5 rounded-full hover:bg-muted/80 flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              {/* 模式选择 */}
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block mb-1.5">
+                  {lang === "zh" ? "窗口背景效果" : "Window Effect"}
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(["standard", "acrylic", "mica", "aurora"] as const).map((mode) => {
+                    const isActive = vibeMode === mode;
+                    const labels = {
+                      standard: lang === "zh" ? "经典网页" : "Classic Web",
+                      acrylic: lang === "zh" ? "亚克力磨砂" : "Acrylic Blur",
+                      mica: lang === "zh" ? "云母深空" : "Mica Space",
+                      aurora: lang === "zh" ? "极光流雾" : "Aurora Liquid"
+                    };
+                    const icons = {
+                      standard: "🌐",
+                      acrylic: "✨",
+                      mica: "🌌",
+                      aurora: "🎨"
+                    };
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => setVibeMode(mode)}
+                        className={`px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
+                          isActive 
+                            ? "bg-primary text-primary-foreground border-primary shadow-sm scale-[1.02]" 
+                            : "bg-muted/30 border-border/80 text-foreground/80 hover:bg-muted/60 hover:border-border"
+                        }`}
+                      >
+                        <span className="text-sm">{icons[mode]}</span>
+                        <span>{labels[mode]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 模拟桌面开关 */}
+              <div className="flex items-center justify-between bg-muted/20 border border-border/40 p-2.5 rounded-xl">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-semibold text-foreground/90">{lang === "zh" ? "模拟系统桌面" : "Simulate OS Desktop"}</span>
+                  <span className="text-[9px] text-muted-foreground leading-none">{lang === "zh" ? "展示桌面融合与红绿灯效果" : "Preview glass blur blending"}</span>
+                </div>
+                <button
+                  onClick={() => setSimulateDesktop(!simulateDesktop)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    simulateDesktop ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      simulateDesktop ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* 桌面壁纸选择 (仅在 simulateDesktop 开启时) */}
+              {simulateDesktop && (
+                <div className="space-y-1.5 animate-in fade-in duration-200">
+                  <label className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block">
+                    {lang === "zh" ? "系统桌面壁纸" : "OS Desktop Wallpaper"}
+                  </label>
+                  <div className="flex gap-2">
+                    {(["sequoia", "nebula", "dark-slate"] as const).map((paper) => {
+                      const isActive = desktopWallpaper === paper;
+                      const paperNames = {
+                        sequoia: lang === "zh" ? "枫叶极光" : "Sequoia",
+                        nebula: lang === "zh" ? "暗黑星云" : "Nebula",
+                        "dark-slate": lang === "zh" ? "极简石板" : "Slate"
+                      };
+                      const gradientColors = {
+                        sequoia: "from-[#ea580c] to-[#a82069]",
+                        nebula: "from-[#1c2541] to-[#3a506b]",
+                        "dark-slate": "from-[#111827] to-[#374151]"
+                      };
+                      return (
+                        <button
+                          key={paper}
+                          onClick={() => setDesktopWallpaper(paper)}
+                          className={`flex-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                            isActive 
+                              ? "border-primary bg-primary/[0.04] text-primary" 
+                              : "border-border/80 bg-muted/10 text-muted-foreground hover:bg-muted/20"
+                          }`}
+                          title={paperNames[paper]}
+                        >
+                          <span className={`size-2.5 rounded-full bg-gradient-to-r ${gradientColors[paper]}`} />
+                          <span>{paperNames[paper]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3.5 pt-3.5 border-t border-border/60 text-[9px] text-muted-foreground leading-normal flex items-start gap-1">
+              <span>💡</span>
+              <p>
+                {lang === "zh" 
+                  ? "背景板一体化通过移除浏览器边框，增加 macOS 级别的磨砂玻璃反射效果，极大地弱化了「网页感」，使其成为富有呼吸感的高级原生桌面工具。"
+                  : "Integrated Background vibe hides the browser title bar and adds native frosted glass reflection effects, making it a beautiful native tool."}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setVibePanelOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/95 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer border border-primary/20 text-xs font-bold"
+          >
+            <span className="text-sm animate-pulse">✨</span>
+            <span>{lang === "zh" ? "一体化背景原型" : "Vibe UI Controls"}</span>
+          </button>
+        )}
+      </div>
+    </>
   );
 }
 
