@@ -381,6 +381,56 @@ function App() {
   const [desktopWallpaper, setDesktopWallpaper] = useState<"sequoia" | "nebula" | "dark-slate">("sequoia");
   const [vibePanelOpen, setVibePanelOpen] = useState<boolean>(false);
 
+  // 窗口所属平台风格
+  const [platform, setPlatform] = useState<"macos" | "windows" | "linux">("macos");
+
+  // 侦测真实平台以及拦截浏览器特性
+  useEffect(() => {
+    // 侦测实际运行的操作系统平台
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes("windows") || ua.includes("win32") || ua.includes("win64")) {
+      setPlatform("windows");
+    } else if (ua.includes("linux")) {
+      setPlatform("linux");
+    } else {
+      setPlatform("macos");
+    }
+  }, []);
+
+  // 浏览器沙箱特性屏蔽 (Browser Shield)
+  useEffect(() => {
+    if (vibeMode !== "standard") {
+      const handleContextMenu = (e: MouseEvent) => {
+        // 在真实的 Tauri 客户端中完全禁用右键菜单，但在浏览器预览调试时允许右键
+        const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+        if (isTauri) {
+          e.preventDefault();
+        }
+      };
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+        if (isTauri) {
+          // 拦截刷新 (F5, Ctrl+R, Cmd+R) 和网页打印 (Ctrl+P, Cmd+P)
+          if (
+            e.key === "F5" || 
+            ((e.ctrlKey || e.metaKey) && e.key === "r") || 
+            ((e.ctrlKey || e.metaKey) && e.key === "p")
+          ) {
+            e.preventDefault();
+          }
+        }
+      };
+
+      window.addEventListener("contextmenu", handleContextMenu);
+      window.addEventListener("keydown", handleKeyDown);
+      return () => {
+        window.removeEventListener("contextmenu", handleContextMenu);
+        window.removeEventListener("keydown", handleKeyDown);
+      };
+    }
+  }, [vibeMode]);
+
   // 保存 vibeMode 并在根元素上应用相应的 CSS 类
   useEffect(() => {
     localStorage.setItem("cxc-vibe-mode", vibeMode);
@@ -830,6 +880,10 @@ function App() {
     // 渲染 macOS 控制按钮（红绿灯）的子组件
     const WindowControls = () => {
       const [isHovered, setIsHovered] = useState(false);
+      // 如果不是 macos，Windows 平台会在 Header 的最右端渲染其控制按钮
+      if (platform !== "macos") {
+        return null;
+      }
       return (
         <div 
           className="flex items-center gap-1.5 mr-2 shrink-0 cursor-default select-none cxc-no-drag"
@@ -856,6 +910,45 @@ function App() {
             title={lang === "zh" ? "最大化" : "Maximize"}
           >
             {isHovered && <span className="text-[7px] text-[#004d05] font-bold absolute leading-none" style={{ top: '0.5px' }}>+</span>}
+          </button>
+        </div>
+      );
+    };
+
+    // 渲染 Windows/Linux 扁平化控制三键
+    const WindowsWindowControls = () => {
+      if (platform === "macos") {
+        return null;
+      }
+      return (
+        <div className="flex items-center ml-2.5 shrink-0 cxc-no-drag border-l border-border/40 pl-1 h-8 gap-0.5">
+          <button
+            onClick={() => handleWindowAction("minimize")}
+            className="size-7 hover:bg-muted/80 flex items-center justify-center transition-colors focus:outline-none text-foreground/70 hover:text-foreground cursor-pointer rounded-md"
+            title={lang === "zh" ? "最小化" : "Minimize"}
+          >
+            <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+          <button
+            onClick={() => handleWindowAction("maximize")}
+            className="size-7 hover:bg-muted/80 flex items-center justify-center transition-colors focus:outline-none text-foreground/70 hover:text-foreground cursor-pointer rounded-md"
+            title={lang === "zh" ? "最大化" : "Maximize"}
+          >
+            <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            </svg>
+          </button>
+          <button
+            onClick={() => handleWindowAction("close")}
+            className="size-7 hover:bg-red-500 hover:text-white flex items-center justify-center transition-colors focus:outline-none text-foreground/70 cursor-pointer rounded-md"
+            title={lang === "zh" ? "关闭" : "Close"}
+          >
+            <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
           </button>
         </div>
       );
@@ -1021,6 +1114,9 @@ function App() {
           >
             <Globe className="size-4" />
           </Button>
+
+          {/* 仅在非标准模式且为 Windows/Linux 下，在最右侧渲染扁平化控制三键 */}
+          {vibeMode !== "standard" && <WindowsWindowControls />}
         </div>
       </header>
 
@@ -1125,7 +1221,11 @@ function App() {
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
                             <span
                               onClick={() => handleQuickFetchModels(p)}
-                              className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[11px] cursor-pointer hover:bg-muted/85 hover:border-primary/30 transition-all truncate"
+                              className={`font-semibold text-foreground/80 border px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition-all truncate ${
+                                vibeMode === "standard"
+                                  ? "bg-background border-border hover:bg-muted/85 hover:border-primary/30"
+                                  : "bg-white/30 dark:bg-white/5 border-black/5 dark:border-white/5 hover:bg-white/50 dark:hover:bg-white/10 hover:border-primary/20 dark:hover:border-primary/30"
+                              }`}
                               title={t.quickSwitchTooltip}
                             >
                               {p.model}
@@ -1252,7 +1352,11 @@ function App() {
                         {/* Card Content: Details Block */}
                         <CardContent className="space-y-2.5 px-4 pb-3 text-xs">
                           {/* Monospace layout list, styled with paper canvas background */}
-                          <div className="flex flex-col gap-1 p-2 rounded-md bg-background border border-border">
+                          <div className={`flex flex-col gap-1 p-2 rounded-md border ${
+                            vibeMode === "standard"
+                              ? "bg-background border-border"
+                              : "bg-white/20 dark:bg-black/20 border-black/5 dark:border-white/5"
+                          }`}>
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Endpoint:</span>
                               <span
@@ -1267,7 +1371,11 @@ function App() {
                               <span className="text-muted-foreground/80 font-medium">Model:</span>
                               <span
                                 onClick={() => handleQuickFetchModels(p)}
-                                className="font-semibold text-foreground/80 bg-background border border-border px-1.5 py-0.5 rounded text-[10px] cursor-pointer hover:bg-muted/80 hover:border-primary/30 transition-all truncate max-w-[150px]"
+                                className={`font-semibold text-foreground/80 border px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all truncate max-w-[150px] ${
+                                  vibeMode === "standard"
+                                    ? "bg-background border-border hover:bg-muted/80 hover:border-primary/30"
+                                    : "bg-white/30 dark:bg-white/5 border-black/5 dark:border-white/5 hover:bg-white/50 dark:hover:bg-white/10 hover:border-primary/20 dark:hover:border-primary/30"
+                                }`}
                                 title={t.quickSwitchTooltip}
                               >
                                 {p.model}
@@ -1289,7 +1397,11 @@ function App() {
                         </CardContent>
 
                         {/* Actions Footer - Quiet utility strip */}
-                        <div className="flex items-center gap-1 border-t border-border bg-background/50 p-2 px-4 justify-between">
+                        <div className={`flex items-center gap-1 border-t p-2 px-4 justify-between ${
+                          vibeMode === "standard"
+                            ? "border-border bg-background/50"
+                            : "border-black/5 dark:border-white/5 bg-transparent"
+                        }`}>
                           {/* Left: action icons */}
                           <div className="flex items-center gap-1">
                             <Button
@@ -2320,6 +2432,38 @@ function App() {
                   />
                 </button>
               </div>
+
+              {/* 模拟窗口风格选择 (仅在 simulateDesktop 开启时) */}
+              {simulateDesktop && (
+                <div className="space-y-1.5 animate-in fade-in duration-200">
+                  <label className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block">
+                    {lang === "zh" ? "模拟窗口控制风格" : "Simulate Window Controls"}
+                  </label>
+                  <div className="flex gap-2">
+                    {(["macos", "windows"] as const).map((style) => {
+                      const isActive = style === "macos" ? platform === "macos" : (platform === "windows" || platform === "linux");
+                      const styleNames = {
+                        macos: lang === "zh" ? "macOS (居左)" : "macOS (Left)",
+                        windows: lang === "zh" ? "Windows (居右)" : "Windows (Right)"
+                      };
+                      return (
+                        <button
+                          key={style}
+                          onClick={() => setPlatform(style)}
+                          className={`flex-1 py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center cursor-pointer transition-all ${
+                            isActive 
+                              ? "border-primary bg-primary/[0.04] text-primary" 
+                              : "border-border/80 bg-muted/10 text-muted-foreground hover:bg-muted/20"
+                          }`}
+                        >
+                          <span>{style === "macos" ? "🍎" : "🪟"}</span>
+                          <span className="ml-1">{styleNames[style]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* 桌面壁纸选择 (仅在 simulateDesktop 开启时) */}
               {simulateDesktop && (
