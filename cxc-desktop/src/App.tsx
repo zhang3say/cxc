@@ -351,7 +351,7 @@ function App() {
 
   // Connectivity Test State
   const [testingProviders, setTestingProviders] = useState<Record<string, boolean>>({});
-  const [testingAll, setTestingAll] = useState<boolean>(false);
+  const [testingAll, setTestingAll] = useState<"codex" | "claude" | null>(null);
 
   // Quick Model Switch State
   const [quickSwitchProvider, setQuickSwitchProvider] = useState<Provider | null>(null);
@@ -640,14 +640,14 @@ function App() {
 
   async function handleTestAllProviders() {
     try {
-      setTestingAll(true);
+      setTestingAll(targetTool);
       setError(null);
       const updatedCfg = await invoke<Config>("test_all_providers", { targetTool });
       setConfig(updatedCfg);
     } catch (e: any) {
       setError(e.toString());
     } finally {
-      setTestingAll(false);
+      setTestingAll(null);
     }
   }
 
@@ -826,11 +826,11 @@ function App() {
               variant="outline"
               size="icon"
               onClick={handleTestAllProviders}
-              disabled={testingAll || Object.keys(testingProviders).length > 0}
+              disabled={testingAll !== null || Object.keys(testingProviders).length > 0}
               className="size-8 border-border bg-card text-foreground shadow-sm transition-all"
-              title={testingAll ? t.testingAll : t.testAll}
+              title={testingAll !== null ? t.testingAll : t.testAll}
             >
-              {testingAll ? (
+              {testingAll !== null ? (
                 <Loader2 className="size-4 animate-spin text-muted-foreground" />
               ) : (
                 <Activity className="size-4 text-muted-foreground" />
@@ -956,7 +956,7 @@ function App() {
                     {filteredProviders.map((p) => {
                       const isActive = currentActive === p.name;
                       const isThisSwitching = switching === p.name;
-                      const isTesting = !!testingProviders[p.name] || testingAll;
+                      const isTesting = !!testingProviders[p.name] || testingAll === targetTool;
 
                       return (
                         <div
@@ -1024,7 +1024,7 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => handleTestProvider(p.name)}
-                              disabled={testingProviders[p.name] || testingAll || switching !== null}
+                              disabled={testingProviders[p.name] || testingAll !== null || switching !== null}
                               className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                               title={t.testConnTitle}
                             >
@@ -1035,7 +1035,7 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => openEditForm(p)}
-                              disabled={testingProviders[p.name] || testingAll || switching !== null}
+                              disabled={testingProviders[p.name] || testingAll !== null || switching !== null}
                               className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                               title={t.editConnTitle}
                             >
@@ -1046,7 +1046,7 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => handleDeleteProvider(p.name)}
-                              disabled={isActive || switching !== null || testingAll || testingProviders[p.name]}
+                              disabled={isActive || switching !== null || testingAll !== null || testingProviders[p.name]}
                               className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
                               title={isActive ? t.activeDeleteTooltip : t.deleteConnTitle}
                             >
@@ -1060,7 +1060,7 @@ function App() {
                               <Button
                                 size="sm"
                                 onClick={() => handleSwitch(p.name)}
-                                disabled={switching !== null || testingAll || testingProviders[p.name]}
+                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
                                 className="w-full text-[10px] h-6 bg-card text-foreground border border-border rounded hover:bg-muted font-medium shadow-none transition-all duration-200 active:scale-95"
                               >
                                 {isThisSwitching ? (
@@ -1087,7 +1087,7 @@ function App() {
                   {filteredProviders.map((p) => {
                     const isActive = currentActive === p.name;
                     const isThisSwitching = switching === p.name;
-                    const isTesting = !!testingProviders[p.name] || testingAll;
+                    const isTesting = !!testingProviders[p.name] || testingAll === targetTool;
 
                     return (
                       <Card
@@ -1170,7 +1170,7 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => handleTestProvider(p.name)}
-                              disabled={testingProviders[p.name] || testingAll || switching !== null}
+                              disabled={testingProviders[p.name] || testingAll !== null || switching !== null}
                               className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                               title={t.testConnTitle}
                             >
@@ -1181,7 +1181,7 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => openEditForm(p)}
-                              disabled={testingProviders[p.name] || testingAll || switching !== null}
+                              disabled={testingProviders[p.name] || testingAll !== null || switching !== null}
                               className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                               title={t.editConnTitle}
                             >
@@ -1192,7 +1192,7 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => handleDeleteProvider(p.name)}
-                              disabled={isActive || switching !== null || testingAll || testingProviders[p.name]}
+                              disabled={isActive || switching !== null || testingAll !== null || testingProviders[p.name]}
                               className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
                               title={isActive ? t.activeDeleteTooltip : t.deleteConnTitle}
                             >
@@ -1206,7 +1206,7 @@ function App() {
                               <Button
                                 size="sm"
                                 onClick={() => handleSwitch(p.name)}
-                                disabled={switching !== null || testingAll || testingProviders[p.name]}
+                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
                                 className="w-full text-[10px] h-6 bg-card text-foreground border border-border rounded hover:bg-muted font-medium shadow-none transition-all duration-200 active:scale-95"
                               >
                                 {isThisSwitching ? (
