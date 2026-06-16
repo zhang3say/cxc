@@ -38,7 +38,6 @@ import {
   List,
   LayoutGrid,
   Settings,
-  Globe,
   Eye,
   EyeOff,
   ChevronDown,
@@ -166,7 +165,12 @@ const locales = {
     endpointTooltip: "Ctrl + 左键：在浏览器中打开\n普通左键：复制到剪贴板",
     copiedToClipboard: "已复制到剪贴板",
     advancedSettings: "高级配置",
-    defaultModelPlaceholder: "-- 默认（使用主模型）--"
+    defaultModelPlaceholder: "-- 默认（使用主模型）--",
+    generalSettingsLabel: "常规设置",
+    themeLabel: "界面主题",
+    languageLabel: "语言设置",
+    reloadConfigBtn: "重新加载配置文件",
+    reloadSuccess: "配置文件已成功重新加载！"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -252,7 +256,12 @@ const locales = {
     endpointTooltip: "Ctrl + Click: open in browser\nClick: copy to clipboard",
     copiedToClipboard: "Copied to clipboard",
     advancedSettings: "Advanced Settings",
-    defaultModelPlaceholder: "-- Default (Use Main Model) --"
+    defaultModelPlaceholder: "-- Default (Use Main Model) --",
+    generalSettingsLabel: "General Settings",
+    themeLabel: "Theme Settings",
+    languageLabel: "Language",
+    reloadConfigBtn: "Reload Configuration",
+    reloadSuccess: "Configuration reloaded successfully!"
   }
 };
 
@@ -1239,41 +1248,6 @@ function App() {
           >
             <Settings className="size-4" />
           </Button>
-
-          {/* Light/Dark Toggle */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
-            title={t.toggleTheme}
-          >
-            {theme === "dark" ? <Sun className="size-4 text-amber-500" /> : <Moon className="size-4 text-primary" />}
-          </Button>
-
-          {/* Refresh config */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={loadConfig}
-            disabled={loading}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
-            title={t.refreshConfig}
-          >
-            <RefreshCw className={`size-4 ${loading ? "animate-spin text-muted-foreground" : ""}`} />
-          </Button>
-
-          {/* Lang Toggle */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-            className="size-8 rounded-md border-border hover:bg-muted text-muted-foreground hover:text-foreground shadow-sm"
-            title={lang === "zh" ? "Switch to English" : "切换为中文"}
-          >
-            <Globe className="size-4" />
-          </Button>
-
           {/* 仅在非标准模式且为 Windows/Linux 下，在最右侧渲染扁平化控制三键 */}
           {vibeMode !== "standard" && <WindowsWindowControls />}
         </div>
@@ -1767,6 +1741,98 @@ function App() {
                 </div>
               </>
             )}
+
+            {/* General Settings (Theme, Language, Reload Config) */}
+            <div className="border-t border-border/60 pt-4 mt-4 space-y-4">
+              <Label className="text-xs font-extrabold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                <Settings className="size-3.5 text-muted-foreground" />
+                <span>{t.generalSettingsLabel}</span>
+              </Label>
+              
+              <div className="grid grid-cols-2 gap-4 pt-1">
+                {/* Theme toggle */}
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-bold text-muted-foreground">
+                    {t.themeLabel}
+                  </Label>
+                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/40">
+                    <button
+                      type="button"
+                      onClick={() => setTheme("light")}
+                      className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                        theme === "light"
+                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                      }`}
+                    >
+                      <Sun className="size-3 text-amber-500" />
+                      <span>{lang === "zh" ? "浅色" : "Light"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTheme("dark")}
+                      className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                        theme === "dark"
+                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                      }`}
+                    >
+                      <Moon className="size-3 text-primary" />
+                      <span>{lang === "zh" ? "深色" : "Dark"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Language switcher */}
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-bold text-muted-foreground">
+                    {t.languageLabel}
+                  </Label>
+                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/40">
+                    <button
+                      type="button"
+                      onClick={() => setLang("zh")}
+                      className={`flex-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                        lang === "zh"
+                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                      }`}
+                    >
+                      中文
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLang("en")}
+                      className={`flex-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                        lang === "en"
+                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                      }`}
+                    >
+                      English
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reload configuration */}
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    await loadConfig();
+                    setToastMessage(t.reloadSuccess);
+                    setTimeout(() => setToastMessage(null), 2500);
+                  }}
+                  disabled={loading}
+                  className="w-full h-8 border border-border bg-card hover:bg-muted text-[11px] font-bold flex items-center justify-center gap-1.5 rounded-lg shadow-sm active:scale-[0.98] transition-transform cursor-pointer"
+                >
+                  <RefreshCw className={`size-3 text-muted-foreground ${loading ? "animate-spin" : ""}`} />
+                  <span>{t.reloadConfigBtn}</span>
+                </Button>
+              </div>
+            </div>
 
             <DialogFooter className="pt-3">
               <div className="flex w-full items-center justify-between gap-2">
