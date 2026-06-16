@@ -183,10 +183,10 @@ fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Resul
 }
 
 pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Result<(), ConfigError> {
-    let (providers, active) = if target_tool == "codex" {
-        (&mut cfg.codex_providers, &mut cfg.codex_active)
+    let providers = if target_tool == "codex" {
+        &mut cfg.codex_providers
     } else {
-        (&mut cfg.claude_providers, &mut cfg.claude_active)
+        &mut cfg.claude_providers
     };
 
     if providers.iter().any(|prov| prov.name == p.name) {
@@ -196,9 +196,6 @@ pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Res
         p.wire_api = default_wire_api();
     }
     providers.push(p.clone());
-    if active.is_empty() {
-        *active = p.name;
-    }
     save(cfg)
 }
 
@@ -345,7 +342,7 @@ mod tests {
         add_provider(&mut cfg, "codex", p).unwrap();
 
         assert_eq!(cfg.codex_providers.len(), 1);
-        assert_eq!(cfg.codex_active, "test");
+        assert_eq!(cfg.codex_active, "");
         assert_eq!(cfg.codex_providers[0].wire_api, "responses");
     }
 
@@ -371,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn test_first_provider_becomes_active() {
+    fn test_first_provider_does_not_become_active() {
         let (_dir, _path) = setup_test();
         let mut cfg = Config::default();
         add_provider(&mut cfg, "codex", Provider {
@@ -399,7 +396,7 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        assert_eq!(cfg.codex_active, "a");
+        assert_eq!(cfg.codex_active, "");
     }
 
     #[test]
@@ -452,6 +449,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
+        set_active(&mut cfg, "codex", "a").unwrap();
 
         let err = remove_provider(&mut cfg, "codex", "a");
         assert!(err.is_err());
