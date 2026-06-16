@@ -1550,6 +1550,20 @@ function App() {
                 {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
               </div>
 
+              <div className="space-y-1">
+                <Label htmlFor="form-remark" className="text-xs font-bold text-muted-foreground">
+                  {t.remarkLabel}
+                </Label>
+                <Input
+                  id="form-remark"
+                  type="text"
+                  value={formValues.remark}
+                  onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
+                  placeholder={t.remarkPlaceholder}
+                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                />
+              </div>
+
               {/* Advanced Settings Toggle Button */}
               <div className="pt-1">
                 <button
@@ -1704,34 +1718,18 @@ function App() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <Label htmlFor="form-wire" className="text-xs font-bold text-muted-foreground">
-                        {t.wireApiLabel}
-                      </Label>
-                      <Input
-                        id="form-wire"
-                        type="text"
-                        value={formValues.wire_api}
-                        onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
-                        placeholder="responses"
-                        className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label htmlFor="form-remark" className="text-xs font-bold text-muted-foreground">
-                        {t.remarkLabel}
-                      </Label>
-                      <Input
-                        id="form-remark"
-                        type="text"
-                        value={formValues.remark}
-                        onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
-                        placeholder={t.remarkPlaceholder}
-                        className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
-                      />
-                    </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="form-wire" className="text-xs font-bold text-muted-foreground">
+                      {t.wireApiLabel}
+                    </Label>
+                    <Input
+                      id="form-wire"
+                      type="text"
+                      value={formValues.wire_api}
+                      onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
+                      placeholder="responses"
+                      className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
+                    />
                   </div>
                 </div>
               )}
