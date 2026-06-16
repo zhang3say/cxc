@@ -365,7 +365,7 @@ function App() {
 
   // 一体化背景板原型方案状态
   const [vibeMode, setVibeMode] = useState<"standard" | "acrylic" | "mica" | "aurora">(() => {
-    return (localStorage.getItem("cxc-vibe-mode") as any) || "acrylic";
+    return (localStorage.getItem("cxc-vibe-mode") as any) || "mica";
   });
   
   const [simulateDesktop, setSimulateDesktop] = useState<boolean>(() => {
@@ -1181,7 +1181,7 @@ function App() {
                             isActive ? "bg-primary/[0.02] dark:bg-primary/[0.04]" : ""
                           } ${isTesting ? "opacity-80" : ""}`}
                         >
-                          {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" />}
+                          {isActive && vibeMode === "standard" && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" />}
 
                           {/* Active dot column */}
                           <div className="hidden sm:flex items-center justify-center w-6 size-5 shrink-0">
