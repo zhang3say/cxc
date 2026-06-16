@@ -255,6 +255,48 @@ const locales = {
   }
 };
 
+interface ToggleSwitchProps {
+  checked: boolean;
+  onChange: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  title?: string;
+}
+
+const ToggleSwitch = ({
+  checked,
+  onChange,
+  loading,
+  disabled,
+  title
+}: ToggleSwitchProps) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled || loading}
+      onClick={onChange}
+      title={title}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 cxc-no-drag ${
+        checked
+          ? "bg-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]"
+          : "bg-muted-foreground/25 dark:bg-white/10"
+      }`}
+    >
+      <span
+        className={`pointer-events-none flex items-center justify-center size-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-300 ${
+          checked ? "translate-x-[18px]" : "translate-x-[2px]"
+        }`}
+      >
+        {loading && (
+          <Loader2 className="size-2.5 animate-spin text-primary shrink-0" />
+        )}
+      </span>
+    </button>
+  );
+};
+
 const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> = {
   name: "",
   base_url: "",
@@ -1395,26 +1437,18 @@ function App() {
                           </div>
 
                           {/* Switch Active Trigger column */}
-                          <div className="w-full sm:w-24 shrink-0 flex justify-end">
-                            {!isActive ? (
-                              <Button
-                                size="sm"
-                                onClick={() => handleSwitch(p.name)}
-                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                                className="w-full text-[10px] h-6 bg-card text-foreground border border-border rounded hover:bg-muted font-medium shadow-none transition-all duration-200 active:scale-95"
-                              >
-                                {isThisSwitching ? (
-                                  <Loader2 className="size-2.5 animate-spin text-muted-foreground" />
-                                ) : (
-                                  t.switchBtn
-                                )}
-                              </Button>
-                            ) : (
-                              <div className="flex items-center justify-center gap-1 h-6 border border-primary/20 bg-primary/5 text-primary rounded-full text-[10px] font-bold px-2.5 py-0.5 w-full">
-                                <Check className="size-2.5 shrink-0" />
-                                {t.activeLabel}
-                              </div>
-                            )}
+                          <div className="w-full sm:w-24 shrink-0 flex justify-end items-center pr-2">
+                            <ToggleSwitch
+                              checked={isActive}
+                              loading={isThisSwitching}
+                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                              onChange={() => {
+                                if (!isActive) {
+                                  handleSwitch(p.name);
+                                }
+                              }}
+                              title={isActive ? t.activeLabel : t.switchBtn}
+                            />
                           </div>
                         </div>
                       );
@@ -1559,26 +1593,18 @@ function App() {
                           </div>
 
                           {/* Right: Switch active button */}
-                          <div className="w-20 flex justify-end">
-                            {!isActive ? (
-                              <Button
-                                size="sm"
-                                onClick={() => handleSwitch(p.name)}
-                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                                className="w-full text-[10px] h-6 bg-card text-foreground border border-border rounded hover:bg-muted font-medium shadow-none transition-all duration-200 active:scale-95"
-                              >
-                                {isThisSwitching ? (
-                                  <Loader2 className="size-2.5 animate-spin text-muted-foreground" />
-                                ) : (
-                                  t.switchBtn
-                                )}
-                              </Button>
-                            ) : (
-                              <div className="flex items-center justify-center gap-1 h-6 border border-primary/20 bg-primary/5 text-primary rounded-full text-[10px] font-bold px-2.5 py-0.5">
-                                <Check className="size-2.5 shrink-0" />
-                                {t.activeLabel}
-                              </div>
-                            )}
+                          <div className="w-20 flex justify-end items-center pr-1">
+                            <ToggleSwitch
+                              checked={isActive}
+                              loading={isThisSwitching}
+                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                              onChange={() => {
+                                if (!isActive) {
+                                  handleSwitch(p.name);
+                                }
+                              }}
+                              title={isActive ? t.activeLabel : t.switchBtn}
+                            />
                           </div>
                         </div>
                       </Card>
