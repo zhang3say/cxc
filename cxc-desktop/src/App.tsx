@@ -2005,58 +2005,136 @@ function App() {
         .cxc-drag { -webkit-app-region: drag; }
         .cxc-no-drag { -webkit-app-region: no-drag; }
         
-        /* 亚克力和云母在暗黑模式和亮色模式下的半透明颜色覆盖 */
+        /* 1. 顶部状态栏 Header 彻底融入背景 (无背景，无底部边框，无阴影，仅用上下间距保护) */
         .vibe-integrated header {
+          background-color: transparent !important;
+          backdrop-filter: none !important;
+          border-bottom: none !important;
+          box-shadow: none !important;
+          padding-top: 16px !important;
+          padding-bottom: 16px !important;
+        }
+        
+        /* 2. 表格主容器一体化 (去除白背景与硬边框，采用高透明磨砂玻璃) */
+        .vibe-integrated .border.border-border.rounded-xl.bg-card {
+          background-color: rgba(255, 255, 255, 0.22) !important;
+          backdrop-filter: blur(20px) !important;
+          border-color: rgba(255, 255, 255, 0.18) !important;
+          box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.04) !important;
+        }
+        .dark .vibe-integrated .border.border-border.rounded-xl.bg-card {
+          background-color: rgba(24, 24, 24, 0.35) !important;
+          border-color: rgba(255, 255, 255, 0.05) !important;
+          box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.25) !important;
+        }
+        
+        /* 3. 表格头部一体化 (无背景，底线极其淡雅，文字稍作淡化) */
+        .vibe-integrated .hidden.sm\\:flex.items-center.bg-muted\\/40 {
+          background-color: transparent !important;
+          border-bottom-color: rgba(128, 128, 128, 0.08) !important;
+          opacity: 0.8;
+        }
+        
+        /* 4. 表格行样式重构 (去除硬线，交互 Hover 浮起极光圆角磨砂层) */
+        .vibe-integrated .divide-y > * {
+          border-bottom-color: rgba(128, 128, 128, 0.07) !important;
+        }
+        .vibe-integrated .divide-y > *:last-child {
+          border-bottom: none !important;
+        }
+        
+        .vibe-integrated .transition-colors.hover\\:bg-muted\\/30 {
+          background-color: transparent !important;
+        }
+        .vibe-integrated .transition-colors.hover\\:bg-muted\\/30:hover {
           background-color: rgba(255, 255, 255, 0.25) !important;
-          backdrop-filter: blur(14px) !important;
-          border-bottom-color: rgba(0, 0, 0, 0.05) !important;
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+        }
+        .dark .vibe-integrated .transition-colors.hover\\:bg-muted\\/30:hover {
+          background-color: rgba(255, 255, 255, 0.04) !important;
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03) !important;
+        }
+        
+        .vibe-integrated .bg-primary\\/\\[0\\.02\\] {
+          background-color: rgba(0, 117, 222, 0.03) !important;
+        }
+        .dark .vibe-integrated .bg-primary\\/\\[0\\.04\\] {
+          background-color: rgba(46, 170, 220, 0.05) !important;
+        }
+        
+        /* 5. 行内模型标签 (p.model) 改为磨砂微光胶囊，消除硬性白背景 */
+        .vibe-integrated .font-semibold.text-foreground\\/80.bg-background {
+          background-color: rgba(255, 255, 255, 0.5) !important;
+          border-color: rgba(0, 0, 0, 0.06) !important;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important;
+        }
+        .dark .vibe-integrated .font-semibold.text-foreground\\/80.bg-background {
+          background-color: rgba(255, 255, 255, 0.05) !important;
+          border-color: rgba(255, 255, 255, 0.04) !important;
+          color: rgba(255, 255, 255, 0.8) !important;
           box-shadow: none !important;
         }
-        .dark .vibe-integrated header {
-          background-color: rgba(20, 20, 20, 0.35) !important;
-          border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+        .vibe-integrated .font-semibold.text-foreground\\/80.bg-background:hover {
+          background-color: rgba(255, 255, 255, 0.75) !important;
+          border-color: rgba(0, 117, 222, 0.25) !important;
+        }
+        .dark .vibe-integrated .font-semibold.text-foreground\\/80.bg-background:hover {
+          background-color: rgba(255, 255, 255, 0.1) !important;
+          border-color: rgba(46, 170, 220, 0.3) !important;
         }
         
-        .vibe-integrated .bg-card {
-          background-color: rgba(255, 255, 255, 0.45) !important;
-          backdrop-filter: blur(10px) !important;
-          border-color: rgba(255, 255, 255, 0.4) !important;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.01) !important;
+        /* 6. 卡片视图下的一体化 (Card Grid) */
+        .vibe-integrated .grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-3.gap-4 .bg-card {
+          background-color: rgba(255, 255, 255, 0.28) !important;
+          backdrop-filter: blur(14px) !important;
+          border-color: rgba(255, 255, 255, 0.2) !important;
+          box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.02) !important;
         }
-        .dark .vibe-integrated .bg-card {
-          background-color: rgba(26, 26, 26, 0.45) !important;
-          border-color: rgba(255, 255, 255, 0.06) !important;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.05) !important;
+        .dark .vibe-integrated .grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-3.gap-4 .bg-card {
+          background-color: rgba(26, 26, 26, 0.3) !important;
+          border-color: rgba(255, 255, 255, 0.04) !important;
+          box-shadow: 0 4px 20px -5px rgba(0, 0, 0, 0.2) !important;
         }
         
-        /* 输入框毛玻璃适配 */
+        /* 7. 输入框等控件的玻璃化 */
         .vibe-integrated input {
-          background-color: rgba(255, 255, 255, 0.6) !important;
+          background-color: rgba(255, 255, 255, 0.45) !important;
           border-color: rgba(0, 0, 0, 0.08) !important;
+          backdrop-filter: blur(4px) !important;
         }
         .dark .vibe-integrated input {
           background-color: rgba(255, 255, 255, 0.03) !important;
-          border-color: rgba(255, 255, 255, 0.06) !important;
+          border-color: rgba(255, 255, 255, 0.05) !important;
+        }
+        .vibe-integrated input:focus {
+          border-color: rgba(0, 117, 222, 0.4) !important;
+          background-color: rgba(255, 255, 255, 0.6) !important;
+        }
+        .dark .vibe-integrated input:focus {
+          border-color: rgba(46, 170, 220, 0.4) !important;
+          background-color: rgba(255, 255, 255, 0.06) !important;
         }
         
-        /* 侧边栏和主背景的微调 */
-        .vibe-integrated .bg-muted\/40 {
-          background-color: rgba(0, 0, 0, 0.04) !important;
+        /* 8. 顶部切换器 (Switcher)、一键测速及其他配置胶囊按钮 */
+        .vibe-integrated .bg-muted\\/40 {
+          background-color: rgba(128, 128, 128, 0.06) !important;
+          border-color: rgba(128, 128, 128, 0.1) !important;
         }
-        .dark .vibe-integrated .bg-muted\/40 {
+        .vibe-integrated .border-border.bg-card {
+          background-color: rgba(255, 255, 255, 0.35) !important;
+          border-color: rgba(128, 128, 128, 0.08) !important;
+        }
+        .dark .vibe-integrated .border-border.bg-card {
           background-color: rgba(255, 255, 255, 0.04) !important;
+          border-color: rgba(255, 255, 255, 0.04) !important;
         }
-        .vibe-integrated .bg-muted\/10 {
-          background-color: rgba(0, 0, 0, 0.02) !important;
-        }
-        .dark .vibe-integrated .bg-muted\/10 {
-          background-color: rgba(255, 255, 255, 0.02) !important;
-        }
+        
+        /* 9. 基础边框微调 */
         .vibe-integrated .border-border {
-          border-color: rgba(0, 0, 0, 0.06) !important;
+          border-color: rgba(128, 128, 128, 0.08) !important;
         }
         .dark .vibe-integrated .border-border {
-          border-color: rgba(255, 255, 255, 0.05) !important;
+          border-color: rgba(255, 255, 255, 0.04) !important;
         }
         
         /* 滚动条美化 */
