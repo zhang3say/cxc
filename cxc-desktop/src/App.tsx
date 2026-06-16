@@ -368,17 +368,7 @@ function App() {
     return (localStorage.getItem("cxc-vibe-mode") as any) || "mica";
   });
   
-  const [simulateDesktop] = useState<boolean>(() => {
-    // 默认在浏览器里预览时模拟桌面
-    const isMock = typeof window !== "undefined" && (
-      !(window as any).__TAURI__ || 
-      !(window as any).__TAURI_INTERNALS__ || 
-      (window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock")
-    );
-    return isMock;
-  });
-
-  const [desktopWallpaper] = useState<"sequoia" | "nebula" | "dark-slate">("sequoia");
+  // 正常运行状态
 
   // 窗口所属平台风格
   const [platform, setPlatform] = useState<"macos" | "windows" | "linux">("macos");
@@ -472,10 +462,7 @@ function App() {
   const getWindowClasses = () => {
     const base = "flex flex-col text-foreground transition-all duration-300 relative select-none ";
     
-    // 如果是模拟桌面，应用固定大小、阴影、圆角和细边框；如果是全屏，占据全部高度
-    const layout = simulateDesktop 
-      ? "w-[1024px] h-[680px] rounded-2xl shadow-[0_35px_80px_-15px_rgba(0,0,0,0.65)] border border-white/10 overflow-hidden" 
-      : "w-full min-h-screen";
+    const layout = "w-full min-h-screen";
       
     if (vibeMode === "standard") {
       return base + layout + " bg-background";
@@ -2283,75 +2270,21 @@ function App() {
         }
       `}</style>
 
-      {simulateDesktop ? (
-        // 模拟桌面容器壳
-        <div className="fixed inset-0 w-screen h-screen z-40 flex flex-col items-center justify-center overflow-hidden font-sans select-none bg-slate-950">
-          {/* 桌面壁纸 */}
-          <div className="absolute inset-0 z-0 transition-all duration-700 ease-in-out scale-100">
-            {desktopWallpaper === "sequoia" && (
-              <div className="w-full h-full bg-gradient-to-tr from-[#5b0e2d] via-[#a82069] to-[#ea580c]" />
-            )}
-            {desktopWallpaper === "nebula" && (
-              <div className="w-full h-full bg-gradient-to-br from-[#0b132b] via-[#1c2541] to-[#3a506b]" />
-            )}
-            {desktopWallpaper === "dark-slate" && (
-              <div className="w-full h-full bg-gradient-to-tr from-[#111827] to-[#374151]" />
-            )}
-            {/* 极光粒子微光 */}
-            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/30 via-transparent to-transparent pointer-events-none" />
+      <div className={getWindowClasses()}>
+        {vibeMode === "aurora" && (
+          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-30 mix-blend-screen dark:opacity-25">
+            <div className="absolute -top-1/4 -left-1/4 size-[400px] rounded-full bg-purple-600/35 blur-[70px] animate-float-blob-1" />
+            <div className="absolute -bottom-1/4 -right-1/4 size-[450px] rounded-full bg-orange-600/25 blur-[80px] animate-float-blob-2" />
+            <div className="absolute top-1/3 left-1/3 size-[350px] rounded-full bg-cyan-600/30 blur-[60px] animate-float-blob-3" />
           </div>
+        )}
+        
+        {vibeMode === "mica" && (
+          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-gradient-to-tr from-primary/[0.04] via-transparent to-orange-500/[0.04]" />
+        )}
 
-          {/* 模拟的 macOS Menu Bar */}
-          <div className="absolute top-0 left-0 right-0 h-6 bg-black/15 backdrop-blur-md border-b border-white/5 text-[10px] text-white/90 px-4 flex items-center justify-between z-10 select-none">
-            <div className="flex items-center gap-3.5 font-semibold">
-              <span className="cursor-pointer"></span>
-              <span className="font-bold cursor-pointer">CXC Desktop</span>
-              <span className="opacity-75 cursor-pointer">{lang === "zh" ? "配置" : "Config"}</span>
-              <span className="opacity-75 cursor-pointer">{lang === "zh" ? "窗口" : "Window"}</span>
-              <span className="opacity-75 cursor-pointer">{lang === "zh" ? "帮助" : "Help"}</span>
-            </div>
-            <div className="flex items-center gap-3.5 font-medium opacity-85">
-              <span>100% 🔋</span>
-              <span>10:14 AM 👤</span>
-            </div>
-          </div>
-
-          {/* 模拟应用窗口壳 */}
-          <div className={getWindowClasses()}>
-            {/* 极光流体背景 */}
-            {vibeMode === "aurora" && (
-              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-30 mix-blend-screen dark:opacity-25">
-                <div className="absolute -top-1/4 -left-1/4 size-[400px] rounded-full bg-purple-600/35 blur-[70px] animate-float-blob-1" />
-                <div className="absolute -bottom-1/4 -right-1/4 size-[450px] rounded-full bg-orange-600/25 blur-[80px] animate-float-blob-2" />
-                <div className="absolute top-1/3 left-1/3 size-[350px] rounded-full bg-cyan-600/30 blur-[60px] animate-float-blob-3" />
-              </div>
-            )}
-            
-            {vibeMode === "mica" && (
-              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-gradient-to-tr from-primary/[0.04] via-transparent to-orange-500/[0.04]" />
-            )}
-
-            {renderAppContent()}
-          </div>
-        </div>
-      ) : (
-        // 正常应用窗口模式 (全屏运行在桌面客户端中)
-        <div className={getWindowClasses()}>
-          {vibeMode === "aurora" && (
-            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-30 mix-blend-screen dark:opacity-25">
-              <div className="absolute -top-1/4 -left-1/4 size-[400px] rounded-full bg-purple-600/35 blur-[70px] animate-float-blob-1" />
-              <div className="absolute -bottom-1/4 -right-1/4 size-[450px] rounded-full bg-orange-600/25 blur-[80px] animate-float-blob-2" />
-              <div className="absolute top-1/3 left-1/3 size-[350px] rounded-full bg-cyan-600/30 blur-[60px] animate-float-blob-3" />
-            </div>
-          )}
-          
-          {vibeMode === "mica" && (
-            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-gradient-to-tr from-primary/[0.04] via-transparent to-orange-500/[0.04]" />
-          )}
-
-          {renderAppContent()}
-        </div>
-      )}
+        {renderAppContent()}
+      </div>
     </>
   );
 }
