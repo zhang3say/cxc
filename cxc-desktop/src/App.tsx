@@ -1130,14 +1130,9 @@ function App() {
             <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
               <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
             </div>
-          <div className="flex flex-col justify-center shrink-0">
-            <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none">
-              CXC
-            </h1>
-            <p className="text-[9px] text-muted-foreground mt-px font-semibold leading-none tracking-wider uppercase">
-              Code Cross-Connect
-            </p>
-          </div>
+          <h1 className="text-sm font-black tracking-tight text-foreground/95 leading-none shrink-0">
+            CXC
+          </h1>
 
           {/* Target Tool Switcher with absolute active slide animation */}
           <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 shrink-0 h-8 w-16 overflow-hidden animate-in fade-in duration-300">
