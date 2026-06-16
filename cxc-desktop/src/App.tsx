@@ -364,11 +364,11 @@ function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // 一体化背景板原型方案状态
-  const [vibeMode, setVibeMode] = useState<"standard" | "acrylic" | "mica" | "aurora">(() => {
+  const [vibeMode] = useState<"standard" | "acrylic" | "mica" | "aurora">(() => {
     return (localStorage.getItem("cxc-vibe-mode") as any) || "mica";
   });
   
-  const [simulateDesktop, setSimulateDesktop] = useState<boolean>(() => {
+  const [simulateDesktop] = useState<boolean>(() => {
     // 默认在浏览器里预览时模拟桌面
     const isMock = typeof window !== "undefined" && (
       !(window as any).__TAURI__ || 
@@ -378,8 +378,7 @@ function App() {
     return isMock;
   });
 
-  const [desktopWallpaper, setDesktopWallpaper] = useState<"sequoia" | "nebula" | "dark-slate">("sequoia");
-  const [vibePanelOpen, setVibePanelOpen] = useState<boolean>(false);
+  const [desktopWallpaper] = useState<"sequoia" | "nebula" | "dark-slate">("sequoia");
 
   // 窗口所属平台风格
   const [platform, setPlatform] = useState<"macos" | "windows" | "linux">("macos");
@@ -2353,177 +2352,6 @@ function App() {
           {renderAppContent()}
         </div>
       )}
-
-      {/* 背景板一体化控制面板 (Window Vibe Controls) */}
-      <div className="fixed bottom-4 left-4 z-50 select-none text-left">
-        {vibePanelOpen ? (
-          <div className="w-[310px] rounded-2xl bg-card/85 backdrop-blur-xl border border-border shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-200 text-foreground">
-            <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-extrabold tracking-wider uppercase text-primary bg-primary/10 px-1.5 py-0.5 rounded animate-pulse">Vibe UI</span>
-                <h3 className="text-xs font-bold text-foreground/90">{lang === "zh" ? "一体化背景原型" : "Window Vibe Prototype"}</h3>
-              </div>
-              <button 
-                onClick={() => setVibePanelOpen(false)}
-                className="size-5 rounded-full hover:bg-muted/80 flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-3.5">
-              {/* 模式选择 */}
-              <div>
-                <label className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block mb-1.5">
-                  {lang === "zh" ? "窗口背景效果" : "Window Effect"}
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(["standard", "acrylic", "mica", "aurora"] as const).map((mode) => {
-                    const isActive = vibeMode === mode;
-                    const labels = {
-                      standard: lang === "zh" ? "经典网页" : "Classic Web",
-                      acrylic: lang === "zh" ? "亚克力磨砂" : "Acrylic Blur",
-                      mica: lang === "zh" ? "云母深空" : "Mica Space",
-                      aurora: lang === "zh" ? "极光流雾" : "Aurora Liquid"
-                    };
-                    const icons = {
-                      standard: "🌐",
-                      acrylic: "✨",
-                      mica: "🌌",
-                      aurora: "🎨"
-                    };
-                    return (
-                      <button
-                        key={mode}
-                        onClick={() => setVibeMode(mode)}
-                        className={`px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
-                          isActive 
-                            ? "bg-primary text-primary-foreground border-primary shadow-sm scale-[1.02]" 
-                            : "bg-muted/30 border-border/80 text-foreground/80 hover:bg-muted/60 hover:border-border"
-                        }`}
-                      >
-                        <span className="text-sm">{icons[mode]}</span>
-                        <span>{labels[mode]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 模拟桌面开关 */}
-              <div className="flex items-center justify-between bg-muted/20 border border-border/40 p-2.5 rounded-xl">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-xs font-semibold text-foreground/90">{lang === "zh" ? "模拟系统桌面" : "Simulate OS Desktop"}</span>
-                  <span className="text-[9px] text-muted-foreground leading-none">{lang === "zh" ? "展示桌面融合与红绿灯效果" : "Preview glass blur blending"}</span>
-                </div>
-                <button
-                  onClick={() => setSimulateDesktop(!simulateDesktop)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    simulateDesktop ? "bg-primary" : "bg-muted-foreground/30"
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                      simulateDesktop ? "translate-x-4" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* 模拟窗口风格选择 (仅在 simulateDesktop 开启时) */}
-              {simulateDesktop && (
-                <div className="space-y-1.5 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block">
-                    {lang === "zh" ? "模拟窗口控制风格" : "Simulate Window Controls"}
-                  </label>
-                  <div className="flex gap-2">
-                    {(["macos", "windows"] as const).map((style) => {
-                      const isActive = style === "macos" ? platform === "macos" : (platform === "windows" || platform === "linux");
-                      const styleNames = {
-                        macos: lang === "zh" ? "macOS (居左)" : "macOS (Left)",
-                        windows: lang === "zh" ? "Windows (居右)" : "Windows (Right)"
-                      };
-                      return (
-                        <button
-                          key={style}
-                          onClick={() => setPlatform(style)}
-                          className={`flex-1 py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center cursor-pointer transition-all ${
-                            isActive 
-                              ? "border-primary bg-primary/[0.04] text-primary" 
-                              : "border-border/80 bg-muted/10 text-muted-foreground hover:bg-muted/20"
-                          }`}
-                        >
-                          <span>{style === "macos" ? "🍎" : "🪟"}</span>
-                          <span className="ml-1">{styleNames[style]}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 桌面壁纸选择 (仅在 simulateDesktop 开启时) */}
-              {simulateDesktop && (
-                <div className="space-y-1.5 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-wider block">
-                    {lang === "zh" ? "系统桌面壁纸" : "OS Desktop Wallpaper"}
-                  </label>
-                  <div className="flex gap-2">
-                    {(["sequoia", "nebula", "dark-slate"] as const).map((paper) => {
-                      const isActive = desktopWallpaper === paper;
-                      const paperNames = {
-                        sequoia: lang === "zh" ? "枫叶极光" : "Sequoia",
-                        nebula: lang === "zh" ? "暗黑星云" : "Nebula",
-                        "dark-slate": lang === "zh" ? "极简石板" : "Slate"
-                      };
-                      const gradientColors = {
-                        sequoia: "from-[#ea580c] to-[#a82069]",
-                        nebula: "from-[#1c2541] to-[#3a506b]",
-                        "dark-slate": "from-[#111827] to-[#374151]"
-                      };
-                      return (
-                        <button
-                          key={paper}
-                          onClick={() => setDesktopWallpaper(paper)}
-                          className={`flex-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                            isActive 
-                              ? "border-primary bg-primary/[0.04] text-primary" 
-                              : "border-border/80 bg-muted/10 text-muted-foreground hover:bg-muted/20"
-                          }`}
-                          title={paperNames[paper]}
-                        >
-                          <span className={`size-2.5 rounded-full bg-gradient-to-r ${gradientColors[paper]}`} />
-                          <span>{paperNames[paper]}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3.5 pt-3.5 border-t border-border/60 text-[9px] text-muted-foreground leading-normal flex items-start gap-1">
-              <span>💡</span>
-              <p>
-                {lang === "zh" 
-                  ? "背景板一体化通过移除浏览器边框，增加 macOS 级别的磨砂玻璃反射效果，极大地弱化了「网页感」，使其成为富有呼吸感的高级原生桌面工具。"
-                  : "Integrated Background vibe hides the browser title bar and adds native frosted glass reflection effects, making it a beautiful native tool."}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setVibePanelOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/95 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer border border-primary/20 text-xs font-bold"
-          >
-            <span className="text-sm animate-pulse">✨</span>
-            <span>{lang === "zh" ? "一体化背景原型" : "Vibe UI Controls"}</span>
-          </button>
-        )}
-      </div>
     </>
   );
 }
