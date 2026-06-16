@@ -1240,7 +1240,7 @@ function App() {
       </header>
 
       {/* Main Container */}
-      <main className="max-w-6xl mx-auto px-6 py-4 space-y-6">
+      <main className="max-w-[1800px] w-full mx-auto px-6 py-4 space-y-6">
         {/* Error Alert */}
         {error && (
           <div className="rounded-xl border border-red-200/60 bg-red-500/5 p-4 dark:border-red-900/40 dark:bg-red-950/10 text-red-600 dark:text-red-400 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -1423,7 +1423,7 @@ function App() {
                 </div>
               ) : (
                 /* Card Grid View Layout */
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
                   {filteredProviders.map((p) => {
                     const isActive = currentActive === p.name;
                     const isThisSwitching = switching === p.name;
