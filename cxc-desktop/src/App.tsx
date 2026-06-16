@@ -1122,7 +1122,7 @@ function App() {
           ? "sticky top-0 z-40 w-full border-b border-border/80 bg-card/75 backdrop-blur-md px-6 py-2 flex items-center justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)] cxc-drag"
           : "sticky top-0 z-40 w-full px-6 py-3.5 flex items-center justify-between cxc-drag bg-transparent border-none shadow-none"
         }>
-          <div className="flex items-center gap-3 cxc-no-drag">
+          <div className="flex items-center gap-2.5 cxc-no-drag">
             {/* 仅在无标题栏一体化模式下显示 macOS 红绿灯窗口控制 */}
             {vibeMode !== "standard" && <WindowControls />}
             
@@ -1134,13 +1134,13 @@ function App() {
             <h1 className="text-sm font-extrabold tracking-tight text-foreground/95 leading-none">
               CXC
             </h1>
-            <p className="text-[9px] text-muted-foreground mt-0.5 font-semibold leading-none tracking-wider uppercase">
+            <p className="text-[9px] text-muted-foreground mt-px font-semibold leading-none tracking-wider uppercase">
               Code Cross-Connect
             </p>
           </div>
 
           {/* Target Tool Switcher with absolute active slide animation */}
-          <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 ml-3 shrink-0 h-8 w-16 overflow-hidden animate-in fade-in duration-300">
+          <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 shrink-0 h-8 w-16 overflow-hidden animate-in fade-in duration-300">
             {/* Sliding Active Indicator */}
             <div
               className="absolute top-0.5 bottom-0.5 rounded-[6px] bg-card shadow-sm border border-border/10 transition-all duration-300 ease-out"
