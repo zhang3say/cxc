@@ -2015,17 +2015,13 @@ function App() {
           padding-bottom: 16px !important;
         }
         
-        /* 2. 表格主容器一体化 (去除白背景与硬边框，采用高透明磨砂玻璃) */
+        /* 2. 表格主容器一体化 (彻底去掉外边框、阴影和背景，让表格行与界面外框直接融为一体) */
         .vibe-integrated .border.border-border.rounded-xl.bg-card {
-          background-color: rgba(255, 255, 255, 0.22) !important;
-          backdrop-filter: blur(20px) !important;
-          border-color: rgba(255, 255, 255, 0.18) !important;
-          box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.04) !important;
-        }
-        .dark .vibe-integrated .border.border-border.rounded-xl.bg-card {
-          background-color: rgba(24, 24, 24, 0.35) !important;
-          border-color: rgba(255, 255, 255, 0.05) !important;
-          box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.25) !important;
+          background-color: transparent !important;
+          backdrop-filter: none !important;
+          border: none !important;
+          box-shadow: none !important;
+          border-radius: 0 !important;
         }
         
         /* 3. 表格头部一体化 (无背景，底线极其淡雅，文字稍作淡化) */
@@ -2135,6 +2131,13 @@ function App() {
         }
         .dark .vibe-integrated .border-border {
           border-color: rgba(255, 255, 255, 0.04) !important;
+        }
+        
+        /* 10. 主区域在窗口固定高度下的自适应弹性滚动 */
+        .vibe-integrated main {
+          flex: 1 !important;
+          overflow-y: auto !important;
+          min-height: 0 !important;
         }
         
         /* 滚动条美化 */
