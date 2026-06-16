@@ -1324,7 +1324,7 @@ function App() {
                       <div className="w-24 sm:w-28 shrink-0 pr-4">{t.modelCol}</div>
                       <div className="w-28 sm:w-32 shrink-0 pr-4">{t.statusLatencyCol}</div>
                       <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
-                      <div className="w-24 shrink-0 text-center">{t.activeCol}</div>
+                      <div className="w-24 shrink-0 text-left">{t.activeCol}</div>
                     </div>
 
                     {filteredProviders.map((p) => {
@@ -1437,7 +1437,7 @@ function App() {
                           </div>
 
                           {/* Switch Active Trigger column */}
-                          <div className="w-full sm:w-24 shrink-0 flex justify-end items-center pr-2">
+                          <div className="w-full sm:w-24 shrink-0 flex justify-start items-center pl-1.5">
                             <ToggleSwitch
                               checked={isActive}
                               loading={isThisSwitching}
