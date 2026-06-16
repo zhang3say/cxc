@@ -1278,7 +1278,7 @@ function App() {
                     <div className="hidden sm:flex items-center px-4 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider gap-4 opacity-70">
                       <div className="w-6 shrink-0" />
                       <div className="w-32 sm:w-36 shrink-0 pr-4">{t.providerNameCol}</div>
-                      <div className="hidden lg:flex flex-1 min-w-0 pr-4">{t.endpointCol}</div>
+                      <div className="flex-1 min-w-0 pr-4">{t.endpointCol}</div>
                       <div className="w-24 sm:w-28 shrink-0 pr-4">{t.modelCol}</div>
                       <div className="w-28 sm:w-32 shrink-0 pr-4">{t.statusLatencyCol}</div>
                       <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
@@ -1325,7 +1325,7 @@ function App() {
                           </div>
 
                           {/* Base URL column */}
-                          <div className="flex sm:hidden lg:flex flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 items-center gap-1.5">
+                          <div className="flex flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
                             <span
                               onClick={(e) => handleEndpointClick(e, p.base_url)}
