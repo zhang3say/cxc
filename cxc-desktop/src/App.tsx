@@ -1227,10 +1227,10 @@ function App() {
           {/* Add Provider Button */}
           <Button
             onClick={openAddForm}
-            className="h-8 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-medium text-xs transition-all flex items-center gap-1"
+            className="size-8 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all flex items-center justify-center cursor-pointer shrink-0"
             title={t.addProvider}
           >
-            <Plus className="size-3.5" /><span>{lang === "zh" ? "添加" : "Add"}</span>
+            <Plus className="size-4" />
           </Button>
 
           <div className="h-4 w-px bg-border/60 mx-0.5" />
