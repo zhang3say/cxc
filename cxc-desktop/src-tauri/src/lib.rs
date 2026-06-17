@@ -138,7 +138,8 @@ fn save_settings(app_handle: tauri::AppHandle, target_tool: String, source: Stri
 
     // Re-apply active provider config to target tool after settings change
     if target_tool == "codex" {
-        if let Some(p) = config::get_active(&cfg, "codex").cloned() {
+        let src = cfg.codex_source.clone().unwrap_or_else(|| "app".to_string());
+        if let Some(p) = config::get_active(&cfg, "codex", &src).cloned() {
             let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
             let tc = TargetConfig {
                 base_url: p.base_url.clone(),
@@ -149,7 +150,8 @@ fn save_settings(app_handle: tauri::AppHandle, target_tool: String, source: Stri
             codex_adapter.write(&tc).map_err(|e| e.to_string())?;
         }
     } else if target_tool == "claude" {
-        if let Some(p) = config::get_active(&cfg, "claude").cloned() {
+        let src = cfg.claude_source.clone().unwrap_or_else(|| "wsl".to_string());
+        if let Some(p) = config::get_active(&cfg, "claude", &src).cloned() {
             let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
             claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
         }
@@ -189,7 +191,13 @@ fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: 
         claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
     }
 
-    config::set_active(&mut cfg, &target_tool, &name).map_err(|e| e.to_string())?;
+    let source = if target_tool == "codex" {
+        cfg.codex_source.clone().unwrap_or_else(|| "app".to_string())
+    } else {
+        cfg.claude_source.clone().unwrap_or_else(|| "wsl".to_string())
+    };
+
+    config::set_active(&mut cfg, &target_tool, &source, &name).map_err(|e| e.to_string())?;
 
     let _ = update_tray_menu(app_handle);
 
@@ -210,8 +218,12 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
 
     // System Tray 只显示 Codex providers（已知的设计限制，见 CONTEXT.md）
     // 托盘无法选择 Target Tool，固定使用 Codex 列表
+    let codex_source = cfg.codex_source.clone().unwrap_or_else(|| "app".to_string());
     for p in &cfg.codex_providers {
-        let is_active = cfg.codex_active == p.name;
+        let is_active = match config::get_active(&cfg, "codex", &codex_source) {
+            Some(active_p) => active_p.name == p.name,
+            None => false,
+        };
         let item = CheckMenuItem::with_id(
             app_handle,
             format!("prov:{}", p.name),
