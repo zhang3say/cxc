@@ -902,12 +902,6 @@ function App() {
         const currentSrc = config.codex_source || "app";
         const newSource = currentSrc === "wsl" ? "app" : "wsl";
         
-        if (newSource === "wsl" && !config.codex_custom_dir) {
-          setSettingsSource("wsl");
-          setShowSettings(true);
-          return;
-        }
-        
         const updatedCfg = await invoke<Config>("save_settings", {
           targetTool,
           source: newSource,
@@ -921,12 +915,6 @@ function App() {
       } else {
         const currentSrc = config.claude_source || "wsl";
         const newSource = currentSrc === "wsl" ? "app" : "wsl";
-        
-        if (newSource === "app" && !config.claude_custom_dir) {
-          setClaudeSource("app");
-          setShowSettings(true);
-          return;
-        }
         
         const updatedCfg = await invoke<Config>("save_settings", {
           targetTool,
@@ -1350,8 +1338,8 @@ function App() {
               </div>
               <p className="mt-1 text-muted-foreground font-medium leading-normal">
                 {currentSource === "wsl"
-                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击此微标可一键切换环境，或通过设置页进行高级调整。" : "Writes configuration to the WSL environment. Click to toggle environment directly or customize in settings.")
-                  : (lang === "zh" ? "当前已将配置写入本地 Desktop 配置文件。点击此微标可一键切换环境，或通过设置页进行高级调整。" : "Writes configuration to the Desktop environment. Click to toggle environment directly or customize in settings.")
+                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击可一键静默切换为 Desktop 环境，未配置自定义目录时将自动使用默认路径。" : "Currently writing to the WSL configuration file. Click to silently toggle to Desktop environment (defaults to standard paths if not custom-configured).")
+                  : (lang === "zh" ? "当前已将配置写入本地 Desktop 配置文件。点击可一键静默切换为 WSL 环境，未配置自定义目录时将自动使用默认路径。" : "Currently writing to the Desktop configuration file. Click to silently toggle to WSL environment (defaults to standard paths if not custom-configured).")
                 }
               </p>
             </div>
