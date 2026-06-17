@@ -894,6 +894,56 @@ function App() {
     }, 2000);
   };
 
+  async function handleToggleSource() {
+    if (!config) return;
+    try {
+      setError(null);
+      if (targetTool === "codex") {
+        const currentSrc = config.codex_source || "app";
+        const newSource = currentSrc === "wsl" ? "app" : "wsl";
+        
+        if (newSource === "wsl" && !config.codex_custom_dir) {
+          setSettingsSource("wsl");
+          setShowSettings(true);
+          return;
+        }
+        
+        const updatedCfg = await invoke<Config>("save_settings", {
+          targetTool,
+          source: newSource,
+          customDir: config.codex_custom_dir || "",
+          claudeSource: config.claude_source || "wsl",
+          claudeCustomDir: config.claude_custom_dir || "",
+        });
+        setConfig(updatedCfg);
+        setSettingsSource(newSource);
+        showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
+      } else {
+        const currentSrc = config.claude_source || "wsl";
+        const newSource = currentSrc === "wsl" ? "app" : "wsl";
+        
+        if (newSource === "app" && !config.claude_custom_dir) {
+          setClaudeSource("app");
+          setShowSettings(true);
+          return;
+        }
+        
+        const updatedCfg = await invoke<Config>("save_settings", {
+          targetTool,
+          source: config.codex_source || "app",
+          customDir: config.codex_custom_dir || "",
+          claudeSource: newSource,
+          claudeCustomDir: config.claude_custom_dir || "",
+        });
+        setConfig(updatedCfg);
+        setClaudeSource(newSource);
+        showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
+      }
+    } catch (e: any) {
+      setError(e.toString());
+    }
+  }
+
   const handleEndpointClick = async (e: React.MouseEvent, url: string) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
@@ -1285,7 +1335,7 @@ function App() {
           {/* Environment Source Status Badge (with Custom Tooltip) */}
           <div className="relative group/tooltip">
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={handleToggleSource}
               className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors text-[9px] font-extrabold tracking-wider text-muted-foreground hover:text-foreground cursor-pointer shrink-0 select-none uppercase shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)] animate-in fade-in slide-in-from-left-2 duration-300"
             >
               <span className={`size-1.5 rounded-full shrink-0 ${currentSource === "wsl" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]" : "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.4)]"}`} />
@@ -1300,8 +1350,8 @@ function App() {
               </div>
               <p className="mt-1 text-muted-foreground font-medium leading-normal">
                 {currentSource === "wsl"
-                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击此微标可快速打开系统设置进行调整。" : "Writes configuration to the WSL environment. Click to customize settings.")
-                  : (lang === "zh" ? "当前已将配置写入本地 Desktop 配置文件。点击此微标可快速打开系统设置进行调整。" : "Writes configuration to the Desktop environment. Click to customize settings.")
+                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击此微标可一键切换环境，或通过设置页进行高级调整。" : "Writes configuration to the WSL environment. Click to toggle environment directly or customize in settings.")
+                  : (lang === "zh" ? "当前已将配置写入本地 Desktop 配置文件。点击此微标可一键切换环境，或通过设置页进行高级调整。" : "Writes configuration to the Desktop environment. Click to toggle environment directly or customize in settings.")
                 }
               </p>
             </div>
