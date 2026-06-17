@@ -1174,20 +1174,23 @@ function App() {
                   : "bg-transparent border-transparent shadow-none"
               }`
         }`}>
-          <div className="flex items-center gap-2.5 cxc-no-drag">
+          <div className="flex items-center gap-3.5 cxc-no-drag">
             {/* 仅在无标题栏一体化模式下显示 macOS 红绿灯窗口控制 */}
             {vibeMode !== "standard" && <WindowControls />}
             
-            {/* Logo with official CXC image */}
-            <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
-              <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+            {/* Brand Identity Block (Logo + Title) */}
+            <div className="flex items-center gap-1.5 shrink-0 select-none">
+              {/* Logo with official CXC image */}
+              <div className="relative flex items-center justify-center size-8 rounded-lg bg-card border border-border shadow-sm overflow-hidden transition-transform hover:rotate-3 duration-200 shrink-0">
+                <img src="/logo.png" alt="CXC Logo" className="size-full object-cover" />
+              </div>
+              <h1 
+                className="text-sm font-black tracking-tighter shrink-0 bg-gradient-to-r from-[#0075de] to-[#00a3ff] dark:from-[#2eaadc] dark:to-[#0075de] bg-clip-text text-transparent leading-none"
+                style={{ fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace" }}
+              >
+                CXC
+              </h1>
             </div>
-          <h1 
-            className="text-sm font-black tracking-tighter shrink-0 bg-gradient-to-r from-[#0075de] to-[#00a3ff] dark:from-[#2eaadc] dark:to-[#0075de] bg-clip-text text-transparent select-none leading-none"
-            style={{ fontFamily: "'Geist Mono Variable', 'Geist Mono', monospace" }}
-          >
-            CXC
-          </h1>
 
           {/* Target Tool Switcher with absolute active slide animation */}
           <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 shrink-0 h-8 w-16 overflow-hidden animate-in fade-in duration-300">
