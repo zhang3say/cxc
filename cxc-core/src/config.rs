@@ -155,22 +155,22 @@ pub fn load() -> Result<Config, ConfigError> {
     }
 
     // 自动迁移 2：单状态到多源状态的迁移
-    if !cfg.codex_active_app.is_empty() {
+    if !cfg.codex_active.is_empty() {
         if cfg.codex_source.as_deref() == Some("wsl") {
-            cfg.codex_active_wsl = cfg.codex_active_app.clone();
+            cfg.codex_active_wsl = cfg.codex_active.clone();
         } else {
-            cfg.codex_active_app = cfg.codex_active_app.clone();
+            cfg.codex_active_app = cfg.codex_active.clone();
         }
-        cfg.codex_active_app.clear();
+        cfg.codex_active.clear();
         changed = true;
     }
-    if !cfg.claude_active_app.is_empty() {
+    if !cfg.claude_active.is_empty() {
         if cfg.claude_source.as_deref() == Some("app") {
-            cfg.claude_active_app = cfg.claude_active_app.clone();
+            cfg.claude_active_app = cfg.claude_active.clone();
         } else {
-            cfg.claude_active_wsl = cfg.claude_active_app.clone();
+            cfg.claude_active_wsl = cfg.claude_active.clone();
         }
-        cfg.claude_active_app.clear();
+        cfg.claude_active.clear();
         changed = true;
     }
 
@@ -573,6 +573,43 @@ mod tests {
         let loaded = load().unwrap();
         assert_eq!(loaded.codex_providers.len(), 1);
         assert_eq!(loaded.codex_providers[0].api_key, "sk-abc");
+    }
+
+    #[test]
+    fn test_multi_source_active_persistence() {
+        let (_dir, _path) = setup_test();
+        let mut cfg = Config::default();
+        add_provider(&mut cfg, "codex", Provider {
+            name: "node-a".to_string(),
+            base_url: "https://a.com/v1".to_string(),
+            api_key: "sk-abc".to_string(),
+            model: "gpt-4".to_string(),
+            wire_api: "".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+        }).unwrap();
+        add_provider(&mut cfg, "codex", Provider {
+            name: "node-b".to_string(),
+            base_url: "https://b.com/v1".to_string(),
+            api_key: "sk-def".to_string(),
+            model: "gpt-4".to_string(),
+            wire_api: "".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+        }).unwrap();
+
+        set_active(&mut cfg, "codex", "app", "node-a").unwrap();
+        set_active(&mut cfg, "codex", "wsl", "node-b").unwrap();
+
+        let loaded = load().unwrap();
+        assert_eq!(loaded.codex_active_app, "node-a");
+        assert_eq!(loaded.codex_active_wsl, "node-b");
     }
 
     #[test]
