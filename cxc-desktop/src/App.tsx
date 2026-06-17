@@ -138,7 +138,7 @@ const locales = {
     createProviderDesc: "配置一个新的 API 中转代理端点。",
     editProviderDesc: "更新中转代理节点的配置参数。",
     nameLabel: "中转站名称 *",
-    namePlaceholder: "例如: DeepSeek Backup",
+    namePlaceholder: "DeepSeek Backup",
     baseUrlLabel: "Base URL (API 端点地址) *",
     apiKeyLabel: "API Key (机密密钥) *",
     modelLabel: "模型标识符 *",
@@ -146,7 +146,7 @@ const locales = {
     discovering: "拉取中...",
     wireApiLabel: "传输协议 Wire API",
     remarkLabel: "备注信息 / Notes",
-    remarkPlaceholder: "例如: 高速备用节点",
+    remarkPlaceholder: "高速备用节点",
     createBtn: "新建节点",
     saveChangesBtn: "保存修改",
     selectModelDefault: "-- 选择一个模型 --",
@@ -219,8 +219,8 @@ const locales = {
     customDirLabel: "Codex Custom Directory (自定义目录)",
     claudeCustomDirLabel: "Claude CLI Custom Directory",
     wslRecommended: "Recommended for WSL",
-    wslPlaceholder: "e.g. \\\\wsl.localhost\\Ubuntu\\home\\username\\.codex",
-    claudeWslPlaceholder: "e.g. \\\\wsl.localhost\\Ubuntu\\home\\username\\.claude",
+    wslPlaceholder: "\\\\wsl.localhost\\Ubuntu\\home\\username\\.codex",
+    claudeWslPlaceholder: "\\\\wsl.localhost\\Ubuntu\\home\\username\\.claude",
     appPlaceholder: "Optional custom path",
     wslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .codex folder so CXC on Windows can write config files successfully.",
     claudeWslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .claude folder so CXC on Windows can write config files successfully.",
@@ -234,7 +234,7 @@ const locales = {
     createProviderDesc: "Provide endpoint details for the cross-connect proxy relay.",
     editProviderDesc: "Update settings for relay provider.",
     nameLabel: "Provider Name *",
-    namePlaceholder: "e.g. proxy-fast",
+    namePlaceholder: "proxy-fast",
     baseUrlLabel: "Base URL *",
     apiKeyLabel: "API Key *",
     modelLabel: "Model *",
@@ -242,7 +242,7 @@ const locales = {
     discovering: "Loading...",
     wireApiLabel: "Wire API",
     remarkLabel: "Remark / Notes",
-    remarkPlaceholder: "e.g. Backup relay",
+    remarkPlaceholder: "Backup relay",
     createBtn: "Create",
     saveChangesBtn: "Save Changes",
     selectModelDefault: "-- Select a model --",
@@ -2464,8 +2464,9 @@ function App() {
               </Button>
               <Button
                 type="button"
+                variant="destructive"
                 onClick={confirmDeleteProvider}
-                className="h-8 px-4 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/95 transition-all active:scale-[0.98] shadow-sm shadow-destructive/10"
+                className="h-8 px-4 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-all active:scale-[0.98] shadow-sm shadow-red-500/10"
               >
                 {lang === "zh" ? "确认删除" : "Confirm"}
               </Button>
