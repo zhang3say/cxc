@@ -1162,6 +1162,10 @@ function App() {
       );
     };
 
+    const currentSource = config
+      ? (targetTool === "codex" ? config.codex_source : config.claude_source)
+      : (targetTool === "codex" ? "app" : "wsl");
+
     return (
       <>
         {/* Unified Single-Bar Header */}
@@ -1231,6 +1235,16 @@ function App() {
               </svg>
             </button>
           </div>
+
+          {/* Environment Source Status Badge */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors text-[9px] font-extrabold tracking-wider text-muted-foreground hover:text-foreground cursor-pointer shrink-0 select-none uppercase shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)] animate-in fade-in slide-in-from-left-2 duration-300"
+            title={lang === "zh" ? "当前配置环境（点击打开设置）" : "Active Env (Click to open settings)"}
+          >
+            <span className={`size-1.5 rounded-full shrink-0 ${currentSource === "wsl" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]" : "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.4)]"}`} />
+            <span>{currentSource === "wsl" ? "WSL" : "Desktop"}</span>
+          </button>
         </div>
 
         {/* Center search box (Dynamic wake-up layout with shortcut helper kbd) */}
