@@ -175,7 +175,7 @@ const locales = {
     githubDesc: "访问 GitHub 仓库获取最新版本和反馈",
     githubBtn: "前往仓库",
     offlineTooltipTitle: "连接测试超时",
-    offlineTooltipDesc: "检测到中转未给出有效响应。不过，部分中转地址出于安全或防护考虑会禁用测速端点（如 /v1/models），这并不影响其作为 API 节点的实际使用。您依然可以尝试启用它并正常配置测试。"
+    offlineTooltipDesc: "检测到中转未给出有效响应。不过，部分中转地址出于安全或防护考虑会禁用测试端点，这并不影响其作为 API 节点的实际使用。您依然可以尝试启用它并在具体客户端中发起调用测试。"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -271,7 +271,7 @@ const locales = {
     githubDesc: "Visit GitHub repository for updates & feedback",
     githubBtn: "Visit Repo",
     offlineTooltipTitle: "Connection Timeout",
-    offlineTooltipDesc: "No valid response was received from the server. However, some relays disable speed test endpoints (e.g. /v1/models) for security reasons. This does not affect actual API usage, and you may still enable and try it."
+    offlineTooltipDesc: "No valid response was received from the server. However, some relays disable speed test endpoints for security reasons. This does not affect actual API usage, and you may still enable and try it."
   }
 };
 
