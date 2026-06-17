@@ -1724,8 +1724,8 @@ function App() {
 
       {/* Settings Dialog Modal (Notion-style Settings) */}
       <Dialog open={showSettings} onOpenChange={(open) => !open && setShowSettings(false)}>
-        <DialogContent className="sm:max-w-md bg-card border border-border rounded-xl shadow-xl p-5 gap-4">
-          <DialogHeader className="gap-1.5">
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
+          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4">
             <DialogTitle className="text-base font-bold tracking-tight">
               {t.settingsTitle}
             </DialogTitle>
@@ -1739,47 +1739,47 @@ function App() {
               <>
                 {/* Codex Configuration */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-bold text-muted-foreground">
+                  <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                     {t.codexSourceLabel}
                   </Label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
                       onClick={() => setSettingsSource("app")}
-                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
                         settingsSource === "app"
-                          ? "border-primary bg-primary/[0.03] text-primary"
-                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
+                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
                       }`}
                     >
                       <div>
                         <span className="text-xs font-bold block">{t.desktopAppOption}</span>
                         <span className="text-[10px] text-muted-foreground block mt-0.5">{t.desktopAppDesc}</span>
                       </div>
-                      {settingsSource === "app" && <Check className="size-4 shrink-0" />}
+                      {settingsSource === "app" && <Check className="size-4 shrink-0 text-primary" />}
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setSettingsSource("wsl")}
-                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
                         settingsSource === "wsl"
-                          ? "border-primary bg-primary/[0.03] text-primary"
-                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
+                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
                       }`}
                     >
                       <div>
                         <span className="text-xs font-bold block">{t.wslCliOption}</span>
                         <span className="text-[10px] text-muted-foreground block mt-0.5">{t.wslCliDesc}</span>
                       </div>
-                      {settingsSource === "wsl" && <Check className="size-4 shrink-0" />}
+                      {settingsSource === "wsl" && <Check className="size-4 shrink-0 text-primary" />}
                     </button>
                   </div>
                 </div>
 
                 {/* Codex custom directory */}
-                <div className="space-y-1">
-                  <Label htmlFor="settings-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <div className="space-y-1.5">
+                  <Label htmlFor="settings-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
                     <span>{t.customDirLabel}</span>
                     {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
                   </Label>
@@ -1789,9 +1789,9 @@ function App() {
                     value={settingsCustomDir}
                     onChange={(e) => setSettingsCustomDir(e.target.value)}
                     placeholder={settingsSource === "wsl" ? t.wslPlaceholder : t.appPlaceholder}
-                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                   />
-                  <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+                  <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
                     {settingsSource === "wsl" ? t.wslNote : t.appNote}
                   </p>
                 </div>
@@ -1800,47 +1800,47 @@ function App() {
               <>
                 {/* Claude CLI Configuration */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-bold text-muted-foreground">
+                  <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                     {t.claudeSourceLabel}
                   </Label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
                       onClick={() => setClaudeSource("wsl")}
-                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
                         claudeSource === "wsl"
-                          ? "border-primary bg-primary/[0.03] text-primary"
-                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
+                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
                       }`}
                     >
                       <div>
                         <span className="text-xs font-bold block">{t.wslCliOption}</span>
                         <span className="text-[10px] text-muted-foreground block mt-0.5">WSL 环境 (~/.claude)</span>
                       </div>
-                      {claudeSource === "wsl" && <Check className="size-4 shrink-0" />}
+                      {claudeSource === "wsl" && <Check className="size-4 shrink-0 text-primary" />}
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setClaudeSource("app")}
-                      className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
                         claudeSource === "app"
-                          ? "border-primary bg-primary/[0.03] text-primary"
-                          : "border-border bg-card text-foreground hover:bg-muted/30"
+                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
+                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
                       }`}
                     >
                       <div>
                         <span className="text-xs font-bold block">{t.desktopAppOption}</span>
                         <span className="text-[10px] text-muted-foreground block mt-0.5">Windows 客户端 (~/.claude)</span>
                       </div>
-                      {claudeSource === "app" && <Check className="size-4 shrink-0" />}
+                      {claudeSource === "app" && <Check className="size-4 shrink-0 text-primary" />}
                     </button>
                   </div>
                 </div>
 
                 {/* Claude custom directory */}
-                <div className="space-y-1">
-                  <Label htmlFor="claude-custom-dir" className="text-xs font-bold text-muted-foreground flex items-center justify-between">
+                <div className="space-y-1.5">
+                  <Label htmlFor="claude-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
                     <span>{t.claudeCustomDirLabel}</span>
                     {claudeSource === "app" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
                   </Label>
@@ -1850,9 +1850,9 @@ function App() {
                     value={claudeCustomDir}
                     onChange={(e) => setClaudeCustomDir(e.target.value)}
                     placeholder={claudeSource === "app" ? t.claudeWslPlaceholder : t.appPlaceholder}
-                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                   />
-                  <p className="text-[10px] text-muted-foreground leading-normal mt-1">
+                  <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
                     {claudeSource === "app" ? t.claudeWslNote : t.claudeAppNote}
                   </p>
                 </div>
@@ -1860,9 +1860,9 @@ function App() {
             )}
 
             {/* General Settings (Theme, Language, Reload Config) */}
-            <div className="border-t border-border/60 pt-4 mt-4 space-y-4">
-              <Label className="text-xs font-extrabold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
-                <Settings className="size-3.5 text-muted-foreground" />
+            <div className="border-t border-border/30 pt-4 mt-5 space-y-4">
+              <Label className="text-[11px] font-extrabold text-foreground/90 flex items-center gap-1.5 uppercase tracking-wider">
+                <Settings className="size-3.5 text-muted-foreground/70" />
                 <span>{t.generalSettingsLabel}</span>
               </Label>
               
@@ -1872,13 +1872,13 @@ function App() {
                   <Label className="text-[11px] font-bold text-muted-foreground">
                     {t.themeLabel}
                   </Label>
-                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/40">
+                  <div className="flex items-center gap-1 bg-muted/20 p-0.5 rounded-lg border border-border/20">
                     <button
                       type="button"
                       onClick={() => setTheme("light")}
-                      className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                      className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer active:scale-[0.96] ${
                         theme === "light"
-                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          ? "bg-background text-foreground shadow-sm border border-border/10"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
                       }`}
                     >
@@ -1888,9 +1888,9 @@ function App() {
                     <button
                       type="button"
                       onClick={() => setTheme("dark")}
-                      className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                      className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer active:scale-[0.96] ${
                         theme === "dark"
-                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          ? "bg-background text-foreground shadow-sm border border-border/10"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
                       }`}
                     >
@@ -1905,13 +1905,13 @@ function App() {
                   <Label className="text-[11px] font-bold text-muted-foreground">
                     {t.languageLabel}
                   </Label>
-                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/40">
+                  <div className="flex items-center gap-1 bg-muted/20 p-0.5 rounded-lg border border-border/20">
                     <button
                       type="button"
                       onClick={() => setLang("zh")}
-                      className={`flex-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                      className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer active:scale-[0.96] ${
                         lang === "zh"
-                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          ? "bg-background text-foreground shadow-sm border border-border/10"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
                       }`}
                     >
@@ -1920,9 +1920,9 @@ function App() {
                     <button
                       type="button"
                       onClick={() => setLang("en")}
-                      className={`flex-1 py-1 rounded-[5px] text-[10px] font-bold transition-all cursor-pointer ${
+                      className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer active:scale-[0.96] ${
                         lang === "en"
-                          ? "bg-card text-foreground shadow-sm border border-border/10"
+                          ? "bg-background text-foreground shadow-sm border border-border/10"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/10"
                       }`}
                     >
@@ -1943,13 +1943,13 @@ function App() {
                     setTimeout(() => setToastMessage(null), 2500);
                   }}
                   disabled={loading}
-                  className="w-full h-8 border border-border bg-card hover:bg-muted text-[11px] font-bold flex items-center justify-center gap-1.5 rounded-lg shadow-sm active:scale-[0.98] transition-transform cursor-pointer"
+                  className="w-full h-8 border border-border/40 bg-muted/5 hover:bg-muted/15 text-[11px] font-extrabold flex items-center justify-center gap-1.5 rounded-lg shadow-sm active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <RefreshCw className={`size-3 text-muted-foreground ${loading ? "animate-spin" : ""}`} />
                   <span>{t.reloadConfigBtn}</span>
                 </Button>
 
-                <div className="flex items-center justify-between border border-border/40 bg-muted/20 px-3 py-2 rounded-lg">
+                <div className="flex items-center justify-between border border-border/30 bg-muted/5 px-3 py-2 rounded-xl">
                   <div className="flex flex-col">
                     <span className="text-[11px] font-extrabold text-foreground">{t.githubLabel}</span>
                     <span className="text-[9px] text-muted-foreground mt-0.5 leading-normal max-w-[210px]">{t.githubDesc}</span>
@@ -1958,7 +1958,7 @@ function App() {
                     type="button"
                     variant="outline"
                     onClick={handleOpenGithub}
-                    className="h-7 px-2.5 border border-border bg-card hover:bg-muted text-[10px] font-bold flex items-center gap-1 rounded-md shadow-sm active:scale-[0.98] transition-transform cursor-pointer shrink-0"
+                    className="h-7 px-2.5 border border-border/40 bg-muted/5 hover:bg-muted/15 text-[10px] font-extrabold flex items-center gap-1 rounded-lg shadow-sm active:scale-[0.98] transition-transform cursor-pointer shrink-0"
                   >
                     <svg className="size-3 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                       <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.164 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
@@ -1969,7 +1969,7 @@ function App() {
               </div>
             </div>
 
-            <DialogFooter className="pt-3">
+            <DialogFooter className="pt-4 border-t border-border/30 mt-6">
               <div className="flex w-full items-center justify-between gap-2">
                 {appVersion && (
                   <span className="text-[10px] text-muted-foreground/40 font-medium select-none">
@@ -1978,29 +1978,29 @@ function App() {
                 )}
                 <div className="flex gap-2 justify-end ml-auto">
                   <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowSettings(false)}
-                  className="h-8 px-4 rounded-full border border-border bg-card text-xs font-semibold hover:bg-muted"
-                >
-                  {t.cancelBtn}
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm"
-                >
-                  {savingSettings ? (
-                    <>
-                      <Loader2 className="size-3 animate-spin mr-1" />
-                      {t.savingSettingsBtn}
-                    </>
-                  ) : (
-                    t.saveSettingsBtn
-                  )}
-                </Button>
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowSettings(false)}
+                    className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 active:scale-[0.98] transition-transform"
+                  >
+                    {t.cancelBtn}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={savingSettings}
+                    className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/95 transition-all active:scale-[0.98] shadow-sm shadow-primary/10 flex items-center justify-center"
+                  >
+                    {savingSettings ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin mr-1" />
+                        {t.savingSettingsBtn}
+                      </>
+                    ) : (
+                      t.saveSettingsBtn
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -2008,8 +2008,8 @@ function App() {
 
       {/* Add / Edit Dialog Modal */}
       <Dialog open={showForm !== null} onOpenChange={(open) => !open && setShowForm(null)}>
-        <DialogContent className="sm:max-w-md bg-card border border-border rounded-xl shadow-xl p-5 gap-4">
-          <DialogHeader className="gap-1.5">
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
+          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4">
             <DialogTitle className="text-base font-bold tracking-tight">
               {showForm === "add" ? t.createProviderTitle : t.editProviderTitle}
             </DialogTitle>
@@ -2020,8 +2020,8 @@ function App() {
 
           <form onSubmit={handleSubmitForm} className="space-y-4">
             <div className="max-h-[50vh] sm:max-h-[55vh] overflow-y-auto pr-2 -mr-2 space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="form-name" className="text-xs font-bold text-muted-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="form-name" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                   {t.nameLabel}
                 </Label>
                 <Input
@@ -2031,12 +2031,12 @@ function App() {
                   value={formValues.name}
                   onChange={(e) => setFormValues({ ...formValues, name: e.target.value })}
                   placeholder={t.namePlaceholder}
-                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                  className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                 />
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="form-url" className="text-xs font-bold text-muted-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="form-url" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                   {t.baseUrlLabel}
                 </Label>
                 <Input
@@ -2046,12 +2046,12 @@ function App() {
                   value={formValues.base_url}
                   onChange={(e) => setFormValues({ ...formValues, base_url: e.target.value })}
                   placeholder="https://api.example.com/v1"
-                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                  className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                 />
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="form-key" className="text-xs font-bold text-muted-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="form-key" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                   {t.apiKeyLabel}
                 </Label>
                 <div className="relative">
@@ -2062,7 +2062,7 @@ function App() {
                     value={formValues.api_key}
                     onChange={(e) => setFormValues({ ...formValues, api_key: e.target.value })}
                     placeholder="sk-••••••••••••"
-                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm pr-9 transition-all"
+                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner pr-9 transition-all duration-200 focus:bg-background/80"
                   />
                   <button
                     type="button"
@@ -2078,9 +2078,9 @@ function App() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-between pb-1">
-                  <Label htmlFor="form-model" className="text-xs font-bold text-muted-foreground">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between pb-1.5">
+                  <Label htmlFor="form-model" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                     {t.modelLabel}
                   </Label>
                   <Button
@@ -2089,7 +2089,7 @@ function App() {
                     size="xs"
                     onClick={handleFetchModels}
                     disabled={fetchingModels || !formValues.base_url || !formValues.api_key}
-                    className="h-6 text-[10px] border-border bg-card text-muted-foreground hover:bg-muted font-bold px-2 rounded-md shadow-sm transition-all"
+                    className="h-6 text-[10px] border border-border/40 bg-muted/5 text-muted-foreground hover:bg-muted/15 font-extrabold px-2.5 rounded-md shadow-sm transition-all active:scale-[0.96]"
                   >
                     {fetchingModels ? (
                       <>
@@ -2110,7 +2110,7 @@ function App() {
                     id="form-model-select"
                     value={formValues.model}
                     onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                    className="flex h-9 w-full rounded-[4px] border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                    className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
                   >
                     <option value="">{t.selectModelDefault}</option>
                     {fetchedModels.map((m) => (
@@ -2126,15 +2126,15 @@ function App() {
                     required={targetTool === "codex"}
                     value={formValues.model}
                     onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                    placeholder="e.g. gpt-4o"
-                    className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                    placeholder="gpt-4o"
+                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                   />
                 )}
                 {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="form-remark" className="text-xs font-bold text-muted-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="form-remark" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                   {t.remarkLabel}
                 </Label>
                 <Input
@@ -2143,7 +2143,7 @@ function App() {
                   value={formValues.remark}
                   onChange={(e) => setFormValues({ ...formValues, remark: e.target.value })}
                   placeholder={t.remarkPlaceholder}
-                  className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-sm shadow-sm transition-all"
+                  className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                 />
               </div>
 
@@ -2161,21 +2161,21 @@ function App() {
 
               {/* Collapsible Advanced Form Fields */}
               {showAdvanced && (
-                <div className="space-y-4 pt-3 border-t border-border/40 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="space-y-4 pt-3 border-t border-border/30 animate-in fade-in slide-in-from-top-2 duration-200">
                   {targetTool === "claude" && (
-                    <div className="space-y-2 border border-border rounded-lg p-3 bg-muted/20">
-                      <Label className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px]">Optional</span>
+                    <div className="space-y-3 border border-border/30 rounded-xl p-4 bg-muted/5">
+                      <Label className="text-[11px] font-extrabold text-muted-foreground/80 flex items-center gap-1.5 uppercase tracking-wider">
+                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-md text-[9px] font-bold">Optional</span>
                         Claude Models Override
                       </Label>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-semibold text-muted-foreground">Opus</Label>
+                          <Label className="text-[10px] font-extrabold text-muted-foreground/75">Opus</Label>
                           {fetchedModels.length > 0 ? (
                             <select
                               value={formValues.claude_models?.opus || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
-                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
                             >
                               <option value="">{t.defaultModelPlaceholder}</option>
                               {fetchedModels.map((m) => (
@@ -2189,18 +2189,18 @@ function App() {
                               type="text"
                               value={formValues.claude_models?.opus || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
-                              placeholder="e.g. claude-3-opus-20240229"
-                              className="h-7 text-xs rounded shadow-sm"
+                              placeholder="claude-3-opus-20240229"
+                              className="h-7.5 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
                             />
                           )}
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-semibold text-muted-foreground">Sonnet</Label>
+                          <Label className="text-[10px] font-extrabold text-muted-foreground/75">Sonnet</Label>
                           {fetchedModels.length > 0 ? (
                             <select
                               value={formValues.claude_models?.sonnet || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
-                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
                             >
                               <option value="">{t.defaultModelPlaceholder}</option>
                               {fetchedModels.map((m) => (
@@ -2214,18 +2214,18 @@ function App() {
                               type="text"
                               value={formValues.claude_models?.sonnet || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
-                              placeholder="e.g. claude-3-5-sonnet-20240620"
-                              className="h-7 text-xs rounded shadow-sm"
+                              placeholder="claude-3-5-sonnet-20240620"
+                              className="h-7.5 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
                             />
                           )}
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-semibold text-muted-foreground">Haiku</Label>
+                          <Label className="text-[10px] font-extrabold text-muted-foreground/75">Haiku</Label>
                           {fetchedModels.length > 0 ? (
                             <select
                               value={formValues.claude_models?.haiku || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
-                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
                             >
                               <option value="">{t.defaultModelPlaceholder}</option>
                               {fetchedModels.map((m) => (
@@ -2239,18 +2239,18 @@ function App() {
                               type="text"
                               value={formValues.claude_models?.haiku || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
-                              placeholder="e.g. claude-3-haiku-20240307"
-                              className="h-7 text-xs rounded shadow-sm"
+                              placeholder="claude-3-haiku-20240307"
+                              className="h-7.5 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
                             />
                           )}
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-semibold text-muted-foreground">Fable</Label>
+                          <Label className="text-[10px] font-extrabold text-muted-foreground/75">Fable</Label>
                           {fetchedModels.length > 0 ? (
                             <select
                               value={formValues.claude_models?.fable || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
-                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
                             >
                               <option value="">{t.defaultModelPlaceholder}</option>
                               {fetchedModels.map((m) => (
@@ -2265,12 +2265,12 @@ function App() {
                               value={formValues.claude_models?.fable || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
                               placeholder="Custom mapping..."
-                              className="h-7 text-xs rounded shadow-sm"
+                              className="h-7.5 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
                             />
                           )}
                         </div>
-                        <div className="space-y-1 col-span-2 pt-1 border-t border-border/50 mt-1">
-                          <Label className="text-[10px] font-semibold text-muted-foreground flex justify-between items-center">
+                        <div className="space-y-1 col-span-2 pt-1 border-t border-border/30 mt-1">
+                          <Label className="text-[10px] font-extrabold text-muted-foreground/75 flex justify-between items-center">
                             <span>Subagent</span>
                             <span className="font-normal opacity-70">{lang === "zh" ? "(不填则继承主模型)" : "(Leave empty to inherit)"}</span>
                           </Label>
@@ -2278,7 +2278,7 @@ function App() {
                             <select
                               value={formValues.claude_models?.subagent || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: e.target.value } })}
-                              className="flex h-7 w-full rounded border border-border bg-card px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground"
+                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
                             >
                               <option value="">{t.defaultModelPlaceholder}</option>
                               {fetchedModels.map((m) => (
@@ -2292,8 +2292,8 @@ function App() {
                               type="text"
                               value={formValues.claude_models?.subagent || ""}
                               onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: e.target.value } })}
-                              placeholder="e.g. claude-3-haiku-20240307"
-                              className="h-7 text-xs rounded shadow-sm"
+                              placeholder="claude-3-haiku-20240307"
+                              className="h-7.5 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
                             />
                           )}
                         </div>
@@ -2301,8 +2301,8 @@ function App() {
                     </div>
                   )}
 
-                  <div className="space-y-1">
-                    <Label htmlFor="form-wire" className="text-xs font-bold text-muted-foreground">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="form-wire" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                       {t.wireApiLabel}
                     </Label>
                     <Input
@@ -2311,26 +2311,26 @@ function App() {
                       value={formValues.wire_api}
                       onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
                       placeholder="responses"
-                      className="bg-card border-border focus-visible:ring-primary focus-visible:border-primary h-9 rounded-[4px] text-xs shadow-sm"
+                      className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                     />
                   </div>
                 </div>
               )}
             </div>
 
-            <DialogFooter className="pt-3 border-t border-border/40">
+            <DialogFooter className="pt-4 border-t border-border/30 mt-6">
               <div className="flex w-full justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setShowForm(null)}
-                  className="h-8 px-4 rounded-full border border-border bg-card text-xs font-semibold hover:bg-muted"
+                  className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 active:scale-[0.98] transition-transform"
                 >
                   {t.cancelBtn}
                 </Button>
                 <Button
                   type="submit"
-                  className="h-8 px-4 rounded-full bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/95 transition-transform active:scale-95 shadow-sm"
+                  className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/95 transition-all active:scale-[0.98] shadow-sm shadow-primary/10"
                 >
                   {showForm === "add" ? t.createBtn : t.saveChangesBtn}
                 </Button>
@@ -2342,8 +2342,8 @@ function App() {
 
       {/* Quick Model Switch Dialog */}
       <Dialog open={quickSwitchProvider !== null} onOpenChange={(open) => !open && handleCloseQuickSwitch()}>
-        <DialogContent className="sm:max-w-md bg-card border border-border rounded-xl shadow-xl p-5 gap-4">
-          <DialogHeader className="gap-1.5">
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
+          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4">
             <DialogTitle className="text-base font-bold tracking-tight">
               {t.quickSwitchTitle}
             </DialogTitle>
@@ -2367,7 +2367,7 @@ function App() {
                   size="sm"
                   variant="outline"
                   onClick={handleRetryQuickFetch}
-                  className="h-8 text-xs font-semibold rounded-full"
+                  className="h-8 text-xs font-bold rounded-lg border border-border/40 bg-muted/5 text-muted-foreground hover:bg-muted/15 active:scale-[0.98] transition-transform"
                 >
                   {t.retryBtn}
                 </Button>
@@ -2375,7 +2375,7 @@ function App() {
                   size="sm"
                   variant="ghost"
                   onClick={handleCloseQuickSwitch}
-                  className="h-8 text-xs font-semibold rounded-full"
+                  className="h-8 text-xs font-bold rounded-lg border border-border/40 bg-muted/5 text-muted-foreground hover:bg-muted/15 active:scale-[0.98] transition-transform"
                 >
                   {t.cancelBtn}
                 </Button>
@@ -2384,19 +2384,19 @@ function App() {
           ) : (
             <div className="space-y-3">
               {/* Search filter for models */}
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 pointer-events-none" />
+              <div className="relative mb-3">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
                 <Input
                   type="text"
                   placeholder={t.searchModelPlaceholder}
                   value={quickSwitchSearch}
                   onChange={(e) => setQuickSwitchSearch(e.target.value)}
-                  className="pl-8 h-8 w-full bg-card border-border rounded-md placeholder-muted-foreground/50 text-xs"
+                  className="pl-8 h-8.5 w-full bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 rounded-md placeholder-muted-foreground/50 text-xs transition-all focus:bg-background/80"
                 />
               </div>
 
               {/* Scrollable list of models */}
-              <div className="border border-border rounded-lg max-h-60 overflow-y-auto divide-y divide-border bg-muted/10">
+              <div className="border border-border/30 rounded-xl max-h-60 overflow-y-auto divide-y divide-border/20 bg-muted/5 mt-3">
                 {filteredQuickSwitchModels.length > 0 ? (
                   filteredQuickSwitchModels.map((model) => {
                     const isCurrent = quickSwitchProvider?.model === model;
@@ -2404,8 +2404,8 @@ function App() {
                       <button
                         key={model}
                         onClick={() => handleSelectQuickModel(model)}
-                        className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center justify-between hover:bg-muted/60 ${
-                          isCurrent ? "font-semibold text-primary bg-primary/[0.02]" : "text-foreground/80"
+                        className={`w-full text-left px-3 py-2.5 text-xs transition-all flex items-center justify-between hover:bg-primary/[0.03] active:scale-[0.99] ${
+                          isCurrent ? "font-bold text-primary bg-primary/[0.04]" : "text-foreground/80 hover:text-foreground"
                         }`}
                       >
                         <span className="truncate pr-4">{model}</span>
@@ -2420,12 +2420,12 @@ function App() {
                 )}
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end pt-4 border-t border-border/30 mt-4">
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={handleCloseQuickSwitch}
-                  className="h-8 text-xs font-semibold rounded-full border border-border bg-card text-muted-foreground hover:bg-muted"
+                  className="h-8 text-xs font-bold rounded-lg border border-border/40 bg-muted/5 text-muted-foreground hover:bg-muted/15 active:scale-[0.98] transition-transform"
                 >
                   {t.cancelBtn}
                 </Button>
