@@ -2442,15 +2442,22 @@ function App() {
 
       {/* Confirm Delete Dialog */}
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
-          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4">
-            <DialogTitle className="text-base font-bold tracking-tight text-destructive">
-              {lang === "zh" ? "确认删除" : "Confirm Delete"}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground pt-1">
-              {deleteTarget ? t.confirmDelete(deleteTarget) : ""}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-500/10 dark:bg-red-500/20 text-red-500 flex items-center justify-center border border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.12)]">
+              <AlertTriangle className="size-5 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <DialogHeader className="gap-1.5 pb-0">
+                <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                  {lang === "zh" ? "确认删除" : "Confirm Delete"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground pt-1 leading-relaxed">
+                  {deleteTarget ? t.confirmDelete(deleteTarget) : ""}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
 
           <DialogFooter className="pt-4 border-t border-border/30 mt-6">
             <div className="flex w-full justify-end gap-2">
@@ -2458,7 +2465,7 @@ function App() {
                 type="button"
                 variant="outline"
                 onClick={() => setDeleteTarget(null)}
-                className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 active:scale-[0.98] transition-transform"
+                className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 text-muted-foreground hover:text-foreground active:scale-[0.98] transition-all duration-200"
               >
                 {t.cancelBtn}
               </Button>
@@ -2466,7 +2473,7 @@ function App() {
                 type="button"
                 variant="destructive"
                 onClick={confirmDeleteProvider}
-                className="h-8 px-4 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-all active:scale-[0.98] shadow-sm shadow-red-500/10"
+                className="h-8 px-4 rounded-lg text-xs font-bold bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white border border-red-600/30 hover:shadow-lg hover:shadow-red-500/25 active:scale-[0.98] transition-all duration-200"
               >
                 {lang === "zh" ? "确认删除" : "Confirm"}
               </Button>
