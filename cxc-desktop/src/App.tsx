@@ -69,9 +69,11 @@ interface Config {
   active: string;
   providers: Provider[];
   // 新字段：按 Target Tool 分开存储
-  codex_active: string;
+  codex_active_app?: string;
+  codex_active_wsl?: string;
   codex_providers: Provider[];
-  claude_active: string;
+  claude_active_app?: string;
+  claude_active_wsl?: string;
   claude_providers: Provider[];
   // 设置字段
   codex_source?: string;
@@ -336,7 +338,8 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
 const mockConfig: Config = {
   active: "Official",
   providers: [],
-  codex_active: "PatewayAI",
+  codex_active_app: "PatewayAI",
+codex_active_wsl: "",
   codex_providers: [
     {
       name: "Official",
@@ -382,7 +385,8 @@ const mockConfig: Config = {
       last_test: undefined
     }
   ],
-  claude_active: "ClaudeAPI",
+  claude_active_app: "ClaudeAPI",
+claude_active_wsl: "ClaudeAPI",
   claude_providers: [
     {
       name: "Official",
@@ -732,9 +736,16 @@ function App() {
         await new Promise((resolve) => setTimeout(resolve, 600));
         const updated = {
           ...config,
-          codex_active: targetTool === "codex" ? name : config.codex_active,
-          claude_active: targetTool === "claude" ? name : config.claude_active,
         };
+        if (targetTool === "codex") {
+          const codexSource = config.codex_source || "app";
+          if (codexSource === "wsl") updated.codex_active_wsl = name;
+          else updated.codex_active_app = name;
+        } else {
+          const claudeSource = config.claude_source || "wsl";
+          if (claudeSource === "app") updated.claude_active_app = name;
+          else updated.claude_active_wsl = name;
+        }
         setConfig(updated);
       } else {
         const updatedCfg = await invoke<Config>("switch_provider", {
@@ -1030,7 +1041,9 @@ function App() {
     ? (targetTool === "codex" ? config.codex_providers : config.claude_providers) ?? []
     : [];
   const currentActive = config
-    ? (targetTool === "codex" ? config.codex_active : config.claude_active) ?? ""
+    ? (targetTool === "codex" 
+        ? ((config.codex_source || "app") === "wsl" ? config.codex_active_wsl : config.codex_active_app) 
+        : ((config.claude_source || "wsl") === "app" ? config.claude_active_app : config.claude_active_wsl)) ?? ""
     : "";
 
   const filteredProviders = currentProviders.filter(
