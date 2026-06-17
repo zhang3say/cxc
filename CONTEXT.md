@@ -14,7 +14,7 @@ An AI coding tool whose configuration CXC manages. Each Target Tool has a known 
 
 ## Active Provider
 
-The Provider currently configured for a given Target Tool. When the user switches providers, CXC updates the Target Tool's config file to point at the new Provider's endpoint.
+The Provider currently configured for a specific Source (execution environment) within a Target Tool. Because environments like App and WSL are distinct, each Source independently tracks its own Active Provider, even though they share the same list of available Providers. When the user switches providers, CXC updates the specific config file associated with the currently selected Source.
 
 ## Connectivity Test
 
