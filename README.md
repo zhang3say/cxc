@@ -1,38 +1,40 @@
 # CXC — Code Cross-Connect
 
-> Quickly switch API relay endpoints for AI coding tools like Codex and Claude.
+简体中文 | [English](README_en.md)
+
+> 为 Codex、Claude 等 AI 编程工具快速切换 API 中转站/代理端点。
 
 [![Rust Version](https://img.shields.io/badge/rust-1.96%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-![CXC TUI Preview](docs/images/tui-preview.png)
+![CXC TUI Preview](docs/images/cxc.webp)
 
-CXC is a CLI/TUI tool for managing multiple API relay endpoint configurations for AI coding tools. Instead of manually editing TOML and JSON config files, use `cxc` to add, test, and switch between providers in seconds.
+CXC 是一个用于管理 AI 编程工具的多个 API 中转端点配置的 CLI/TUI 工具。无需手动编辑 TOML 和 JSON 配置文件，使用 `cxc` 即可在几秒钟内添加、测试和切换服务商。
 
-## Features
+## 功能特性
 
-- **CLI mode** — scriptable subcommands for automation
-- **TUI mode** — full-screen interactive interface (launch with `cxc`)
-- **Provider management** — add, list, test, switch, remove
-- **Connectivity test** — real chat completion request with latency measurement
-- **Safe switching** — `.bak` backups created before any config file is modified
-- **Codex integration** — automatically updates `~/.codex/config.toml` and `~/.codex/auth.json`
+- **CLI 模式** — 支持脚本化子命令，便于自动化
+- **TUI 模式** — 全屏交互式界面（使用 `cxc` 启动）
+- **服务商管理** — 支持添加、列表、测试、切换、删除
+- **连通性测试** — 使用真实的聊天补全请求并测量延迟
+- **安全切换** — 在修改任何配置文件之前自动创建 `.bak` 备份
+- **Codex 集成** — 自动更新 `~/.codex/config.toml` 和 `~/.codex/auth.json`
 
-## Installation
+## 安装
 
-### One-click Installer (Linux / macOS)
+### 一键安装脚本 (Linux / macOS)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zhang3say/cxc/main/install.sh | sh
 ```
 
-### Cargo Install
+### 使用 Cargo 安装
 
 ```bash
 cargo install --git https://github.com/zhang3say/cxc.git
 ```
 
-### Build from source
+### 从源码编译
 
 ```bash
 git clone https://github.com/zhang3say/cxc
@@ -40,64 +42,64 @@ cd cxc
 cargo build --release
 ```
 
-## Usage
+## 使用方法
 
-### TUI mode
+### TUI 模式
 
 ```bash
 cxc
 ```
 
-Launch the interactive full-screen TUI. Keyboard shortcuts:
+启动全屏交互式 TUI。快捷键如下：
 
-| Key | Action |
+| 按键 | 动作 / 功能 |
 |-----|--------|
-| `↑`/`↓` | Navigate providers |
-| `a` | Add a new provider |
-| `e` | Edit highlighted provider |
-| `t` | Test the highlighted provider |
-| `T` | Test all providers concurrently |
-| `Enter`/`s` | Switch to highlighted provider |
-| `d`/`Delete` | Remove highlighted provider |
-| `q`/`Esc` | Quit |
+| `↑`/`↓` | 浏览/选择服务商 |
+| `a` | 添加新服务商 |
+| `e` | 编辑选中的服务商 |
+| `t` | 测试选中的服务商连通性 |
+| `T` | 并发测试所有服务商连通性 |
+| `Enter`/`s` | 切换到选中的服务商 |
+| `d`/`Delete` | 删除选中的服务商 |
+| `q`/`Esc` | 退出 |
 
-### CLI mode
+### CLI 模式
 
 ```bash
-# Add a provider (interactive if flags omitted)
+# 添加服务商（省略参数则进入交互式输入）
 cxc provider add --name my-relay \
   --base-url https://api.example.com/v1 \
   --api-key sk-xxx \
   --model gpt-4
 
-# List all providers
+# 列出所有服务商
 cxc provider list
 
-# Test a provider's connectivity
-cxc provider test               # tests active provider
-cxc provider test my-relay      # tests named provider
-cxc provider test --all         # tests all saved providers concurrently (or -a)
+# 测试服务商连通性
+cxc provider test               # 测试当前激活的服务商
+cxc provider test my-relay      # 测试指定名称的服务商
+cxc provider test --all         # 并发测试所有已保存的服务商（或使用 -a）
 
-# Switch active provider
+# 切换当前激活的服务商
 cxc provider switch my-relay
 
-# Remove a provider
+# 删除服务商
 cxc provider remove my-relay
 ```
 
-## How it works
+## 工作原理
 
-CXC stores its own provider list at `~/.config/cxc/config.yaml` (0600 permissions).
+CXC 将其自身的服务商列表存储在 `~/.config/cxc/config.yaml`（权限为 0600）。
 
-When you switch providers, CXC updates:
-- `~/.codex/config.toml` — sets `model`, `model_providers.codex.base_url`, `wire_api`
-- `~/.codex/auth.json` — sets `OPENAI_API_KEY`
+当您切换服务商时，CXC 会更新：
+- `~/.codex/config.toml` — 设置 `model`、`model_providers.codex.base_url`、`wire_api`
+- `~/.codex/auth.json` — 设置 `OPENAI_API_KEY`
 
-Both files are backed up as `.bak` before any write.
+在进行任何写入之前，这两个文件都会被自动备份为 `.bak`。
 
-## Configuration
+## 配置说明
 
-CXC's own config at `~/.config/cxc/config.yaml`:
+CXC 自身的配置文件位于 `~/.config/cxc/config.yaml`：
 
 ```yaml
 active: my-relay
@@ -109,15 +111,15 @@ providers:
     wire_api: responses
 ```
 
-## Architecture
+## 系统架构
 
-- **CLI**: [Clap](https://github.com/clap-rs/clap) (derive interface) — subcommand routing
-- **TUI**: [Ratatui](https://github.com/ratatui-org/ratatui) (with [crossterm](https://github.com/crossterm-rs/crossterm) backend) — async event loop TUI
-- **TOML**: [toml_edit](https://github.com/toml-rs/toml) — format-preserving AST mutation
-- **Config**: YAML serialization via [serde_yaml](https://github.com/dtolnay/serde-yaml)
+- **CLI**: [Clap](https://github.com/clap-rs/clap)（派生接口）— 子命令路由
+- **TUI**: [Ratatui](https://github.com/ratatui-org/ratatui)（使用 [crossterm](https://github.com/crossterm-rs/crossterm) 后端）— 异步事件循环 TUI
+- **TOML**: [toml_edit](https://github.com/toml-rs/toml) — 保持格式的 AST 修改
+- **配置序列化**: 基于 [serde_yaml](https://github.com/dtolnay/serde-yaml) 的 YAML 序列化
 
-See [docs/adr/](docs/adr/) for architectural decision records.
+关于架构决策记录，请参见 [docs/adr/](docs/adr/)。
 
-## License
+## 许可证
 
 MIT
