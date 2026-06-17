@@ -85,7 +85,9 @@ fn default_wire_api() -> String {
 pub struct Config {
     // Codex 配置
     #[serde(default)]
-    pub codex_active: String,
+    pub codex_active_app: String,
+    #[serde(default)]
+    pub codex_active_wsl: String,
     #[serde(default)]
     pub codex_providers: Vec<Provider>,
     #[serde(default)]
@@ -95,7 +97,9 @@ pub struct Config {
 
     // Claude CLI 配置
     #[serde(default)]
-    pub claude_active: String,
+    pub claude_active_app: String,
+    #[serde(default)]
+    pub claude_active_wsl: String,
     #[serde(default)]
     pub claude_providers: Vec<Provider>,
     #[serde(default)]
@@ -104,6 +108,10 @@ pub struct Config {
     pub claude_custom_dir: String,
 
     // 旧字段（向后兼容，迁移后不再保存）
+    #[serde(default, skip_serializing)]
+    pub codex_active: String,
+    #[serde(default, skip_serializing)]
+    pub claude_active: String,
     #[serde(default, skip_serializing)]
     pub active: String,
     #[serde(default, skip_serializing)]
@@ -135,13 +143,38 @@ pub fn load() -> Result<Config, ConfigError> {
     })?;
 
     let mut cfg: Config = serde_yaml::from_slice(&data)?;
+    let mut changed = false;
 
-    // 自动迁移：如果检测到旧字段，迁移到 Codex 配置
+    // 自动迁移 1：极早期版本的旧字段，迁移到 Codex 配置
     if cfg.codex_providers.is_empty() && !cfg.providers.is_empty() {
         cfg.codex_providers = cfg.providers.clone();
-        cfg.codex_active = cfg.active.clone();
+        cfg.codex_active_app = cfg.active.clone(); // 默认给 app
         cfg.providers.clear();
         cfg.active.clear();
+        changed = true;
+    }
+
+    // 自动迁移 2：单状态到多源状态的迁移
+    if !cfg.codex_active_app.is_empty() {
+        if cfg.codex_source.as_deref() == Some("wsl") {
+            cfg.codex_active_wsl = cfg.codex_active_app.clone();
+        } else {
+            cfg.codex_active_app = cfg.codex_active_app.clone();
+        }
+        cfg.codex_active_app.clear();
+        changed = true;
+    }
+    if !cfg.claude_active_app.is_empty() {
+        if cfg.claude_source.as_deref() == Some("app") {
+            cfg.claude_active_app = cfg.claude_active_app.clone();
+        } else {
+            cfg.claude_active_wsl = cfg.claude_active_app.clone();
+        }
+        cfg.claude_active_app.clear();
+        changed = true;
+    }
+
+    if changed {
         // 立即保存迁移后的配置
         save(&cfg)?;
     }
@@ -200,10 +233,10 @@ pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Res
 }
 
 pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut updated: Provider) -> Result<(), ConfigError> {
-    let (providers, active) = if target_tool == "codex" {
-        (&mut cfg.codex_providers, &mut cfg.codex_active)
+    let (providers, active_app, active_wsl) = if target_tool == "codex" {
+        (&mut cfg.codex_providers, &mut cfg.codex_active_app, &mut cfg.codex_active_wsl)
     } else {
-        (&mut cfg.claude_providers, &mut cfg.claude_active)
+        (&mut cfg.claude_providers, &mut cfg.claude_active_app, &mut cfg.claude_active_wsl)
     };
 
     let idx = providers
@@ -232,21 +265,24 @@ pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut up
 
     providers[idx] = updated.clone();
 
-    if *active == old_name {
-        *active = updated.name;
+    if *active_app == old_name {
+        *active_app = updated.name.clone();
+    }
+    if *active_wsl == old_name {
+        *active_wsl = updated.name.clone();
     }
 
     save(cfg)
 }
 
 pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Result<(), ConfigError> {
-    let (providers, active) = if target_tool == "codex" {
-        (&mut cfg.codex_providers, &cfg.codex_active)
+    let (providers, active_app, active_wsl) = if target_tool == "codex" {
+        (&mut cfg.codex_providers, &cfg.codex_active_app, &cfg.codex_active_wsl)
     } else {
-        (&mut cfg.claude_providers, &cfg.claude_active)
+        (&mut cfg.claude_providers, &cfg.claude_active_app, &cfg.claude_active_wsl)
     };
 
-    if *active == name {
+    if *active_app == name || *active_wsl == name {
         return Err(ConfigError::CannotRemoveActive(name.to_string()));
     }
     let idx = providers
@@ -258,17 +294,25 @@ pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Resul
     save(cfg)
 }
 
-pub fn set_active(cfg: &mut Config, target_tool: &str, name: &str) -> Result<(), ConfigError> {
-    let (providers, active) = if target_tool == "codex" {
-        (&cfg.codex_providers, &mut cfg.codex_active)
-    } else {
-        (&cfg.claude_providers, &mut cfg.claude_active)
-    };
-
+pub fn set_active(cfg: &mut Config, target_tool: &str, source: &str, name: &str) -> Result<(), ConfigError> {
+    let providers = if target_tool == "codex" { &cfg.codex_providers } else { &cfg.claude_providers };
     if !providers.iter().any(|prov| prov.name == name) {
         return Err(ConfigError::ProviderNotFound(name.to_string()));
     }
-    *active = name.to_string();
+    
+    if target_tool == "codex" {
+        if source == "wsl" {
+            cfg.codex_active_wsl = name.to_string();
+        } else {
+            cfg.codex_active_app = name.to_string();
+        }
+    } else {
+        if source == "app" {
+            cfg.claude_active_app = name.to_string();
+        } else {
+            cfg.claude_active_wsl = name.to_string();
+        }
+    }
     save(cfg)
 }
 
@@ -281,13 +325,13 @@ pub fn get_provider<'a>(cfg: &'a Config, target_tool: &str, name: &str) -> Optio
     providers.iter().find(|prov| prov.name == name)
 }
 
-pub fn get_active<'a>(cfg: &'a Config, target_tool: &str) -> Option<&'a Provider> {
-    let (providers, active) = if target_tool == "codex" {
-        (&cfg.codex_providers, &cfg.codex_active)
+pub fn get_active<'a>(cfg: &'a Config, target_tool: &str, source: &str) -> Option<&'a Provider> {
+    let active_name = if target_tool == "codex" {
+        if source == "wsl" { &cfg.codex_active_wsl } else { &cfg.codex_active_app }
     } else {
-        (&cfg.claude_providers, &cfg.claude_active)
+        if source == "app" { &cfg.claude_active_app } else { &cfg.claude_active_wsl }
     };
-    providers.iter().find(|p| p.name == *active)
+    get_provider(cfg, target_tool, active_name)
 }
 
 pub fn update_test_result(cfg: &mut Config, target_tool: &str, name: &str, latency_ms: i64, ok: bool) -> Result<(), ConfigError> {
@@ -342,7 +386,7 @@ mod tests {
         add_provider(&mut cfg, "codex", p).unwrap();
 
         assert_eq!(cfg.codex_providers.len(), 1);
-        assert_eq!(cfg.codex_active, "");
+        assert_eq!(cfg.codex_active_app, "");
         assert_eq!(cfg.codex_providers[0].wire_api, "responses");
     }
 
@@ -396,7 +440,7 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        assert_eq!(cfg.codex_active, "");
+        assert_eq!(cfg.codex_active_app, "");
     }
 
     #[test]
@@ -427,7 +471,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        set_active(&mut cfg, "codex", "b").unwrap();
+        set_active(&mut cfg, "codex", "app", "b").unwrap();
         remove_provider(&mut cfg, "codex", "a").unwrap();
 
         assert_eq!(cfg.codex_providers.len(), 1);
@@ -449,7 +493,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        set_active(&mut cfg, "codex", "a").unwrap();
+        set_active(&mut cfg, "codex", "app", "a").unwrap();
 
         let err = remove_provider(&mut cfg, "codex", "a");
         assert!(err.is_err());
@@ -505,8 +549,8 @@ mod tests {
             claude_models: None,
         }).unwrap();
 
-        set_active(&mut cfg, "codex", "b").unwrap();
-        assert_eq!(cfg.codex_active, "b");
+        set_active(&mut cfg, "codex", "app", "b").unwrap();
+        assert_eq!(cfg.codex_active_app, "b");
     }
 
     #[test]
@@ -666,7 +710,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
         }).unwrap();
-        set_active(&mut cfg, "codex", "a").unwrap();
+        set_active(&mut cfg, "codex", "app", "a").unwrap();
 
         let updated = Provider {
             name: "new-a".to_string(),
@@ -682,7 +726,7 @@ mod tests {
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
-        assert_eq!(cfg.codex_active, "new-a");
+        assert_eq!(cfg.codex_active_app, "new-a");
         assert!(get_provider(&cfg, "codex", "a").is_none());
         assert!(get_provider(&cfg, "codex", "new-a").is_some());
     }
