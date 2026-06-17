@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -87,7 +87,7 @@ const locales = {
     toggleTheme: "切换主题",
     refreshConfig: "刷新配置",
     addProvider: "添加中转节点",
-    searchPlaceholder: "搜索名称、模型、备注...",
+    searchPlaceholder: "搜索...",
     listView: "列表视图",
     cardView: "卡片视图",
     testAll: "一键测速",
@@ -181,7 +181,7 @@ const locales = {
     toggleTheme: "Toggle theme",
     refreshConfig: "Refresh configuration",
     addProvider: "Add Provider",
-    searchPlaceholder: "Search by name, model, remark...",
+    searchPlaceholder: "Search...",
     listView: "List View",
     cardView: "Card View",
     testAll: "Test All Connections",
@@ -422,6 +422,7 @@ const mockConfig: Config = {
 
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -623,6 +624,20 @@ function App() {
       window.open("https://github.com/zhang3say/cxc", "_blank");
     }
   };
+
+  // 全局 Ctrl+F/Cmd+F 聚焦搜索框快捷键
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, []);
 
   const getWindowClasses = () => {
     const base = "flex flex-col text-foreground transition-all duration-300 relative select-none ";
@@ -1213,16 +1228,22 @@ function App() {
           </div>
         </div>
 
-        {/* Center search box */}
-        <div className="relative w-44 sm:w-60 focus-within:w-72 transition-all duration-300 mx-4">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 pointer-events-none" />
+        {/* Center search box (Dynamic wake-up layout with shortcut helper kbd) */}
+        <div className="relative w-40 sm:w-48 focus-within:w-60 transition-all duration-300 mx-4 group">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/35 group-focus-within:text-primary transition-colors pointer-events-none" />
           <Input
+            ref={searchInputRef}
             type="text"
             placeholder={t.searchPlaceholder}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8 h-8 w-full bg-muted/40 border-border/80 rounded-md placeholder-muted-foreground/50 focus-visible:ring-primary focus-visible:border-primary text-xs shadow-none transition-all"
+            className="pl-8 pr-12 h-8 w-full bg-muted/20 border border-transparent hover:border-border/40 focus:border-primary focus:bg-background rounded-md placeholder-muted-foreground/30 focus:placeholder-muted-foreground/50 text-xs shadow-none transition-all focus:ring-0 focus-visible:ring-0 focus-visible:outline-none"
           />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center pointer-events-none transition-all duration-200 opacity-100 scale-100 group-focus-within:opacity-0 group-focus-within:scale-95 group-focus-within:translate-x-1">
+            <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-0.5 rounded border border-border/40 bg-muted/30 px-1.5 font-mono text-[9px] font-medium text-muted-foreground/45 shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)]">
+              {platform === "macos" ? "⌘" : "Ctrl"} F
+            </kbd>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
