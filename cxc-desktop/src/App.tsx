@@ -1236,15 +1236,30 @@ function App() {
             </button>
           </div>
 
-          {/* Environment Source Status Badge */}
-          <button
-            onClick={() => setShowSettings(true)}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors text-[9px] font-extrabold tracking-wider text-muted-foreground hover:text-foreground cursor-pointer shrink-0 select-none uppercase shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)] animate-in fade-in slide-in-from-left-2 duration-300"
-            title={lang === "zh" ? "当前配置环境（点击打开设置）" : "Active Env (Click to open settings)"}
-          >
-            <span className={`size-1.5 rounded-full shrink-0 ${currentSource === "wsl" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]" : "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.4)]"}`} />
-            <span>{currentSource === "wsl" ? "WSL" : "Desktop"}</span>
-          </button>
+          {/* Environment Source Status Badge (with Custom Tooltip) */}
+          <div className="relative group/tooltip">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors text-[9px] font-extrabold tracking-wider text-muted-foreground hover:text-foreground cursor-pointer shrink-0 select-none uppercase shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)] animate-in fade-in slide-in-from-left-2 duration-300"
+            >
+              <span className={`size-1.5 rounded-full shrink-0 ${currentSource === "wsl" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]" : "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.4)]"}`} />
+              <span>{currentSource === "wsl" ? "WSL" : "Desktop"}</span>
+            </button>
+            
+            {/* Custom High-Quality Hover Tooltip */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-48 p-2 rounded-lg bg-popover/95 backdrop-blur-[6px] border border-border/80 shadow-lg text-[10px] text-popover-foreground pointer-events-none opacity-0 scale-95 origin-top group-hover/tooltip:opacity-100 group-hover/tooltip:scale-100 transition-all duration-150 z-50">
+              <div className="font-extrabold flex items-center gap-1.5">
+                <span className={`size-1.5 rounded-full ${currentSource === "wsl" ? "bg-emerald-500" : "bg-blue-500"}`} />
+                <span>{lang === "zh" ? "当前配置写入环境" : "Active Write Env"}</span>
+              </div>
+              <p className="mt-1 text-muted-foreground font-medium leading-normal">
+                {currentSource === "wsl"
+                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击此微标可快速打开系统设置进行调整。" : "Writes configuration to the WSL environment. Click to customize settings.")
+                  : (lang === "zh" ? "当前已将配置写入本地 Desktop 配置文件。点击此微标可快速打开系统设置进行调整。" : "Writes configuration to the Desktop environment. Click to customize settings.")
+                }
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Center search box (Dynamic wake-up layout with shortcut helper kbd) */}
