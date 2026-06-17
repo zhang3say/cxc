@@ -473,6 +473,7 @@ function App() {
 
   // Settings State
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [targetTool, setTargetTool] = useState<"codex" | "claude">(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("cxc-target-tool");
@@ -927,15 +928,19 @@ function App() {
   }
 
   async function handleDeleteProvider(name: string) {
-    if (!confirm(t.confirmDelete(name))) {
-      return;
-    }
+    setDeleteTarget(name);
+  }
+
+  async function confirmDeleteProvider() {
+    if (!deleteTarget) return;
     try {
       setError(null);
-      const updatedCfg = await invoke<Config>("delete_provider", { name, targetTool });
+      const updatedCfg = await invoke<Config>("delete_provider", { name: deleteTarget, targetTool });
       setConfig(updatedCfg);
+      setDeleteTarget(null);
     } catch (e: any) {
       setError(e.toString());
+      setDeleteTarget(null);
     }
   }
 
@@ -2432,6 +2437,40 @@ function App() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete Dialog */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
+          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4">
+            <DialogTitle className="text-base font-bold tracking-tight text-destructive">
+              {lang === "zh" ? "确认删除" : "Confirm Delete"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              {deleteTarget ? t.confirmDelete(deleteTarget) : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="pt-4 border-t border-border/30 mt-6">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeleteTarget(null)}
+                className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 active:scale-[0.98] transition-transform"
+              >
+                {t.cancelBtn}
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmDeleteProvider}
+                className="h-8 px-4 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold hover:bg-destructive/95 transition-all active:scale-[0.98] shadow-sm shadow-destructive/10"
+              >
+                {lang === "zh" ? "确认删除" : "Confirm"}
+              </Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
