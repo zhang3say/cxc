@@ -173,7 +173,9 @@ const locales = {
     reloadSuccess: "配置文件已成功重新加载！",
     githubLabel: "开源社区",
     githubDesc: "访问 GitHub 仓库获取最新版本和反馈",
-    githubBtn: "前往仓库"
+    githubBtn: "前往仓库",
+    offlineTooltipTitle: "连接测试超时",
+    offlineTooltipDesc: "检测到中转未给出有效响应。不过，部分中转地址出于安全或防护考虑会禁用测速端点（如 /v1/models），这并不影响其作为 API 节点的实际使用。您依然可以尝试启用它并正常配置测试。"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -267,7 +269,9 @@ const locales = {
     reloadSuccess: "Configuration reloaded successfully!",
     githubLabel: "Community",
     githubDesc: "Visit GitHub repository for updates & feedback",
-    githubBtn: "Visit Repo"
+    githubBtn: "Visit Repo",
+    offlineTooltipTitle: "Connection Timeout",
+    offlineTooltipDesc: "No valid response was received from the server. However, some relays disable speed test endpoints (e.g. /v1/models) for security reasons. This does not affect actual API usage, and you may still enable and try it."
   }
 };
 
@@ -1065,16 +1069,40 @@ function App() {
       label = t.offline;
     }
 
+    const isOffline = !isTesting && p.last_ok === false;
+
     return (
       <div className="flex flex-col gap-1 items-start">
-        <Badge className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 shadow-none tracking-normal ${badgeStyle}`}>
-          {isTesting ? (
-            <Loader2 className="size-2.5 animate-spin text-sticker-orange shrink-0" />
-          ) : (
-            <span className={`size-1.5 rounded-full shrink-0 ${dotClass}`} />
+        <div className="relative group/tooltip">
+          <Badge className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 shadow-none tracking-normal ${badgeStyle}`}>
+            {isTesting ? (
+              <Loader2 className="size-2.5 animate-spin text-sticker-orange shrink-0" />
+            ) : (
+              <span className={`size-1.5 rounded-full shrink-0 ${dotClass}`} />
+            )}
+            <span>{label}</span>
+            {isOffline && (
+              <svg className="size-2.5 opacity-60 ml-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+            )}
+          </Badge>
+
+          {isOffline && (
+            /* Custom Frosted-Glass Tooltip for Offline Warning */
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 p-2.5 rounded-lg bg-popover/95 backdrop-blur-[6px] border border-border/80 shadow-lg text-[10px] text-popover-foreground pointer-events-none opacity-0 scale-95 origin-bottom group-hover/tooltip:opacity-100 group-hover/tooltip:scale-100 transition-all duration-150 z-50">
+              <div className="font-extrabold flex items-center gap-1.5 text-red-500">
+                <AlertTriangle className="size-3 shrink-0" />
+                <span>{t.offlineTooltipTitle}</span>
+              </div>
+              <p className="mt-1 text-muted-foreground font-medium leading-normal">
+                {t.offlineTooltipDesc}
+              </p>
+            </div>
           )}
-          <span>{label}</span>
-        </Badge>
+        </div>
         {!isTesting && p.last_test && (
           <span className="text-[10px] text-muted-foreground/60 font-medium pl-1">
             {formatDate(p.last_test)}
