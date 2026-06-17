@@ -1192,7 +1192,9 @@ function App() {
               </h1>
             </div>
 
-          {/* Target Tool Switcher with absolute active slide animation */}
+            <div className="h-4 w-px bg-border/60 mx-1 shrink-0" />
+
+            {/* Target Tool Switcher with absolute active slide animation */}
           <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 shrink-0 h-8 w-16 overflow-hidden animate-in fade-in duration-300">
             {/* Sliding Active Indicator */}
             <div
