@@ -3,6 +3,8 @@ use crate::target::{TargetAdapter, TargetConfig, TargetError};
 use serde_json::{self, json};
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
+use std::sync::OnceLock;
 
 pub struct ClaudeAdapter {
     claude_dir: PathBuf,
@@ -15,42 +17,54 @@ impl ClaudeAdapter {
         } else {
             // Load global cxc config to check for custom claude directory and source settings
             let cfg = crate::config::load().ok();
-            let source = cfg
-                .as_ref()
-                .and_then(|c| c.claude_source.as_deref())
-                .unwrap_or("wsl");
-
-            let custom_dir = cfg.as_ref().and_then(|c| {
-                if !c.claude_custom_dir.is_empty() {
-                    let mut path_str = c.claude_custom_dir.clone();
-
-                    // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
-                    // automatically convert it to a WSL mount path (like /mnt/c/...)
-                    #[cfg(target_os = "linux")]
-                    {
-                        if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
-                            let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
-                            let remaining = &path_str[2..];
-                            let normalized = remaining.replace('\\', "/");
-                            path_str = format!("/mnt/{}{}", drive, normalized);
-                        } else {
-                            path_str = path_str.replace('\\', "/");
-                        }
-                    }
-
-                    return Some(PathBuf::from(path_str));
-                }
-                None
-            });
-
-            if let Some(dir) = custom_dir {
-                dir
-            } else {
-                // No custom dir: use smart defaults based on claude_source
-                Self::default_claude_dir(source)?
-            }
+            Self::resolve_claude_dir(cfg.as_ref())?
         };
         Ok(Self { claude_dir })
+    }
+
+    pub fn new_from_config(cfg: &crate::config::Config) -> Result<Self, TargetError> {
+        let claude_dir = if let Ok(test_dir) = std::env::var("CXC_TEST_CLAUDE_DIR") {
+            PathBuf::from(test_dir)
+        } else {
+            Self::resolve_claude_dir(Some(cfg))?
+        };
+        Ok(Self { claude_dir })
+    }
+
+    fn resolve_claude_dir(cfg: Option<&crate::config::Config>) -> Result<PathBuf, TargetError> {
+        let source = cfg
+            .and_then(|c| c.claude_source.as_deref())
+            .unwrap_or("wsl");
+
+        let custom_dir = cfg.and_then(|c| {
+            if !c.claude_custom_dir.is_empty() {
+                let mut path_str = c.claude_custom_dir.clone();
+
+                // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
+                // automatically convert it to a WSL mount path (like /mnt/c/...)
+                #[cfg(target_os = "linux")]
+                {
+                    if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
+                        let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
+                        let remaining = &path_str[2..];
+                        let normalized = remaining.replace('\\', "/");
+                        path_str = format!("/mnt/{}{}", drive, normalized);
+                    } else {
+                        path_str = path_str.replace('\\', "/");
+                    }
+                }
+
+                return Some(PathBuf::from(path_str));
+            }
+            None
+        });
+
+        if let Some(dir) = custom_dir {
+            Ok(dir)
+        } else {
+            // No custom dir: use smart defaults based on claude_source
+            Self::default_claude_dir(source)
+        }
     }
 
     /// Resolve the default Claude config directory based on `claude_source`.
@@ -78,7 +92,7 @@ impl ClaudeAdapter {
         {
             if source == "wsl" {
                 // Try to find WSL home directory via UNC path
-                if let Some(wsl_dir) = Self::detect_wsl_claude_dir() {
+                if let Some(wsl_dir) = Self::cached_wsl_claude_dir() {
                     return Ok(wsl_dir);
                 }
                 return Err(TargetError::ParseError("Unable to locate WSL home directory automatically. Please specify a custom directory.".to_string()));
@@ -120,6 +134,12 @@ impl ClaudeAdapter {
             }
         }
         None
+    }
+
+    #[cfg(target_os = "windows")]
+    fn cached_wsl_claude_dir() -> Option<PathBuf> {
+        static WSL_CLAUDE_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+        WSL_CLAUDE_DIR.get_or_init(Self::detect_wsl_claude_dir).clone()
     }
 
     /// Detect WSL Claude directory from Windows via \\wsl.localhost\<distro>\home\<user>\.claude

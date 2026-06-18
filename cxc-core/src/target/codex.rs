@@ -2,6 +2,8 @@ use crate::target::{TargetAdapter, TargetConfig, TargetError};
 use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
+use std::sync::OnceLock;
 use toml_edit::DocumentMut;
 
 pub struct CodexAdapter {
@@ -15,42 +17,54 @@ impl CodexAdapter {
         } else {
             // Load global cxc config to check for custom codex directory and source settings
             let cfg = crate::config::load().ok();
-            let source = cfg
-                .as_ref()
-                .and_then(|c| c.codex_source.as_deref())
-                .unwrap_or("wsl");
-
-            let custom_dir = cfg.as_ref().and_then(|c| {
-                if !c.codex_custom_dir.is_empty() {
-                    let mut path_str = c.codex_custom_dir.clone();
-
-                    // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
-                    // automatically convert it to a WSL mount path (like /mnt/c/...)
-                    #[cfg(target_os = "linux")]
-                    {
-                        if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
-                            let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
-                            let remaining = &path_str[2..];
-                            let normalized = remaining.replace('\\', "/");
-                            path_str = format!("/mnt/{}{}", drive, normalized);
-                        } else {
-                            path_str = path_str.replace('\\', "/");
-                        }
-                    }
-
-                    return Some(PathBuf::from(path_str));
-                }
-                None
-            });
-
-            if let Some(dir) = custom_dir {
-                dir
-            } else {
-                // No custom dir: use smart defaults based on codex_source
-                Self::default_codex_dir(source)?
-            }
+            Self::resolve_codex_dir(cfg.as_ref())?
         };
         Ok(Self { codex_dir })
+    }
+
+    pub fn new_from_config(cfg: &crate::config::Config) -> Result<Self, TargetError> {
+        let codex_dir = if let Ok(test_dir) = std::env::var("CXC_TEST_CODEX_DIR") {
+            PathBuf::from(test_dir)
+        } else {
+            Self::resolve_codex_dir(Some(cfg))?
+        };
+        Ok(Self { codex_dir })
+    }
+
+    fn resolve_codex_dir(cfg: Option<&crate::config::Config>) -> Result<PathBuf, TargetError> {
+        let source = cfg
+            .and_then(|c| c.codex_source.as_deref())
+            .unwrap_or("wsl");
+
+        let custom_dir = cfg.and_then(|c| {
+            if !c.codex_custom_dir.is_empty() {
+                let mut path_str = c.codex_custom_dir.clone();
+
+                // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
+                // automatically convert it to a WSL mount path (like /mnt/c/...)
+                #[cfg(target_os = "linux")]
+                {
+                    if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
+                        let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
+                        let remaining = &path_str[2..];
+                        let normalized = remaining.replace('\\', "/");
+                        path_str = format!("/mnt/{}{}", drive, normalized);
+                    } else {
+                        path_str = path_str.replace('\\', "/");
+                    }
+                }
+
+                return Some(PathBuf::from(path_str));
+            }
+            None
+        });
+
+        if let Some(dir) = custom_dir {
+            Ok(dir)
+        } else {
+            // No custom dir: use smart defaults based on codex_source
+            Self::default_codex_dir(source)
+        }
     }
 
     /// Resolve the default Codex config directory based on `codex_source`.
@@ -79,7 +93,7 @@ impl CodexAdapter {
         {
             if source == "wsl" {
                 // Try to find WSL home directory via UNC path
-                if let Some(wsl_dir) = Self::detect_wsl_codex_dir() {
+                if let Some(wsl_dir) = Self::cached_wsl_codex_dir() {
                     return Ok(wsl_dir);
                 }
                 // Don't fall back to local Windows home if WSL not reachable, otherwise it causes cross-contamination
@@ -122,6 +136,12 @@ impl CodexAdapter {
             }
         }
         None
+    }
+
+    #[cfg(target_os = "windows")]
+    fn cached_wsl_codex_dir() -> Option<PathBuf> {
+        static WSL_CODEX_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+        WSL_CODEX_DIR.get_or_init(Self::detect_wsl_codex_dir).clone()
     }
 
     /// Detect WSL Codex directory from Windows via \\wsl.localhost\<distro>\home\<user>\.codex
@@ -764,5 +784,19 @@ trust_level = "trusted"
             path,
             PathBuf::from(r"\\wsl.localhost\Ubuntu-24.04\home\leezi").join(".codex")
         );
+    }
+
+    #[test]
+    fn test_new_from_config_uses_loaded_custom_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = crate::config::Config {
+            codex_source: Some("wsl".to_string()),
+            codex_custom_dir: dir.path().to_string_lossy().to_string(),
+            ..crate::config::Config::default()
+        };
+
+        let adapter = CodexAdapter::new_from_config(&cfg).unwrap();
+
+        assert_eq!(adapter.config_path(), dir.path().join("config.toml"));
     }
 }

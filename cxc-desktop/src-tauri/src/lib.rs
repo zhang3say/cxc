@@ -62,7 +62,7 @@ fn edit_provider(
     if current_active == old_name || current_active == updated.name {
         // Write updated config to target tool's config file
         if target_tool == "codex" {
-            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+            let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
             let tc = TargetConfig {
                 base_url: updated.base_url.clone(),
                 api_key: updated.api_key.clone(),
@@ -75,7 +75,7 @@ fn edit_provider(
             };
             codex_adapter.write(&tc).map_err(|e| e.to_string())?;
         } else if target_tool == "claude" {
-            let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+            let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
             claude_adapter
                 .write_provider(&updated)
                 .map_err(|e| e.to_string())?;
@@ -83,7 +83,7 @@ fn edit_provider(
     }
 
     config::edit_provider(&mut cfg, &target_tool, &old_name, updated).map_err(|e| e.to_string())?;
-    let _ = update_tray_menu(&app_handle);
+    let _ = update_tray_menu_with_config(&app_handle, &cfg);
     Ok(cfg)
 }
 
@@ -221,7 +221,7 @@ fn save_settings(
             .clone()
             .unwrap_or_else(|| "app".to_string());
         if let Some(p) = config::get_active(&cfg, "codex", &codex_src).cloned() {
-            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+            let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
             let tc = TargetConfig {
                 base_url: p.base_url.clone(),
                 api_key: p.api_key.clone(),
@@ -240,14 +240,14 @@ fn save_settings(
             .clone()
             .unwrap_or_else(|| "wsl".to_string());
         if let Some(p) = config::get_active(&cfg, "claude", &claude_src).cloned() {
-            let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+            let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
             claude_adapter
                 .write_provider(&p)
                 .map_err(|e| e.to_string())?;
         }
     }
 
-    let _ = update_tray_menu(&app_handle);
+    let _ = update_tray_menu_with_config(&app_handle, &cfg);
     Ok(cfg)
 }
 
@@ -269,7 +269,7 @@ fn do_switch_provider(
 
     // Write to target tool config file
     if target_tool == "codex" {
-        let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+        let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
 
         let tc = TargetConfig {
             base_url: p.base_url.clone(),
@@ -284,7 +284,7 @@ fn do_switch_provider(
 
         codex_adapter.write(&tc).map_err(|e| e.to_string())?;
     } else if target_tool == "claude" {
-        let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+        let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
         claude_adapter
             .write_provider(&p)
             .map_err(|e| e.to_string())?;
@@ -302,12 +302,9 @@ fn do_switch_provider(
 
     config::set_active(&mut cfg, &target_tool, &source, &name).map_err(|e| e.to_string())?;
 
-    let _ = update_tray_menu(app_handle);
+    let _ = update_tray_menu_with_config(app_handle, &cfg);
 
-    let _ = notify_rust::Notification::new()
-        .summary("CXC")
-        .body(&format!("✓ Switched active provider to \"{}\"", name))
-        .show();
+    notify_provider_switched(name);
 
     let _ = app_handle.emit("config-updated", &cfg);
 
@@ -316,7 +313,10 @@ fn do_switch_provider(
 
 fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let cfg = config::load().map_err(|e| e.to_string())?;
+    update_tray_menu_with_config(app_handle, &cfg)
+}
 
+fn update_tray_menu_with_config(app_handle: &tauri::AppHandle, cfg: &Config) -> Result<(), String> {
     let menu = Menu::new(app_handle).map_err(|e| e.to_string())?;
 
     // System Tray 只显示 Codex providers（已知的设计限制，见 CONTEXT.md）
@@ -359,6 +359,15 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn notify_provider_switched(name: String) {
+    std::thread::spawn(move || {
+        let _ = notify_rust::Notification::new()
+            .summary("CXC")
+            .body(&format!("✓ Switched active provider to \"{}\"", name))
+            .show();
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
