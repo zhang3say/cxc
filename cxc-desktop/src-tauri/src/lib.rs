@@ -1,8 +1,8 @@
 use cxc_core::config::{self, Config, Provider};
-use cxc_core::target::{TargetAdapter, TargetConfig, codex::CodexAdapter, claude::ClaudeAdapter};
-use tauri::{Manager, Emitter};
-use tauri::menu::{Menu, MenuItem, CheckMenuItem, PredefinedMenuItem};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
+use cxc_core::target::{claude::ClaudeAdapter, codex::CodexAdapter, TargetAdapter, TargetConfig};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -16,12 +16,20 @@ fn get_config() -> Result<Config, String> {
 }
 
 #[tauri::command]
-fn switch_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
+fn switch_provider(
+    app_handle: tauri::AppHandle,
+    name: String,
+    target_tool: String,
+) -> Result<Config, String> {
     do_switch_provider(&app_handle, name, target_tool)
 }
 
 #[tauri::command]
-fn add_provider(app_handle: tauri::AppHandle, provider: Provider, target_tool: String) -> Result<Config, String> {
+fn add_provider(
+    app_handle: tauri::AppHandle,
+    provider: Provider,
+    target_tool: String,
+) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     config::add_provider(&mut cfg, &target_tool, provider).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
@@ -29,15 +37,27 @@ fn add_provider(app_handle: tauri::AppHandle, provider: Provider, target_tool: S
 }
 
 #[tauri::command]
-fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provider, target_tool: String) -> Result<Config, String> {
+fn edit_provider(
+    app_handle: tauri::AppHandle,
+    old_name: String,
+    updated: Provider,
+    target_tool: String,
+) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
     // Check if the active provider for this target_tool is being edited
-    let current_active = if target_tool == "codex" {
-        cfg.codex_active.clone()
+    let current_source = if target_tool == "codex" {
+        cfg.codex_source
+            .clone()
+            .unwrap_or_else(|| "app".to_string())
     } else {
-        cfg.claude_active.clone()
+        cfg.claude_source
+            .clone()
+            .unwrap_or_else(|| "wsl".to_string())
     };
+    let current_active = config::get_active(&cfg, &target_tool, &current_source)
+        .map(|p| p.name.clone())
+        .unwrap_or_default();
 
     if current_active == old_name || current_active == updated.name {
         // Write updated config to target tool's config file
@@ -47,12 +67,18 @@ fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provid
                 base_url: updated.base_url.clone(),
                 api_key: updated.api_key.clone(),
                 model: updated.model.clone(),
-                wire_api: if updated.wire_api.is_empty() { "responses".to_string() } else { updated.wire_api.clone() },
+                wire_api: if updated.wire_api.is_empty() {
+                    "responses".to_string()
+                } else {
+                    updated.wire_api.clone()
+                },
             };
             codex_adapter.write(&tc).map_err(|e| e.to_string())?;
         } else if target_tool == "claude" {
             let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
-            claude_adapter.write_provider(&updated).map_err(|e| e.to_string())?;
+            claude_adapter
+                .write_provider(&updated)
+                .map_err(|e| e.to_string())?;
         }
     }
 
@@ -62,7 +88,11 @@ fn edit_provider(app_handle: tauri::AppHandle, old_name: String, updated: Provid
 }
 
 #[tauri::command]
-fn delete_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
+fn delete_provider(
+    app_handle: tauri::AppHandle,
+    name: String,
+    target_tool: String,
+) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     config::remove_provider(&mut cfg, &target_tool, &name).map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
@@ -70,7 +100,11 @@ fn delete_provider(app_handle: tauri::AppHandle, name: String, target_tool: Stri
 }
 
 #[tauri::command]
-async fn test_provider(app_handle: tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
+async fn test_provider(
+    app_handle: tauri::AppHandle,
+    name: String,
+    target_tool: String,
+) -> Result<Config, String> {
     let p = {
         let cfg = config::load().map_err(|e| e.to_string())?;
         config::get_provider(&cfg, &target_tool, &name)
@@ -80,18 +114,24 @@ async fn test_provider(app_handle: tauri::AppHandle, name: String, target_tool: 
 
     let tester = cxc_core::connectivity::Tester::new();
     let is_claude = target_tool == "claude";
-    let res = tester.test(&p.base_url, &p.api_key, &p.model, is_claude).await;
+    let res = tester
+        .test(&p.base_url, &p.api_key, &p.model, is_claude)
+        .await;
 
     // Reload config AFTER the await to prevent overwriting other concurrent tests
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::update_test_result(&mut cfg, &target_tool, &name, res.latency_ms, res.ok).map_err(|e| e.to_string())?;
+    config::update_test_result(&mut cfg, &target_tool, &name, res.latency_ms, res.ok)
+        .map_err(|e| e.to_string())?;
     let _ = update_tray_menu(&app_handle);
 
     Ok(cfg)
 }
 
 #[tauri::command]
-async fn test_all_providers(app_handle: tauri::AppHandle, target_tool: String) -> Result<Config, String> {
+async fn test_all_providers(
+    app_handle: tauri::AppHandle,
+    target_tool: String,
+) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     let providers = if target_tool == "codex" {
         cfg.codex_providers.clone()
@@ -105,7 +145,9 @@ async fn test_all_providers(app_handle: tauri::AppHandle, target_tool: String) -
         let is_claude = is_claude;
         tasks.push(tokio::spawn(async move {
             let tester = cxc_core::connectivity::Tester::new();
-            let res = tester.test(&p.base_url, &p.api_key, &p.model, is_claude).await;
+            let res = tester
+                .test(&p.base_url, &p.api_key, &p.model, is_claude)
+                .await;
             (p.name.clone(), res.ok, res.latency_ms)
         }));
     }
@@ -124,35 +166,85 @@ async fn test_all_providers(app_handle: tauri::AppHandle, target_tool: String) -
 
 #[tauri::command]
 async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
-    cxc_core::connectivity::fetch_models(&base_url, &api_key).await.map_err(|e| e.to_string())
+    cxc_core::connectivity::fetch_models(&base_url, &api_key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn apply_source_settings(
+    cfg: &mut Config,
+    target_tool: &str,
+    source: &str,
+    custom_dir: &str,
+    claude_source: &str,
+    claude_custom_dir: &str,
+) -> Result<(), String> {
+    match target_tool {
+        "codex" => {
+            cfg.codex_source = Some(source.to_string());
+            cfg.codex_custom_dir = custom_dir.to_string();
+        }
+        "claude" => {
+            cfg.claude_source = Some(claude_source.to_string());
+            cfg.claude_custom_dir = claude_custom_dir.to_string();
+        }
+        other => return Err(format!("unsupported target tool \"{}\"", other)),
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
-fn save_settings(app_handle: tauri::AppHandle, _target_tool: String, source: String, custom_dir: String, claude_source: String, claude_custom_dir: String) -> Result<Config, String> {
+fn save_settings(
+    app_handle: tauri::AppHandle,
+    target_tool: String,
+    source: String,
+    custom_dir: String,
+    claude_source: String,
+    claude_custom_dir: String,
+) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    cfg.codex_source = Some(source.clone());
-    cfg.codex_custom_dir = custom_dir.clone();
-    cfg.claude_source = Some(claude_source.clone());
-    cfg.claude_custom_dir = claude_custom_dir.clone();
+    apply_source_settings(
+        &mut cfg,
+        &target_tool,
+        &source,
+        &custom_dir,
+        &claude_source,
+        &claude_custom_dir,
+    )?;
     config::save(&cfg).map_err(|e| e.to_string())?;
 
-    // Re-apply active provider config to both target tools after settings change
-    let codex_src = cfg.codex_source.clone().unwrap_or_else(|| "app".to_string());
-    if let Some(p) = config::get_active(&cfg, "codex", &codex_src).cloned() {
-        let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
-        let tc = TargetConfig {
-            base_url: p.base_url.clone(),
-            api_key: p.api_key.clone(),
-            model: p.model.clone(),
-            wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
-        };
-        codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-    }
-
-    let claude_src = cfg.claude_source.clone().unwrap_or_else(|| "wsl".to_string());
-    if let Some(p) = config::get_active(&cfg, "claude", &claude_src).cloned() {
-        let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
-        claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
+    // Re-apply the active provider only for the target tool whose source setting changed.
+    if target_tool == "codex" {
+        let codex_src = cfg
+            .codex_source
+            .clone()
+            .unwrap_or_else(|| "app".to_string());
+        if let Some(p) = config::get_active(&cfg, "codex", &codex_src).cloned() {
+            let codex_adapter = CodexAdapter::new().map_err(|e| e.to_string())?;
+            let tc = TargetConfig {
+                base_url: p.base_url.clone(),
+                api_key: p.api_key.clone(),
+                model: p.model.clone(),
+                wire_api: if p.wire_api.is_empty() {
+                    "responses".to_string()
+                } else {
+                    p.wire_api.clone()
+                },
+            };
+            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
+        }
+    } else if target_tool == "claude" {
+        let claude_src = cfg
+            .claude_source
+            .clone()
+            .unwrap_or_else(|| "wsl".to_string());
+        if let Some(p) = config::get_active(&cfg, "claude", &claude_src).cloned() {
+            let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
+            claude_adapter
+                .write_provider(&p)
+                .map_err(|e| e.to_string())?;
+        }
     }
 
     let _ = update_tray_menu(&app_handle);
@@ -164,8 +256,11 @@ fn get_app_version(app_handle: tauri::AppHandle) -> String {
     app_handle.package_info().version.to_string()
 }
 
-
-fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: String) -> Result<Config, String> {
+fn do_switch_provider(
+    app_handle: &tauri::AppHandle,
+    name: String,
+    target_tool: String,
+) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
     let p = config::get_provider(&cfg, &target_tool, &name)
@@ -180,19 +275,29 @@ fn do_switch_provider(app_handle: &tauri::AppHandle, name: String, target_tool: 
             base_url: p.base_url.clone(),
             api_key: p.api_key.clone(),
             model: p.model.clone(),
-            wire_api: if p.wire_api.is_empty() { "responses".to_string() } else { p.wire_api.clone() },
+            wire_api: if p.wire_api.is_empty() {
+                "responses".to_string()
+            } else {
+                p.wire_api.clone()
+            },
         };
 
         codex_adapter.write(&tc).map_err(|e| e.to_string())?;
     } else if target_tool == "claude" {
         let claude_adapter = ClaudeAdapter::new().map_err(|e| e.to_string())?;
-        claude_adapter.write_provider(&p).map_err(|e| e.to_string())?;
+        claude_adapter
+            .write_provider(&p)
+            .map_err(|e| e.to_string())?;
     }
 
     let source = if target_tool == "codex" {
-        cfg.codex_source.clone().unwrap_or_else(|| "app".to_string())
+        cfg.codex_source
+            .clone()
+            .unwrap_or_else(|| "app".to_string())
     } else {
-        cfg.claude_source.clone().unwrap_or_else(|| "wsl".to_string())
+        cfg.claude_source
+            .clone()
+            .unwrap_or_else(|| "wsl".to_string())
     };
 
     config::set_active(&mut cfg, &target_tool, &source, &name).map_err(|e| e.to_string())?;
@@ -216,7 +321,10 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
 
     // System Tray 只显示 Codex providers（已知的设计限制，见 CONTEXT.md）
     // 托盘无法选择 Target Tool，固定使用 Codex 列表
-    let codex_source = cfg.codex_source.clone().unwrap_or_else(|| "app".to_string());
+    let codex_source = cfg
+        .codex_source
+        .clone()
+        .unwrap_or_else(|| "app".to_string());
     for p in &cfg.codex_providers {
         let is_active = match config::get_active(&cfg, "codex", &codex_source) {
             Some(active_p) => active_p.name == p.name,
@@ -229,7 +337,8 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
             true,
             is_active,
             None::<&str>,
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         menu.append(&item).map_err(|e| e.to_string())?;
     }
@@ -237,22 +346,12 @@ fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let separator = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
     menu.append(&separator).map_err(|e| e.to_string())?;
 
-    let show_item = MenuItem::with_id(
-        app_handle,
-        "show_window",
-        "Show Window",
-        true,
-        None::<&str>,
-    ).map_err(|e| e.to_string())?;
+    let show_item = MenuItem::with_id(app_handle, "show_window", "Show Window", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     menu.append(&show_item).map_err(|e| e.to_string())?;
 
-    let quit_item = MenuItem::with_id(
-        app_handle,
-        "quit",
-        "Quit",
-        true,
-        None::<&str>,
-    ).map_err(|e| e.to_string())?;
+    let quit_item = MenuItem::with_id(app_handle, "quit", "Quit", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     menu.append(&quit_item).map_err(|e| e.to_string())?;
 
     if let Some(tray) = app_handle.tray_by_id("cxc_tray") {
@@ -274,27 +373,25 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray_icon.png");
 
-            let tray_icon = tauri::image::Image::from_bytes(TRAY_ICON_BYTES)
-                .expect("Failed to load tray icon");
+            let tray_icon =
+                tauri::image::Image::from_bytes(TRAY_ICON_BYTES).expect("Failed to load tray icon");
 
             let _tray = TrayIconBuilder::with_id("cxc_tray")
                 .icon(tray_icon)
                 .show_menu_on_left_click(false)
-                .on_tray_icon_event(move |tray, event| {
-                    match event {
-                        TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } => {
-                            let app_handle = tray.app_handle();
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                .on_tray_icon_event(move |tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } => {
+                        let app_handle = tray.app_handle();
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        _ => {}
                     }
+                    _ => {}
                 })
                 .on_menu_event(move |app_handle, event| {
                     let id = event.id.as_ref();
@@ -338,4 +435,65 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with_sources() -> Config {
+        Config {
+            codex_source: Some("app".to_string()),
+            codex_custom_dir: "C:\\Users\\lee\\.codex".to_string(),
+            claude_source: Some("wsl".to_string()),
+            claude_custom_dir: r"\\wsl.localhost\Ubuntu\home\lee\.claude".to_string(),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn test_apply_source_settings_for_codex_does_not_change_claude() {
+        let mut cfg = cfg_with_sources();
+
+        apply_source_settings(
+            &mut cfg,
+            "codex",
+            "wsl",
+            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex",
+            "app",
+            "C:\\Users\\lee\\.claude",
+        )
+        .unwrap();
+
+        assert_eq!(cfg.codex_source.as_deref(), Some("wsl"));
+        assert_eq!(
+            cfg.codex_custom_dir,
+            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex"
+        );
+        assert_eq!(cfg.claude_source.as_deref(), Some("wsl"));
+        assert_eq!(
+            cfg.claude_custom_dir,
+            r"\\wsl.localhost\Ubuntu\home\lee\.claude"
+        );
+    }
+
+    #[test]
+    fn test_apply_source_settings_for_claude_does_not_change_codex() {
+        let mut cfg = cfg_with_sources();
+
+        apply_source_settings(
+            &mut cfg,
+            "claude",
+            "wsl",
+            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex",
+            "app",
+            "C:\\Users\\lee\\.claude",
+        )
+        .unwrap();
+
+        assert_eq!(cfg.codex_source.as_deref(), Some("app"));
+        assert_eq!(cfg.codex_custom_dir, "C:\\Users\\lee\\.codex");
+        assert_eq!(cfg.claude_source.as_deref(), Some("app"));
+        assert_eq!(cfg.claude_custom_dir, "C:\\Users\\lee\\.claude");
+    }
 }

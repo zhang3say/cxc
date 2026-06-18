@@ -1,8 +1,8 @@
+use crate::target::{TargetAdapter, TargetConfig, TargetError};
+use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::target::{TargetAdapter, TargetConfig, TargetError};
 use toml_edit::DocumentMut;
-use serde_json;
 
 pub struct CodexAdapter {
     codex_dir: PathBuf,
@@ -15,7 +15,8 @@ impl CodexAdapter {
         } else {
             // Load global cxc config to check for custom codex directory and source settings
             let cfg = crate::config::load().ok();
-            let source = cfg.as_ref()
+            let source = cfg
+                .as_ref()
                 .and_then(|c| c.codex_source.as_deref())
                 .unwrap_or("wsl");
 
@@ -130,14 +131,13 @@ impl CodexAdapter {
 
         // 0. Try using wsl.exe to get the home path dynamically
         if let Ok(output) = std::process::Command::new("wsl")
-            .args(["-e", "wslpath", "-w", "~"])
+            .args(["-e", "sh", "-lc", "wslpath -w \"$HOME\""])
             .output()
         {
             if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let path = stdout.trim();
-                if !path.is_empty() {
-                    let candidate = PathBuf::from(path).join(".codex");
+                if let Some(candidate) =
+                    Self::wsl_home_output_to_config_dir(&output.stdout, ".codex")
+                {
                     if candidate.exists() {
                         return Some(candidate);
                     }
@@ -146,52 +146,92 @@ impl CodexAdapter {
             }
         }
 
-        let wsl_localhost_exists = Path::new("\\\\wsl.localhost").exists();
-        let wsl_legacy_exists = Path::new("\\\\wsl$").exists();
-        if !wsl_localhost_exists && !wsl_legacy_exists {
-            return first_valid_home;
-        }
+        // 1. Scan UNC roots instead of assuming Windows and WSL usernames match.
+        let mut scan_unc_path = |base_path: &str| -> Option<PathBuf> {
+            let base = Path::new(base_path);
+            if !base.exists() {
+                return None;
+            }
 
-        let username = match std::env::var("USERNAME") {
-            Ok(v) => v.to_lowercase(),
-            Err(_) => return first_valid_home,
+            if let Ok(distro_entries) = fs::read_dir(base) {
+                for distro_entry in distro_entries.flatten() {
+                    let home_path = distro_entry.path().join("home");
+                    if !home_path.exists() {
+                        continue;
+                    }
+
+                    if let Ok(user_entries) = fs::read_dir(&home_path) {
+                        for user_entry in user_entries.flatten() {
+                            let user_path = user_entry.path();
+                            let codex_dir = user_path.join(".codex");
+                            if codex_dir.exists() {
+                                return Some(codex_dir);
+                            }
+                            if first_valid_home.is_none() && user_path.exists() {
+                                first_valid_home = Some(codex_dir);
+                            }
+                        }
+                    }
+                }
+            }
+            None
         };
-        let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
 
-        if wsl_localhost_exists {
+        if let Some(path) = scan_unc_path("\\\\wsl.localhost") {
+            return Some(path);
+        }
+
+        if let Some(path) = scan_unc_path("\\\\wsl$") {
+            return Some(path);
+        }
+
+        // 2. Last fallback: try common distro names with the Windows username.
+        if let Ok(username) = std::env::var("USERNAME") {
+            let username = username.to_lowercase();
+            let distros = [
+                "Ubuntu",
+                "Debian",
+                "openSUSE-Leap",
+                "kali-linux",
+                "Ubuntu-22.04",
+                "Ubuntu-24.04",
+            ];
             for distro in &distros {
                 let candidate = PathBuf::from(format!(
-                    "\\\\wsl.localhost\\{}\\home\\{}\\.codex", distro, username
+                    "\\\\wsl.localhost\\{}\\home\\{}\\.codex",
+                    distro, username
                 ));
                 if candidate.exists() {
                     return Some(candidate);
                 }
-                let home = PathBuf::from(format!(
-                    "\\\\wsl.localhost\\{}\\home\\{}", distro, username
-                ));
+                let home =
+                    PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}", distro, username));
+                if first_valid_home.is_none() && home.exists() {
+                    first_valid_home = Some(candidate);
+                }
+
+                let candidate =
+                    PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}\\.codex", distro, username));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                let home = PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}", distro, username));
                 if first_valid_home.is_none() && home.exists() {
                     first_valid_home = Some(candidate);
                 }
             }
         }
-        
-        if wsl_legacy_exists {
-            for distro in &distros {
-                let candidate = PathBuf::from(format!(
-                    "\\\\wsl$\\{}\\home\\{}\\.codex", distro, username
-                ));
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-                let home = PathBuf::from(format!(
-                    "\\\\wsl$\\{}\\home\\{}", distro, username
-                ));
-                if first_valid_home.is_none() && home.exists() {
-                    first_valid_home = Some(candidate);
-                }
-            }
-        }
+
         first_valid_home
+    }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn wsl_home_output_to_config_dir(output: &[u8], config_dir_name: &str) -> Option<PathBuf> {
+        let path = String::from_utf8_lossy(output).trim().to_string();
+        if path.is_empty() || path == "~" || path.contains("\\~") || path.contains("/~") {
+            return None;
+        }
+        Some(PathBuf::from(path).join(config_dir_name))
     }
 
     pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {
@@ -221,9 +261,12 @@ impl TargetAdapter for CodexAdapter {
             source: err,
         })?;
 
-        let doc = toml_data.parse::<DocumentMut>().map_err(|e| TargetError::ParseError(e.to_string()))?;
+        let doc = toml_data
+            .parse::<DocumentMut>()
+            .map_err(|e| TargetError::ParseError(e.to_string()))?;
 
-        let model = doc.get("model")
+        let model = doc
+            .get("model")
             .and_then(|item| item.as_str())
             .unwrap_or("")
             .to_string();
@@ -249,8 +292,10 @@ impl TargetAdapter for CodexAdapter {
             source: err,
         })?;
 
-        let auth: serde_json::Value = serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
-        let api_key = auth.get("OPENAI_API_KEY")
+        let auth: serde_json::Value =
+            serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
+        let api_key = auth
+            .get("OPENAI_API_KEY")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -297,7 +342,9 @@ impl TargetAdapter for CodexAdapter {
             ))
         };
 
-        let mut doc = toml_data.parse::<DocumentMut>().map_err(|e| TargetError::ParseError(e.to_string()))?;
+        let mut doc = toml_data
+            .parse::<DocumentMut>()
+            .map_err(|e| TargetError::ParseError(e.to_string()))?;
 
         doc["model"] = toml_edit::value(&config.model);
         // Point Codex at our fixed "codex" provider entry
@@ -316,7 +363,9 @@ impl TargetAdapter for CodexAdapter {
 
         // Validate by re-parsing
         let out = doc.to_string();
-        let _ = out.parse::<DocumentMut>().map_err(|e| TargetError::SerializeError(format!("Written TOML is invalid: {}", e)))?;
+        let _ = out
+            .parse::<DocumentMut>()
+            .map_err(|e| TargetError::SerializeError(format!("Written TOML is invalid: {}", e)))?;
 
         write_secure_file(&config_path, out.as_bytes()).map_err(|err| TargetError::WriteError {
             path: config_path.clone(),
@@ -335,20 +384,22 @@ impl TargetAdapter for CodexAdapter {
             String::from("{\"auth_mode\": \"apikey\", \"OPENAI_API_KEY\": \"\"}")
         };
 
-        let mut auth: serde_json::Value = serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
+        let mut auth: serde_json::Value =
+            serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
         auth["OPENAI_API_KEY"] = serde_json::Value::String(config.api_key.clone());
 
-        let out_json = serde_json::to_string_pretty(&auth).map_err(|e| TargetError::SerializeError(e.to_string()))?;
-        write_secure_file(&auth_path, out_json.as_bytes()).map_err(|err| TargetError::WriteError {
-            path: auth_path.clone(),
-            source: err,
+        let out_json = serde_json::to_string_pretty(&auth)
+            .map_err(|e| TargetError::SerializeError(e.to_string()))?;
+        write_secure_file(&auth_path, out_json.as_bytes()).map_err(|err| {
+            TargetError::WriteError {
+                path: auth_path.clone(),
+                source: err,
+            }
         })?;
 
         Ok(())
     }
 }
-
-
 
 /// Promote all inline tables inside `[model_providers]` to standard TOML table sections.
 ///
@@ -368,19 +419,22 @@ fn promote_model_providers_to_tables(doc: &mut DocumentMut) {
     // Collect all provider entries as (key, Table) pairs
     let entries: Vec<(String, Table)> = match &existing {
         Item::Table(outer) => {
-            outer.iter().filter_map(|(k, v)| {
-                // Convert inline table to standard table
-                let tbl = match v {
-                    Item::Value(toml_edit::Value::InlineTable(it)) => {
-                        let mut t = it.clone().into_table();
-                        t.set_implicit(false);
-                        t
-                    }
-                    Item::Table(t) => t.clone(),
-                    _ => return None,
-                };
-                Some((k.to_string(), tbl))
-            }).collect()
+            outer
+                .iter()
+                .filter_map(|(k, v)| {
+                    // Convert inline table to standard table
+                    let tbl = match v {
+                        Item::Value(toml_edit::Value::InlineTable(it)) => {
+                            let mut t = it.clone().into_table();
+                            t.set_implicit(false);
+                            t
+                        }
+                        Item::Table(t) => t.clone(),
+                        _ => return None,
+                    };
+                    Some((k.to_string(), tbl))
+                })
+                .collect()
         }
         _ => return, // unexpected shape; leave as-is
     };
@@ -401,7 +455,6 @@ fn promote_model_providers_to_tables(doc: &mut DocumentMut) {
 }
 
 fn backup(path: &Path) -> Result<(), TargetError> {
-
     if !path.exists() {
         return Ok(()); // nothing to backup
     }
@@ -514,7 +567,10 @@ trust_level = "trusted"
 
         // Verify model_provider is set to "codex"
         let content = fs::read_to_string(adapter.config_path()).unwrap();
-        assert!(content.contains("model_provider = \"codex\""), "model_provider should be set to codex");
+        assert!(
+            content.contains("model_provider = \"codex\""),
+            "model_provider should be set to codex"
+        );
 
         // Verify backups created
         assert!(dir.path().join("config.toml.bak").exists());
@@ -535,7 +591,11 @@ trust_level = "trusted"
         let content = fs::read_to_string(adapter.config_path()).unwrap();
         let checks = ["guardian_approval", "memories", "context7", "trusted"];
         for check in checks.iter() {
-            assert!(content.contains(check), "Unrelated section key '{}' was lost", check);
+            assert!(
+                content.contains(check),
+                "Unrelated section key '{}' was lost",
+                check
+            );
         }
     }
 
@@ -632,7 +692,11 @@ trust_level = "trusted"
 
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("config.toml"), inline_config).unwrap();
-        fs::write(dir.path().join("auth.json"), r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-old"}"#).unwrap();
+        fs::write(
+            dir.path().join("auth.json"),
+            r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-old"}"#,
+        )
+        .unwrap();
         let adapter = CodexAdapter::new_with_dir(dir.path());
 
         let new_cfg = TargetConfig {
@@ -648,12 +712,14 @@ trust_level = "trusted"
         // Should NOT contain inline table format
         assert!(
             !content.contains("codex = {"),
-            "codex provider should not be written as inline table, got:\n{}", content
+            "codex provider should not be written as inline table, got:\n{}",
+            content
         );
         // Should use standard section header format
         assert!(
             content.contains("[model_providers.codex]"),
-            "codex provider should use [model_providers.codex] section format, got:\n{}", content
+            "codex provider should use [model_providers.codex] section format, got:\n{}",
+            content
         );
     }
 
@@ -671,8 +737,32 @@ trust_level = "trusted"
         let content = fs::read_to_string(adapter.config_path()).unwrap();
         assert!(
             content.contains("requires_openai_auth = false"),
-            "requires_openai_auth should be false for relay gateway, got:\n{}", content
+            "requires_openai_auth should be false for relay gateway, got:\n{}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_wsl_home_output_ignores_unexpanded_tilde() {
+        let path = CodexAdapter::wsl_home_output_to_config_dir(b"~\r\n", ".codex");
+        assert!(
+            path.is_none(),
+            "unexpanded ~ must not become a relative .codex path"
+        );
+    }
+
+    #[test]
+    fn test_wsl_home_output_to_config_dir_accepts_unc_home() {
+        let path = CodexAdapter::wsl_home_output_to_config_dir(
+            br"\\wsl.localhost\Ubuntu-24.04\home\leezi
+",
+            ".codex",
+        )
+        .unwrap();
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"\\wsl.localhost\Ubuntu-24.04\home\leezi").join(".codex")
         );
     }
 }
-

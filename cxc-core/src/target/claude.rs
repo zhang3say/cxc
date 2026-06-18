@@ -1,8 +1,8 @@
+use crate::config::Provider;
+use crate::target::{TargetAdapter, TargetConfig, TargetError};
+use serde_json::{self, json};
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::target::{TargetAdapter, TargetConfig, TargetError};
-use crate::config::Provider;
-use serde_json::{self, json};
 
 pub struct ClaudeAdapter {
     claude_dir: PathBuf,
@@ -15,7 +15,8 @@ impl ClaudeAdapter {
         } else {
             // Load global cxc config to check for custom claude directory and source settings
             let cfg = crate::config::load().ok();
-            let source = cfg.as_ref()
+            let source = cfg
+                .as_ref()
                 .and_then(|c| c.claude_source.as_deref())
                 .unwrap_or("wsl");
 
@@ -128,14 +129,13 @@ impl ClaudeAdapter {
 
         // 0. Try using wsl.exe to get the home path dynamically
         if let Ok(output) = std::process::Command::new("wsl")
-            .args(["-e", "wslpath", "-w", "~"])
+            .args(["-e", "sh", "-lc", "wslpath -w \"$HOME\""])
             .output()
         {
             if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let path = stdout.trim();
-                if !path.is_empty() {
-                    let candidate = PathBuf::from(path).join(".claude");
+                if let Some(candidate) =
+                    Self::wsl_home_output_to_config_dir(&output.stdout, ".claude")
+                {
                     if candidate.exists() {
                         return Some(candidate);
                     }
@@ -150,7 +150,7 @@ impl ClaudeAdapter {
             if !base.exists() {
                 return None;
             }
-            
+
             // Read all distros (subdirectories of the UNC base)
             if let Ok(distro_entries) = fs::read_dir(base) {
                 for distro_entry in distro_entries.flatten() {
@@ -189,17 +189,29 @@ impl ClaudeAdapter {
         // 3. Last fallback: try hardcoded approach using USERNAME env
         if let Some(username) = std::env::var("USERNAME").ok() {
             let username = username.to_lowercase();
-            let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
+            let distros = [
+                "Ubuntu",
+                "Debian",
+                "openSUSE-Leap",
+                "kali-linux",
+                "Ubuntu-22.04",
+                "Ubuntu-24.04",
+            ];
             for distro in &distros {
-                let candidate1 = PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}\\.claude", distro, username));
+                let candidate1 = PathBuf::from(format!(
+                    "\\\\wsl.localhost\\{}\\home\\{}\\.claude",
+                    distro, username
+                ));
                 if candidate1.exists() {
                     return Some(candidate1);
                 }
-                let home1 = PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}", distro, username));
+                let home1 =
+                    PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}", distro, username));
                 if first_valid_home.is_none() && home1.exists() {
                     first_valid_home = Some(candidate1);
                 }
-                let candidate2 = PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}\\.claude", distro, username));
+                let candidate2 =
+                    PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}\\.claude", distro, username));
                 if candidate2.exists() {
                     return Some(candidate2);
                 }
@@ -211,6 +223,15 @@ impl ClaudeAdapter {
         }
 
         first_valid_home
+    }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn wsl_home_output_to_config_dir(output: &[u8], config_dir_name: &str) -> Option<PathBuf> {
+        let path = String::from_utf8_lossy(output).trim().to_string();
+        if path.is_empty() || path == "~" || path.contains("\\~") || path.contains("/~") {
+            return None;
+        }
+        Some(PathBuf::from(path).join(config_dir_name))
     }
 
     pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {
@@ -235,12 +256,18 @@ impl ClaudeAdapter {
     }
 
     /// Internal write method that has access to full Provider for claude_models
-    fn write_with_provider(&self, config: &TargetConfig, provider: &Provider) -> Result<(), TargetError> {
+    fn write_with_provider(
+        &self,
+        config: &TargetConfig,
+        provider: &Provider,
+    ) -> Result<(), TargetError> {
         // Check if .claude directory exists
         if !self.claude_dir.exists() {
             let reason = if cfg!(target_os = "linux") && self.claude_dir.starts_with("/mnt/c") {
                 "Windows 主机上未安装 Claude CLI".to_string()
-            } else if cfg!(target_os = "windows") && self.claude_dir.to_string_lossy().contains("wsl") {
+            } else if cfg!(target_os = "windows")
+                && self.claude_dir.to_string_lossy().contains("wsl")
+            {
                 "WSL 中未安装 Claude CLI".to_string()
             } else {
                 "Claude CLI 未安装或未初始化".to_string()
@@ -248,7 +275,9 @@ impl ClaudeAdapter {
 
             let suggestion = if cfg!(target_os = "linux") && self.claude_dir.starts_with("/mnt/c") {
                 "在 Windows 上安装 Claude CLI，或修改 CXC 配置：claude_source = \"wsl\"".to_string()
-            } else if cfg!(target_os = "windows") && self.claude_dir.to_string_lossy().contains("wsl") {
+            } else if cfg!(target_os = "windows")
+                && self.claude_dir.to_string_lossy().contains("wsl")
+            {
                 "在 WSL 中安装 Claude CLI，或修改 CXC 配置：claude_source = \"app\"".to_string()
             } else {
                 "安装 Claude CLI：https://claude.ai/download".to_string()
@@ -268,10 +297,11 @@ impl ClaudeAdapter {
             // Backup existing file
             backup(&settings_path)?;
 
-            let data = fs::read_to_string(&settings_path).map_err(|err| TargetError::ReadError {
-                path: settings_path.clone(),
-                source: err,
-            })?;
+            let data =
+                fs::read_to_string(&settings_path).map_err(|err| TargetError::ReadError {
+                    path: settings_path.clone(),
+                    source: err,
+                })?;
 
             serde_json::from_str(&data).map_err(|e| TargetError::ClaudeConfigInvalid {
                 path: settings_path.clone(),
@@ -298,16 +328,24 @@ impl ClaudeAdapter {
 
         // Update model fields
         // Use claude_models if configured, otherwise fall back to model field
-        let opus = provider.claude_models.as_ref()
+        let opus = provider
+            .claude_models
+            .as_ref()
             .and_then(|m| m.opus.as_ref())
             .unwrap_or(&provider.model);
-        let sonnet = provider.claude_models.as_ref()
+        let sonnet = provider
+            .claude_models
+            .as_ref()
             .and_then(|m| m.sonnet.as_ref())
             .unwrap_or(&provider.model);
-        let haiku = provider.claude_models.as_ref()
+        let haiku = provider
+            .claude_models
+            .as_ref()
             .and_then(|m| m.haiku.as_ref())
             .unwrap_or(&provider.model);
-        let fable = provider.claude_models.as_ref()
+        let fable = provider
+            .claude_models
+            .as_ref()
             .and_then(|m| m.fable.as_ref())
             .unwrap_or(&provider.model);
 
@@ -317,7 +355,12 @@ impl ClaudeAdapter {
         env.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
         env.insert("ANTHROPIC_DEFAULT_FABLE_MODEL".to_string(), json!(fable));
 
-        if let Some(sub) = provider.claude_models.as_ref().and_then(|m| m.subagent.as_ref()).filter(|s| !s.is_empty()) {
+        if let Some(sub) = provider
+            .claude_models
+            .as_ref()
+            .and_then(|m| m.subagent.as_ref())
+            .filter(|s| !s.is_empty())
+        {
             env.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(sub));
         } else {
             env.remove("CLAUDE_CODE_SUBAGENT_MODEL");
@@ -327,9 +370,11 @@ impl ClaudeAdapter {
         let out = serde_json::to_string_pretty(&settings)
             .map_err(|e| TargetError::SerializeError(e.to_string()))?;
 
-        write_secure_file(&settings_path, out.as_bytes()).map_err(|err| TargetError::WriteError {
-            path: settings_path.clone(),
-            source: err,
+        write_secure_file(&settings_path, out.as_bytes()).map_err(|err| {
+            TargetError::WriteError {
+                path: settings_path.clone(),
+                source: err,
+            }
         })?;
 
         Ok(())
@@ -348,27 +393,31 @@ impl TargetAdapter for ClaudeAdapter {
             source: err,
         })?;
 
-        let settings: serde_json::Value = serde_json::from_str(&data)
-            .map_err(|e| TargetError::ParseError(e.to_string()))?;
+        let settings: serde_json::Value =
+            serde_json::from_str(&data).map_err(|e| TargetError::ParseError(e.to_string()))?;
 
-        let env = settings.get("env")
+        let env = settings
+            .get("env")
             .and_then(|v| v.as_object())
             .ok_or_else(|| TargetError::ParseError("Missing or invalid env field".to_string()))?;
 
         // Read base_url
-        let base_url = env.get("ANTHROPIC_BASE_URL")
+        let base_url = env
+            .get("ANTHROPIC_BASE_URL")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
         // Read api_key from ANTHROPIC_AUTH_TOKEN
-        let api_key = env.get("ANTHROPIC_AUTH_TOKEN")
+        let api_key = env
+            .get("ANTHROPIC_AUTH_TOKEN")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
         // Read model (prefer ANTHROPIC_MODEL, then OPUS, SONNET, FABLE, HAIKU)
-        let model = env.get("ANTHROPIC_MODEL")
+        let model = env
+            .get("ANTHROPIC_MODEL")
             .or_else(|| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
             .or_else(|| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
             .or_else(|| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
@@ -461,8 +510,9 @@ mod tests {
         });
         fs::write(
             dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
         let adapter = ClaudeAdapter::new_with_dir(dir.path());
         (dir, adapter)
     }
@@ -559,8 +609,9 @@ mod tests {
         });
         fs::write(
             dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
         let adapter = ClaudeAdapter::new_with_dir(dir.path());
 
         let provider = Provider {
@@ -599,8 +650,9 @@ mod tests {
         });
         fs::write(
             dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
         let adapter = ClaudeAdapter::new_with_dir(dir.path());
 
         let provider = Provider {
