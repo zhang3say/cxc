@@ -125,6 +125,25 @@ impl ClaudeAdapter {
     #[cfg(target_os = "windows")]
     fn detect_wsl_claude_dir() -> Option<PathBuf> {
         let mut first_valid_home: Option<PathBuf> = None;
+
+        // 0. Try using wsl.exe to get the home path dynamically
+        if let Ok(output) = std::process::Command::new("wsl")
+            .args(["-e", "wslpath", "-w", "~"])
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let path = stdout.trim();
+                if !path.is_empty() {
+                    let candidate = PathBuf::from(path).join(".claude");
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                    first_valid_home = Some(candidate);
+                }
+            }
+        }
+
         // Helper function to scan a base UNC path (like \\wsl.localhost or \\wsl$)
         let mut scan_unc_path = |base_path: &str| -> Option<PathBuf> {
             let base = Path::new(base_path);

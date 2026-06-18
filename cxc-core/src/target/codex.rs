@@ -126,16 +126,37 @@ impl CodexAdapter {
     /// Detect WSL Codex directory from Windows via \\wsl.localhost\<distro>\home\<user>\.codex
     #[cfg(target_os = "windows")]
     fn detect_wsl_codex_dir() -> Option<PathBuf> {
+        let mut first_valid_home: Option<PathBuf> = None;
+
+        // 0. Try using wsl.exe to get the home path dynamically
+        if let Ok(output) = std::process::Command::new("wsl")
+            .args(["-e", "wslpath", "-w", "~"])
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let path = stdout.trim();
+                if !path.is_empty() {
+                    let candidate = PathBuf::from(path).join(".codex");
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                    first_valid_home = Some(candidate);
+                }
+            }
+        }
+
         let wsl_localhost_exists = Path::new("\\\\wsl.localhost").exists();
         let wsl_legacy_exists = Path::new("\\\\wsl$").exists();
         if !wsl_localhost_exists && !wsl_legacy_exists {
-            return None;
+            return first_valid_home;
         }
 
-        let username = std::env::var("USERNAME").ok()?.to_lowercase();
+        let username = match std::env::var("USERNAME") {
+            Ok(v) => v.to_lowercase(),
+            Err(_) => return first_valid_home,
+        };
         let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
-        
-        let mut first_valid_home: Option<PathBuf> = None;
 
         if wsl_localhost_exists {
             for distro in &distros {
