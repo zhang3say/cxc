@@ -906,11 +906,12 @@ function App() {
           targetTool,
           source: newSource,
           customDir: config.codex_custom_dir || "",
-          claudeSource: config.claude_source || "wsl",
+          claudeSource: newSource,
           claudeCustomDir: config.claude_custom_dir || "",
         });
         setConfig(updatedCfg);
         setSettingsSource(newSource);
+        setClaudeSource(newSource);
         showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
       } else {
         const currentSrc = config.claude_source || "wsl";
@@ -918,12 +919,13 @@ function App() {
         
         const updatedCfg = await invoke<Config>("save_settings", {
           targetTool,
-          source: config.codex_source || "app",
+          source: newSource,
           customDir: config.codex_custom_dir || "",
           claudeSource: newSource,
           claudeCustomDir: config.claude_custom_dir || "",
         });
         setConfig(updatedCfg);
+        setSettingsSource(newSource);
         setClaudeSource(newSource);
         showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
       }
@@ -1048,14 +1050,17 @@ function App() {
     try {
       setSavingSettings(true);
       setError(null);
+      const finalSource = targetTool === "codex" ? settingsSource : claudeSource;
       const updatedCfg = await invoke<Config>("save_settings", {
         targetTool,
-        source: settingsSource,
+        source: finalSource,
         customDir: settingsCustomDir,
-        claudeSource: claudeSource,
+        claudeSource: finalSource,
         claudeCustomDir: claudeCustomDir,
       });
       setConfig(updatedCfg);
+      setSettingsSource(finalSource);
+      setClaudeSource(finalSource);
       setShowSettings(false);
     } catch (e: any) {
       setError(e.toString());
