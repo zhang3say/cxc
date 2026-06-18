@@ -66,7 +66,7 @@ impl ClaudeAdapter {
                 if let Some(win_dir) = Self::detect_windows_claude_dir() {
                     return Ok(win_dir);
                 }
-                // Fall back to local home if Windows mount not found
+                return Err(TargetError::ParseError("Unable to locate Windows home directory automatically from within WSL. Please specify a custom directory.".to_string()));
             }
             // source == "wsl" or fallback: use native Linux home
             let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
@@ -80,7 +80,7 @@ impl ClaudeAdapter {
                 if let Some(wsl_dir) = Self::detect_wsl_claude_dir() {
                     return Ok(wsl_dir);
                 }
-                // Fall back to local Windows home if WSL not reachable
+                return Err(TargetError::ParseError("Unable to locate WSL home directory automatically. Please specify a custom directory.".to_string()));
             }
             // source == "app" or fallback: use native Windows home
             let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
@@ -104,15 +104,17 @@ impl ClaudeAdapter {
         if candidate.exists() {
             return Some(candidate);
         }
+        let home = PathBuf::from(format!("/mnt/c/Users/{}", username));
+        if home.exists() {
+            return Some(candidate);
+        }
         // Try scanning /mnt/c/Users/ for a matching directory
         if let Ok(entries) = fs::read_dir("/mnt/c/Users") {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_lowercase();
                 if name == username.to_lowercase() {
                     let claude_dir = entry.path().join(".claude");
-                    if claude_dir.exists() {
-                        return Some(claude_dir);
-                    }
+                    return Some(claude_dir);
                 }
             }
         }
@@ -122,65 +124,74 @@ impl ClaudeAdapter {
     /// Detect WSL Claude directory from Windows via \\wsl.localhost\<distro>\home\<user>\.claude
     #[cfg(target_os = "windows")]
     fn detect_wsl_claude_dir() -> Option<PathBuf> {
-        static WSL_CLAUDE_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-        WSL_CLAUDE_DIR.get_or_init(|| {
-            // Helper function to scan a base UNC path (like \\wsl.localhost or \\wsl$)
-            let scan_unc_path = |base_path: &str| -> Option<PathBuf> {
-                let base = Path::new(base_path);
-                if !base.exists() {
-                    return None;
-                }
-                
-                // Read all distros (subdirectories of the UNC base)
-                if let Ok(distro_entries) = fs::read_dir(base) {
-                    for distro_entry in distro_entries.flatten() {
-                        let distro_path = distro_entry.path();
-                        let home_path = distro_path.join("home");
-                        if home_path.exists() {
-                            // Read all users in /home/
-                            if let Ok(user_entries) = fs::read_dir(&home_path) {
-                                for user_entry in user_entries.flatten() {
-                                    let user_path = user_entry.path();
-                                    let claude_dir = user_path.join(".claude");
-                                    if claude_dir.exists() {
-                                        return Some(claude_dir);
-                                    }
+        let mut first_valid_home: Option<PathBuf> = None;
+        // Helper function to scan a base UNC path (like \\wsl.localhost or \\wsl$)
+        let mut scan_unc_path = |base_path: &str| -> Option<PathBuf> {
+            let base = Path::new(base_path);
+            if !base.exists() {
+                return None;
+            }
+            
+            // Read all distros (subdirectories of the UNC base)
+            if let Ok(distro_entries) = fs::read_dir(base) {
+                for distro_entry in distro_entries.flatten() {
+                    let distro_path = distro_entry.path();
+                    let home_path = distro_path.join("home");
+                    if home_path.exists() {
+                        // Read all users in /home/
+                        if let Ok(user_entries) = fs::read_dir(&home_path) {
+                            for user_entry in user_entries.flatten() {
+                                let user_path = user_entry.path();
+                                let claude_dir = user_path.join(".claude");
+                                if claude_dir.exists() {
+                                    return Some(claude_dir);
+                                }
+                                if first_valid_home.is_none() && user_path.exists() {
+                                    first_valid_home = Some(claude_dir);
                                 }
                             }
                         }
                     }
                 }
-                None
-            };
-
-            // 1. Try modern wsl.localhost path first
-            if let Some(path) = scan_unc_path("\\\\wsl.localhost") {
-                return Some(path);
             }
+            None
+        };
 
-            // 2. Fall back to legacy wsl$ path
-            if let Some(path) = scan_unc_path("\\\\wsl$") {
-                return Some(path);
-            }
+        // 1. Try modern wsl.localhost path first
+        if let Some(path) = scan_unc_path("\\\\wsl.localhost") {
+            return Some(path);
+        }
 
-            // 3. Last fallback: try hardcoded approach using USERNAME env
-            if let Some(username) = std::env::var("USERNAME").ok() {
-                let username = username.to_lowercase();
-                let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
-                for distro in &distros {
-                    let candidate1 = PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}\\.claude", distro, username));
-                    if candidate1.exists() {
-                        return Some(candidate1);
-                    }
-                    let candidate2 = PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}\\.claude", distro, username));
-                    if candidate2.exists() {
-                        return Some(candidate2);
-                    }
+        // 2. Fall back to legacy wsl$ path
+        if let Some(path) = scan_unc_path("\\\\wsl$") {
+            return Some(path);
+        }
+
+        // 3. Last fallback: try hardcoded approach using USERNAME env
+        if let Some(username) = std::env::var("USERNAME").ok() {
+            let username = username.to_lowercase();
+            let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
+            for distro in &distros {
+                let candidate1 = PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}\\.claude", distro, username));
+                if candidate1.exists() {
+                    return Some(candidate1);
+                }
+                let home1 = PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}", distro, username));
+                if first_valid_home.is_none() && home1.exists() {
+                    first_valid_home = Some(candidate1);
+                }
+                let candidate2 = PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}\\.claude", distro, username));
+                if candidate2.exists() {
+                    return Some(candidate2);
+                }
+                let home2 = PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}", distro, username));
+                if first_valid_home.is_none() && home2.exists() {
+                    first_valid_home = Some(candidate2);
                 }
             }
+        }
 
-            None
-        }).clone()
+        first_valid_home
     }
 
     pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {

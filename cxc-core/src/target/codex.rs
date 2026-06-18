@@ -66,7 +66,8 @@ impl CodexAdapter {
                 if let Some(win_dir) = Self::detect_windows_codex_dir() {
                     return Ok(win_dir);
                 }
-                // Fall back to local home if Windows mount not found
+                // Don't fall back to local Linux home if app not reachable, otherwise it causes cross-contamination
+                return Err(TargetError::ParseError("Unable to locate Windows home directory automatically from within WSL. Please specify a custom directory.".to_string()));
             }
             // source == "wsl" or fallback: use native Linux home
             let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
@@ -80,7 +81,8 @@ impl CodexAdapter {
                 if let Some(wsl_dir) = Self::detect_wsl_codex_dir() {
                     return Ok(wsl_dir);
                 }
-                // Fall back to local Windows home if WSL not reachable
+                // Don't fall back to local Windows home if WSL not reachable, otherwise it causes cross-contamination
+                return Err(TargetError::ParseError("Unable to locate WSL home directory automatically. Please specify a custom directory.".to_string()));
             }
             // source == "app" or fallback: use native Windows home
             let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
@@ -104,15 +106,17 @@ impl CodexAdapter {
         if candidate.exists() {
             return Some(candidate);
         }
+        let home = PathBuf::from(format!("/mnt/c/Users/{}", username));
+        if home.exists() {
+            return Some(candidate);
+        }
         // Try scanning /mnt/c/Users/ for a matching directory
         if let Ok(entries) = fs::read_dir("/mnt/c/Users") {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_lowercase();
                 if name == username.to_lowercase() {
                     let codex_dir = entry.path().join(".codex");
-                    if codex_dir.exists() {
-                        return Some(codex_dir);
-                    }
+                    return Some(codex_dir);
                 }
             }
         }
@@ -122,40 +126,51 @@ impl CodexAdapter {
     /// Detect WSL Codex directory from Windows via \\wsl.localhost\<distro>\home\<user>\.codex
     #[cfg(target_os = "windows")]
     fn detect_wsl_codex_dir() -> Option<PathBuf> {
-        static WSL_CODEX_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-        WSL_CODEX_DIR.get_or_init(|| {
-            let wsl_localhost_exists = Path::new("\\\\wsl.localhost").exists();
-            let wsl_legacy_exists = Path::new("\\\\wsl$").exists();
-            if !wsl_localhost_exists && !wsl_legacy_exists {
-                return None;
-            }
+        let wsl_localhost_exists = Path::new("\\\\wsl.localhost").exists();
+        let wsl_legacy_exists = Path::new("\\\\wsl$").exists();
+        if !wsl_localhost_exists && !wsl_legacy_exists {
+            return None;
+        }
 
-            let username = std::env::var("USERNAME").ok()?.to_lowercase();
-            let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
-            
-            if wsl_localhost_exists {
-                for distro in &distros {
-                    let candidate = PathBuf::from(format!(
-                        "\\\\wsl.localhost\\{}\\home\\{}\\.codex", distro, username
-                    ));
-                    if candidate.exists() {
-                        return Some(candidate);
-                    }
+        let username = std::env::var("USERNAME").ok()?.to_lowercase();
+        let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
+        
+        let mut first_valid_home: Option<PathBuf> = None;
+
+        if wsl_localhost_exists {
+            for distro in &distros {
+                let candidate = PathBuf::from(format!(
+                    "\\\\wsl.localhost\\{}\\home\\{}\\.codex", distro, username
+                ));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                let home = PathBuf::from(format!(
+                    "\\\\wsl.localhost\\{}\\home\\{}", distro, username
+                ));
+                if first_valid_home.is_none() && home.exists() {
+                    first_valid_home = Some(candidate);
                 }
             }
-            
-            if wsl_legacy_exists {
-                for distro in &distros {
-                    let candidate = PathBuf::from(format!(
-                        "\\\\wsl$\\{}\\home\\{}\\.codex", distro, username
-                    ));
-                    if candidate.exists() {
-                        return Some(candidate);
-                    }
+        }
+        
+        if wsl_legacy_exists {
+            for distro in &distros {
+                let candidate = PathBuf::from(format!(
+                    "\\\\wsl$\\{}\\home\\{}\\.codex", distro, username
+                ));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                let home = PathBuf::from(format!(
+                    "\\\\wsl$\\{}\\home\\{}", distro, username
+                ));
+                if first_valid_home.is_none() && home.exists() {
+                    first_valid_home = Some(candidate);
                 }
             }
-            None
-        }).clone()
+        }
+        first_valid_home
     }
 
     pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {
