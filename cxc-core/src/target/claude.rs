@@ -237,15 +237,9 @@ impl ClaudeAdapter {
         env.insert("ANTHROPIC_BASE_URL".to_string(), json!(config.base_url));
 
         // Update authentication field
-        // Keep user's existing auth field name, or default to ANTHROPIC_AUTH_TOKEN
-        // Clean up conflicting auth field
-        if env.contains_key("ANTHROPIC_API_KEY") {
-            env.insert("ANTHROPIC_API_KEY".to_string(), json!(config.api_key));
-            env.remove("ANTHROPIC_AUTH_TOKEN");
-        } else {
-            env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), json!(config.api_key));
-            env.remove("ANTHROPIC_API_KEY");
-        }
+        // Force write to ANTHROPIC_AUTH_TOKEN and remove ANTHROPIC_API_KEY
+        env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), json!(config.api_key));
+        env.remove("ANTHROPIC_API_KEY");
 
         // Update model fields
         // Use claude_models if configured, otherwise fall back to model field
@@ -312,9 +306,8 @@ impl TargetAdapter for ClaudeAdapter {
             .unwrap_or("")
             .to_string();
 
-        // Read api_key (prefer ANTHROPIC_API_KEY, fallback to ANTHROPIC_AUTH_TOKEN)
-        let api_key = env.get("ANTHROPIC_API_KEY")
-            .or_else(|| env.get("ANTHROPIC_AUTH_TOKEN"))
+        // Read api_key from ANTHROPIC_AUTH_TOKEN
+        let api_key = env.get("ANTHROPIC_AUTH_TOKEN")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -573,10 +566,10 @@ mod tests {
         let settings: serde_json::Value = serde_json::from_str(&data).unwrap();
         let env = settings["env"].as_object().unwrap();
 
-        // Should keep API_KEY and remove AUTH_TOKEN
-        assert!(env.contains_key("ANTHROPIC_API_KEY"));
-        assert!(!env.contains_key("ANTHROPIC_AUTH_TOKEN"));
-        assert_eq!(env["ANTHROPIC_API_KEY"], "sk-new");
+        // Should keep AUTH_TOKEN and remove API_KEY
+        assert!(env.contains_key("ANTHROPIC_AUTH_TOKEN"));
+        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
+        assert_eq!(env["ANTHROPIC_AUTH_TOKEN"], "sk-new");
     }
 
     #[test]
