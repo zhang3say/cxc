@@ -761,6 +761,28 @@ function App() {
     }
   }
 
+  async function handleReload(name: string) {
+    try {
+      setSwitching(name);
+      setError(null);
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (!isTauri && config) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      } else {
+        const updatedCfg = await invoke<Config>("switch_provider", {
+          name,
+          targetTool
+        });
+        setConfig(updatedCfg);
+      }
+      showToast(lang === "zh" ? `已重载 ${name} 并重新应用配置` : `Reloaded ${name} and reapplied config`);
+    } catch (e: any) {
+      setError(e.toString());
+    } finally {
+      setSwitching(null);
+    }
+  }
+
   function openAddForm() {
     setFormValues(initialFormValues);
     setFetchedModels([]);
@@ -1586,7 +1608,19 @@ function App() {
                           </div>
 
                           {/* Switch Active Trigger column */}
-                          <div className="w-full sm:w-24 shrink-0 flex justify-start items-center pl-1.5">
+                          <div className="w-full sm:w-24 shrink-0 flex items-center justify-start gap-1.5 pl-1.5 relative">
+                            {isActive && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => handleReload(p.name)}
+                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                                className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all duration-200"
+                                title={lang === "zh" ? "重载配置并写入" : "Reload and rewrite config"}
+                              >
+                                <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
+                              </Button>
+                            )}
                             <ToggleSwitch
                               checked={isActive}
                               loading={isThisSwitching}
@@ -1615,7 +1649,7 @@ function App() {
                     return (
                       <Card
                         key={p.name}
-                        className={`relative flex flex-col justify-between transition-all duration-200 hover:-translate-y-[1px] ${
+                        className={`relative group flex flex-col justify-between transition-all duration-200 hover:-translate-y-[1px] ${
                           vibeMode === "standard"
                             ? "bg-card border border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
                             : "bg-card/30 backdrop-blur-md border border-white/10 dark:border-white/5"
@@ -1742,7 +1776,19 @@ function App() {
                           </div>
 
                           {/* Right: Switch active button */}
-                          <div className="w-20 flex justify-end items-center pr-1">
+                          <div className="w-24 flex justify-end items-center pr-1 gap-1.5">
+                            {isActive && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => handleReload(p.name)}
+                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                                className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all duration-200"
+                                title={lang === "zh" ? "重载配置并写入" : "Reload and rewrite config"}
+                              >
+                                <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
+                              </Button>
+                            )}
                             <ToggleSwitch
                               checked={isActive}
                               loading={isThisSwitching}
