@@ -277,47 +277,7 @@ const locales = {
   }
 };
 
-interface ToggleSwitchProps {
-  checked: boolean;
-  onChange: () => void;
-  loading?: boolean;
-  disabled?: boolean;
-  title?: string;
-}
 
-const ToggleSwitch = ({
-  checked,
-  onChange,
-  loading,
-  disabled,
-  title
-}: ToggleSwitchProps) => {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled || loading}
-      onClick={onChange}
-      title={title}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 cxc-no-drag ${
-        checked
-          ? "bg-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]"
-          : "bg-muted-foreground/25 dark:bg-white/10"
-      }`}
-    >
-      <span
-        className={`pointer-events-none flex items-center justify-center size-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-300 ${
-          checked ? "translate-x-[18px]" : "translate-x-[2px]"
-        }`}
-      >
-        {loading && (
-          <Loader2 className="size-2.5 animate-spin text-primary shrink-0" />
-        )}
-      </span>
-    </button>
-  );
-};
 
 const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> = {
   name: "",
@@ -1608,29 +1568,46 @@ function App() {
                           </div>
 
                           {/* Switch Active Trigger column */}
-                          <div className="w-full sm:w-24 shrink-0 flex items-center justify-start gap-1.5 pl-1.5 relative">
-                            <ToggleSwitch
-                              checked={isActive}
-                              loading={isThisSwitching}
-                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                              onChange={() => {
-                                if (!isActive) {
-                                  handleSwitch(p.name);
-                                }
-                              }}
-                              title={isActive ? t.activeLabel : t.switchBtn}
-                            />
-                            {isActive && (
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => handleReload(p.name)}
-                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                                className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all duration-200"
-                                title={lang === "zh" ? "重载配置并写入" : "Reload and rewrite config"}
-                              >
-                                <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
-                              </Button>
+                          <div className="w-full sm:w-28 shrink-0 flex items-center justify-start gap-1.5 pl-1.5 relative min-h-[28px]">
+                            {isActive ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-extrabold uppercase tracking-wide select-none animate-in fade-in duration-300">
+                                  {lang === "zh" ? "已启用" : "Active"}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => handleReload(p.name)}
+                                  disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                                  className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all duration-200"
+                                  title={lang === "zh" ? "重载配置并写入" : "Reload and rewrite config"}
+                                >
+                                  <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                {isThisSwitching ? (
+                                  <Button
+                                    size="sm"
+                                    disabled
+                                    className="h-6 px-2.5 rounded text-[10px] font-extrabold bg-primary/10 text-primary border border-primary/20 shadow-sm"
+                                  >
+                                    <Loader2 className="size-3 animate-spin mr-1" />
+                                    {lang === "zh" ? "应用中" : "Applying"}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSwitch(p.name)}
+                                    disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                                    className="h-6 px-2.5 rounded text-[10px] font-extrabold bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer shadow-sm"
+                                    title={lang === "zh" ? "应用此配置" : "Apply this config"}
+                                  >
+                                    {lang === "zh" ? "应用" : "Apply"}
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -1776,29 +1753,46 @@ function App() {
                           </div>
 
                           {/* Right: Switch active button */}
-                          <div className="w-24 flex justify-end items-center pr-1 gap-1.5">
-                            <ToggleSwitch
-                              checked={isActive}
-                              loading={isThisSwitching}
-                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                              onChange={() => {
-                                if (!isActive) {
-                                  handleSwitch(p.name);
-                                }
-                              }}
-                              title={isActive ? t.activeLabel : t.switchBtn}
-                            />
-                            {isActive && (
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => handleReload(p.name)}
-                                disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                                className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all duration-200"
-                                title={lang === "zh" ? "重载配置并写入" : "Reload and rewrite config"}
-                              >
-                                <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
-                              </Button>
+                          <div className="w-28 flex justify-end items-center pr-1 gap-1.5 min-h-[24px]">
+                            {isActive ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-extrabold uppercase tracking-wide select-none animate-in fade-in duration-300">
+                                  {lang === "zh" ? "已启用" : "Active"}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => handleReload(p.name)}
+                                  disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                                  className="size-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all duration-200"
+                                  title={lang === "zh" ? "重载配置并写入" : "Reload and rewrite config"}
+                                >
+                                  <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                {isThisSwitching ? (
+                                  <Button
+                                    size="sm"
+                                    disabled
+                                    className="h-6 px-2.5 rounded text-[10px] font-extrabold bg-primary/10 text-primary border border-primary/20 shadow-sm"
+                                  >
+                                    <Loader2 className="size-3 animate-spin mr-1" />
+                                    {lang === "zh" ? "应用中" : "Applying"}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSwitch(p.name)}
+                                    disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                                    className="h-6 px-2.5 rounded text-[10px] font-extrabold bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer shadow-sm"
+                                    title={lang === "zh" ? "应用此配置" : "Apply this config"}
+                                  >
+                                    {lang === "zh" ? "应用" : "Apply"}
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
