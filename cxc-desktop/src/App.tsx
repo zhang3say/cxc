@@ -2586,9 +2586,11 @@ function App() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-card/95 backdrop-blur-[6px] border border-border/80 shadow-lg px-4 py-2.5 rounded-full text-xs font-bold text-foreground flex items-center gap-2 animate-in fade-in slide-in-from-top-3 duration-200">
-          <Check className="size-3.5 text-primary shrink-0" />
-          <span>{toastMessage}</span>
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/60 dark:border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_40px_rgba(59,130,246,0.04)] pl-3 pr-4 py-2.5 rounded-full text-[11px] font-bold text-foreground/90 flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 duration-200 select-none">
+          <div className="flex items-center justify-center size-5 rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0 shadow-sm">
+            <Check className="size-3 stroke-[3]" />
+          </div>
+          <span className="tracking-wide">{toastMessage}</span>
         </div>
       )}
       </>
