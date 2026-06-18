@@ -188,14 +188,17 @@ impl Tester {
         };
 
         let start = Instant::now();
-        let res = self.client.post(&url)
+        let mut req = self.client.post(&url)
             .header("Content-Type", "application/json")
-            .header("x-api-key", api_key)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("anthropic-version", "2023-06-01")
-            .json(&req_body)
-            .send()
-            .await;
+            .json(&req_body);
+
+        if api_key.starts_with("sk-ant-") {
+            req = req.header("x-api-key", api_key);
+        }
+
+        let res = req.send().await;
 
         let latency_ms = start.elapsed().as_millis() as i64;
 
@@ -345,11 +348,15 @@ async fn do_fetch_models(url: &str, api_key: &str) -> anyhow::Result<Vec<String>
         .build()
         .unwrap_or_else(|_| Client::new());
 
-    let resp = client
+    let mut req = client
         .get(url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("x-api-key", api_key)
-        .send()
+        .header("Authorization", format!("Bearer {}", api_key));
+
+    if api_key.starts_with("sk-ant-") {
+        req = req.header("x-api-key", api_key);
+    }
+
+    let resp = req.send()
         .await
         .map_err(|e| anyhow::anyhow!("network error: {}", e))?;
 
@@ -734,14 +741,14 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/v1/messages"))
-            .and(header("x-api-key", "sk-claude"))
+            .and(header("x-api-key", "sk-ant-claude"))
             .and(header("anthropic-version", "2023-06-01"))
             .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
             .mount(&mock_server)
             .await;
 
         let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-claude", "claude-3-opus", true).await;
+        let result = tester.test(&mock_server.uri(), "sk-ant-claude", "claude-3-opus", true).await;
 
         assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
         assert_eq!(result.response, "Hello, Human!");
