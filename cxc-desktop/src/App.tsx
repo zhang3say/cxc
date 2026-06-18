@@ -1571,7 +1571,7 @@ function App() {
                           <div className="w-full sm:w-28 shrink-0 flex items-center justify-start gap-1.5 pl-1.5 relative min-h-[28px]">
                             {isActive ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-extrabold uppercase tracking-wide select-none animate-in fade-in duration-300">
+                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wide select-none animate-in fade-in duration-300">
                                   {lang === "zh" ? "已启用" : "Active"}
                                 </span>
                                 <Button
@@ -1756,7 +1756,7 @@ function App() {
                           <div className="w-28 flex justify-end items-center pr-1 gap-1.5 min-h-[24px]">
                             {isActive ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-extrabold uppercase tracking-wide select-none animate-in fade-in duration-300">
+                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wide select-none animate-in fade-in duration-300">
                                   {lang === "zh" ? "已启用" : "Active"}
                                 </span>
                                 <Button
