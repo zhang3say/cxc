@@ -122,27 +122,40 @@ impl ClaudeAdapter {
     /// Detect WSL Claude directory from Windows via \\wsl.localhost\<distro>\home\<user>\.claude
     #[cfg(target_os = "windows")]
     fn detect_wsl_claude_dir() -> Option<PathBuf> {
-        let username = std::env::var("USERNAME").ok()?.to_lowercase();
-        // Try common distro names
-        let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
-        for distro in &distros {
-            let candidate = PathBuf::from(format!(
-                "\\\\wsl.localhost\\{}\\home\\{}\\.claude", distro, username
-            ));
-            if candidate.exists() {
-                return Some(candidate);
+        static WSL_CLAUDE_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+        WSL_CLAUDE_DIR.get_or_init(|| {
+            let wsl_localhost_exists = Path::new("\\\\wsl.localhost").exists();
+            let wsl_legacy_exists = Path::new("\\\\wsl$").exists();
+            if !wsl_localhost_exists && !wsl_legacy_exists {
+                return None;
             }
-        }
-        // Also try wsl$ UNC path (older WSL1 style)
-        for distro in &distros {
-            let candidate = PathBuf::from(format!(
-                "\\\\wsl$\\{}\\home\\{}\\.claude", distro, username
-            ));
-            if candidate.exists() {
-                return Some(candidate);
+
+            let username = std::env::var("USERNAME").ok()?.to_lowercase();
+            let distros = ["Ubuntu", "Debian", "openSUSE-Leap", "kali-linux", "Ubuntu-22.04", "Ubuntu-24.04"];
+            
+            if wsl_localhost_exists {
+                for distro in &distros {
+                    let candidate = PathBuf::from(format!(
+                        "\\\\wsl.localhost\\{}\\home\\{}\\.claude", distro, username
+                    ));
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
             }
-        }
-        None
+            
+            if wsl_legacy_exists {
+                for distro in &distros {
+                    let candidate = PathBuf::from(format!(
+                        "\\\\wsl$\\{}\\home\\{}\\.claude", distro, username
+                    ));
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+            None
+        }).clone()
     }
 
     pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {
