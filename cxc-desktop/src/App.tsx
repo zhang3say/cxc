@@ -2586,7 +2586,7 @@ function App() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-4 right-4 z-50 bg-card border border-border shadow-lg px-4 py-2.5 rounded-lg text-xs font-semibold text-foreground flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-card/95 backdrop-blur-[6px] border border-border/80 shadow-lg px-4 py-2.5 rounded-full text-xs font-bold text-foreground flex items-center gap-2 animate-in fade-in slide-in-from-top-3 duration-200">
           <Check className="size-3.5 text-primary shrink-0" />
           <span>{toastMessage}</span>
         </div>
