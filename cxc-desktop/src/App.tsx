@@ -1609,6 +1609,17 @@ function App() {
 
                           {/* Switch Active Trigger column */}
                           <div className="w-full sm:w-24 shrink-0 flex items-center justify-start gap-1.5 pl-1.5 relative">
+                            <ToggleSwitch
+                              checked={isActive}
+                              loading={isThisSwitching}
+                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                              onChange={() => {
+                                if (!isActive) {
+                                  handleSwitch(p.name);
+                                }
+                              }}
+                              title={isActive ? t.activeLabel : t.switchBtn}
+                            />
                             {isActive && (
                               <Button
                                 variant="ghost"
@@ -1621,17 +1632,6 @@ function App() {
                                 <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
                               </Button>
                             )}
-                            <ToggleSwitch
-                              checked={isActive}
-                              loading={isThisSwitching}
-                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                              onChange={() => {
-                                if (!isActive) {
-                                  handleSwitch(p.name);
-                                }
-                              }}
-                              title={isActive ? t.activeLabel : t.switchBtn}
-                            />
                           </div>
                         </div>
                       );
@@ -1777,6 +1777,17 @@ function App() {
 
                           {/* Right: Switch active button */}
                           <div className="w-24 flex justify-end items-center pr-1 gap-1.5">
+                            <ToggleSwitch
+                              checked={isActive}
+                              loading={isThisSwitching}
+                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
+                              onChange={() => {
+                                if (!isActive) {
+                                  handleSwitch(p.name);
+                                }
+                              }}
+                              title={isActive ? t.activeLabel : t.switchBtn}
+                            />
                             {isActive && (
                               <Button
                                 variant="ghost"
@@ -1789,17 +1800,6 @@ function App() {
                                 <RefreshCw className={`size-3 ${isThisSwitching ? "animate-spin" : ""}`} />
                               </Button>
                             )}
-                            <ToggleSwitch
-                              checked={isActive}
-                              loading={isThisSwitching}
-                              disabled={switching !== null || testingAll !== null || testingProviders[p.name]}
-                              onChange={() => {
-                                if (!isActive) {
-                                  handleSwitch(p.name);
-                                }
-                              }}
-                              title={isActive ? t.activeLabel : t.switchBtn}
-                            />
                           </div>
                         </div>
                       </Card>
