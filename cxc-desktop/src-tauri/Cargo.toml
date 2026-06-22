@@ -1,6 +1,6 @@
 [package]
 name = "cxc-desktop"
-version = "0.0.1"
+version = "0.0.2"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -26,4 +26,3 @@ serde_json = "1"
 cxc-core = { path = "../../cxc-core" }
 tokio = { version = "1.38", features = ["full"] }
 notify-rust = "4"
-
