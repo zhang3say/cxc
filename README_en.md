@@ -72,6 +72,11 @@ Before making any modifications, both config files are automatically backed up a
 
 See [docs/adr/](docs/adr/) for architectural decision records.
 
+## Community
+
+This repo has been shared as open source on [Linux.do](https://linux.do/).
+
 ## License
 
 MIT
+
