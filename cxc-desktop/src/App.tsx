@@ -1071,6 +1071,35 @@ function App() {
         : ((config.claude_source || "wsl") === "app" ? config.claude_active_app : config.claude_active_wsl)) ?? ""
     : "";
 
+  function getProtectedSources(name: string): string[] {
+    if (!config) return [];
+
+    const protectedSources: string[] = [];
+    if (targetTool === "codex") {
+      if (config.codex_active_app === name) protectedSources.push("app");
+      if (config.codex_active_wsl === name) protectedSources.push("wsl");
+    } else {
+      if (config.claude_active_app === name) protectedSources.push("app");
+      if (config.claude_active_wsl === name) protectedSources.push("wsl");
+    }
+
+    return protectedSources;
+  }
+
+  function getProtectedDeleteTooltip(name: string): string {
+    const protectedSources = getProtectedSources(name);
+    if (protectedSources.length === 0) return t.deleteConnTitle;
+
+    const sourceText = protectedSources
+      .map((source) => (source === "app" ? "App" : "WSL"))
+      .join(lang === "zh" ? "、" : ", ");
+    const toolText = targetTool === "codex" ? "Codex" : "Claude";
+
+    return lang === "zh"
+      ? `${toolText} 的 ${sourceText} 正在使用该节点，切换后才能删除`
+      : `This provider is active for ${toolText} ${sourceText}. Switch it first before deleting.`;
+  }
+
   const filteredProviders = currentProviders.filter(
     (p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1460,6 +1489,8 @@ function App() {
 
                     {filteredProviders.map((p) => {
                       const isActive = currentActive === p.name;
+                      const protectedSources = getProtectedSources(p.name);
+                      const isProtectedActive = protectedSources.length > 0;
                       const isThisSwitching = switching === p.name;
                       const isTesting = !!testingProviders[p.name] || testingAll === targetTool;
 
@@ -1559,9 +1590,9 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => handleDeleteProvider(p.name)}
-                              disabled={isActive || switching !== null || testingAll !== null || testingProviders[p.name]}
+                              disabled={isProtectedActive || switching !== null || testingAll !== null || testingProviders[p.name]}
                               className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
-                              title={isActive ? t.activeDeleteTooltip : t.deleteConnTitle}
+                              title={isProtectedActive ? getProtectedDeleteTooltip(p.name) : t.deleteConnTitle}
                             >
                               <Trash2 className="size-3" />
                             </Button>
@@ -1620,6 +1651,8 @@ function App() {
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
                   {filteredProviders.map((p) => {
                     const isActive = currentActive === p.name;
+                    const protectedSources = getProtectedSources(p.name);
+                    const isProtectedActive = protectedSources.length > 0;
                     const isThisSwitching = switching === p.name;
                     const isTesting = !!testingProviders[p.name] || testingAll === targetTool;
 
@@ -1744,9 +1777,9 @@ function App() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => handleDeleteProvider(p.name)}
-                              disabled={isActive || switching !== null || testingAll !== null || testingProviders[p.name]}
+                              disabled={isProtectedActive || switching !== null || testingAll !== null || testingProviders[p.name]}
                               className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
-                              title={isActive ? t.activeDeleteTooltip : t.deleteConnTitle}
+                              title={isProtectedActive ? getProtectedDeleteTooltip(p.name) : t.deleteConnTitle}
                             >
                               <Trash2 className="size-3" />
                             </Button>

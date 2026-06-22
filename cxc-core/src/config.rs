@@ -39,8 +39,12 @@ pub enum ConfigError {
     ProviderExists(String),
     #[error("Provider '{0}' not found")]
     ProviderNotFound(String),
-    #[error("Cannot remove the active provider '{0}' — switch to another provider first")]
-    CannotRemoveActive(String),
+    #[error("Cannot remove provider '{name}' for {target_tool}: active in {sources} — switch it first")]
+    CannotRemoveActive {
+        name: String,
+        target_tool: String,
+        sources: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -282,8 +286,20 @@ pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Resul
         (&mut cfg.claude_providers, &cfg.claude_active_app, &cfg.claude_active_wsl)
     };
 
-    if *active_app == name || *active_wsl == name {
-        return Err(ConfigError::CannotRemoveActive(name.to_string()));
+    let mut active_sources = Vec::new();
+    if *active_app == name {
+        active_sources.push("app");
+    }
+    if *active_wsl == name {
+        active_sources.push("wsl");
+    }
+
+    if !active_sources.is_empty() {
+        return Err(ConfigError::CannotRemoveActive {
+            name: name.to_string(),
+            target_tool: target_tool.to_string(),
+            sources: active_sources.join(", "),
+        });
     }
     let idx = providers
         .iter()
@@ -496,7 +512,44 @@ mod tests {
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
         let err = remove_provider(&mut cfg, "codex", "a");
-        assert!(err.is_err());
+        match err {
+            Err(ConfigError::CannotRemoveActive { name, target_tool, sources }) => {
+                assert_eq!(name, "a");
+                assert_eq!(target_tool, "codex");
+                assert_eq!(sources, "app");
+            }
+            other => panic!("expected CannotRemoveActive, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_remove_provider_active_in_both_sources_fails_with_both_sources() {
+        let (_dir, _path) = setup_test();
+        let mut cfg = Config::default();
+        add_provider(&mut cfg, "claude", Provider {
+            name: "shared".to_string(),
+            base_url: "https://a.com/v1".to_string(),
+            api_key: "k1".to_string(),
+            model: "m1".to_string(),
+            wire_api: "".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+        }).unwrap();
+        set_active(&mut cfg, "claude", "app", "shared").unwrap();
+        set_active(&mut cfg, "claude", "wsl", "shared").unwrap();
+
+        let err = remove_provider(&mut cfg, "claude", "shared");
+        match err {
+            Err(ConfigError::CannotRemoveActive { name, target_tool, sources }) => {
+                assert_eq!(name, "shared");
+                assert_eq!(target_tool, "claude");
+                assert_eq!(sources, "app, wsl");
+            }
+            other => panic!("expected CannotRemoveActive, got {:?}", other),
+        }
     }
 
     #[test]
