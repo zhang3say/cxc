@@ -1697,16 +1697,17 @@ function App() {
                               <Edit2 className="size-3" />
                             </Button>
 
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => handleDeleteProvider(p.name)}
-                              disabled={isProtectedActive || switching !== null || testingAll !== null || testingProviders[p.name]}
-                              className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
-                              title={isProtectedActive ? getProtectedDeleteTooltip(p.name) : t.deleteConnTitle}
-                            >
-                              <Trash2 className="size-3" />
-                            </Button>
+                            <span title={isProtectedActive ? getProtectedDeleteTooltip(p.name) : t.deleteConnTitle}>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => handleDeleteProvider(p.name)}
+                                disabled={isProtectedActive || switching !== null || testingAll !== null || testingProviders[p.name]}
+                                className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
+                              >
+                                <Trash2 className="size-3" />
+                              </Button>
+                            </span>
                           </div>
 
                           {/* Switch Active Trigger column */}
@@ -1884,16 +1885,17 @@ function App() {
                               <Edit2 className="size-3" />
                             </Button>
 
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => handleDeleteProvider(p.name)}
-                              disabled={isProtectedActive || switching !== null || testingAll !== null || testingProviders[p.name]}
-                              className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
-                              title={isProtectedActive ? getProtectedDeleteTooltip(p.name) : t.deleteConnTitle}
-                            >
-                              <Trash2 className="size-3" />
-                            </Button>
+                            <span title={isProtectedActive ? getProtectedDeleteTooltip(p.name) : t.deleteConnTitle}>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => handleDeleteProvider(p.name)}
+                                disabled={isProtectedActive || switching !== null || testingAll !== null || testingProviders[p.name]}
+                                className="size-6 rounded-md text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
+                              >
+                                <Trash2 className="size-3" />
+                              </Button>
+                            </span>
                           </div>
 
                           {/* Right: Switch active button */}
