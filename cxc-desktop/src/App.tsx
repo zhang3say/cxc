@@ -177,7 +177,16 @@ const locales = {
     githubDesc: "访问 GitHub 仓库获取最新版本和反馈",
     githubBtn: "前往仓库",
     offlineTooltipTitle: "连接测试超时",
-    offlineTooltipDesc: "检测到中转未给出有效响应。不过，部分中转地址出于安全或防护考虑会禁用测试端点，这并不影响其作为 API 节点的实际使用。您依然可以尝试启用它并在具体客户端中发起调用测试。"
+    offlineTooltipDesc: "检测到中转未给出有效响应。不过，部分中转地址出于安全或防护考虑会禁用测试端点，这并不影响其作为 API 节点的实际使用。您依然可以尝试启用它并在具体客户端中发起调用测试。",
+    checkUpdateBtn: "检查更新",
+    checkingUpdate: "正在检查...",
+    updateAvailableTitle: "发现新版本",
+    updateNotAvailable: "当前已是最新版本！",
+    updateFailed: "检查更新失败，请稍后重试",
+    updateDialogDesc: "发现新版本 {version}，是否前往下载？",
+    changelogLabel: "更新日志：",
+    downloadNowBtn: "立即下载",
+    remindMeLaterBtn: "以后再说"
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -273,7 +282,16 @@ const locales = {
     githubDesc: "Visit GitHub repository for updates & feedback",
     githubBtn: "Visit Repo",
     offlineTooltipTitle: "Connection Timeout",
-    offlineTooltipDesc: "No valid response was received from the server. However, some relays disable speed test endpoints for security reasons. This does not affect actual API usage, and you may still enable and try it."
+    offlineTooltipDesc: "No valid response was received from the server. However, some relays disable speed test endpoints for security reasons. This does not affect actual API usage, and you may still enable and try it.",
+    checkUpdateBtn: "Check for Updates",
+    checkingUpdate: "Checking...",
+    updateAvailableTitle: "New Version Available",
+    updateNotAvailable: "You are already on the latest version!",
+    updateFailed: "Failed to check for updates. Please try again.",
+    updateDialogDesc: "A new version {version} is available. Would you like to download it now?",
+    changelogLabel: "Changelog:",
+    downloadNowBtn: "Download Now",
+    remindMeLaterBtn: "Later"
   }
 };
 
@@ -451,6 +469,13 @@ function App() {
   const [claudeCustomDir, setClaudeCustomDir] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [showUpdateDialog, setShowUpdateDialog] = useState<boolean>(false);
+  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
+  const [newVersionInfo, setNewVersionInfo] = useState<{
+    version: string;
+    url: string;
+    changelog: string;
+  } | null>(null);
 
   useEffect(() => {
     localStorage.setItem("cxc-target-tool", targetTool);
@@ -594,6 +619,75 @@ function App() {
     }
   };
 
+  const handleOpenUrl = async (url: string) => {
+    try {
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (isTauri) {
+        await openUrl(url);
+      } else {
+        window.open(url, "_blank");
+      }
+    } catch (err) {
+      console.error("Failed to open URL:", err);
+      window.open(url, "_blank");
+    }
+  };
+
+  const compareVersions = (local: string, remote: string): boolean => {
+    const cleanLocal = local.replace(/^v/i, '').trim();
+    const cleanRemote = remote.replace(/^v/i, '').trim();
+    
+    const localParts = cleanLocal.split('.').map(Number);
+    const remoteParts = cleanRemote.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(localParts.length, remoteParts.length); i++) {
+      const localVal = localParts[i] || 0;
+      const remoteVal = remoteParts[i] || 0;
+      if (remoteVal > localVal) return true;
+      if (localVal > remoteVal) return false;
+    }
+    return false;
+  };
+
+  const handleCheckUpdate = async (manual = false, currentVer?: string) => {
+    const activeVersion = currentVer || appVersion;
+    if (!activeVersion) return;
+    
+    if (manual) {
+      setCheckingUpdate(true);
+    }
+    try {
+      const res = await fetch("https://api.github.com/repos/zhang3say/cxc/releases/latest");
+      if (!res.ok) throw new Error("Network response was not ok");
+      const data = await res.json();
+      
+      const hasUpdate = compareVersions(activeVersion, data.tag_name);
+      if (hasUpdate) {
+        setNewVersionInfo({
+          version: data.tag_name,
+          url: data.html_url,
+          changelog: data.body || "",
+        });
+        setShowUpdateDialog(true);
+      } else {
+        if (manual) {
+          setToastMessage(t.updateNotAvailable);
+          setTimeout(() => setToastMessage(null), 2500);
+        }
+      }
+    } catch (err) {
+      console.error("Check update failed:", err);
+      if (manual) {
+        setToastMessage(t.updateFailed);
+        setTimeout(() => setToastMessage(null), 2500);
+      }
+    } finally {
+      if (manual) {
+        setCheckingUpdate(false);
+      }
+    }
+  };
+
   // 全局 Ctrl+F/Cmd+F 聚焦搜索框快捷键
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -640,7 +734,10 @@ function App() {
     loadConfig();
 
     invoke<string>("get_app_version")
-      .then(setAppVersion)
+      .then((ver) => {
+        setAppVersion(ver);
+        handleCheckUpdate(false, ver);
+      })
       .catch((err) => console.error("Failed to get version:", err));
 
     let unlisten: (() => void) | undefined;
@@ -2106,9 +2203,27 @@ function App() {
             <DialogFooter className="pt-4 border-t border-border/30 mt-6">
               <div className="flex w-full items-center justify-between gap-2">
                 {appVersion && (
-                  <span className="text-[10px] text-muted-foreground/40 font-medium select-none">
-                    v{appVersion}
-                  </span>
+                  <div className="flex items-center gap-2 select-none">
+                    <span className="text-[10px] text-muted-foreground/40 font-medium">
+                      v{appVersion}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/20">•</span>
+                    <button
+                      type="button"
+                      disabled={checkingUpdate}
+                      onClick={() => handleCheckUpdate(true)}
+                      className="text-[10px] text-primary/60 hover:text-primary active:scale-[0.98] transition-all font-bold cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {checkingUpdate ? (
+                        <>
+                          <Loader2 className="size-2.5 animate-spin" />
+                          <span>{t.checkingUpdate}</span>
+                        </>
+                      ) : (
+                        <span>{t.checkUpdateBtn}</span>
+                      )}
+                    </button>
+                  </div>
                 )}
                 <div className="flex gap-2 justify-end ml-auto">
                   <Button
@@ -2605,6 +2720,73 @@ function App() {
                 className="h-8 px-4 rounded-lg text-xs font-bold bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white border border-red-600/30 hover:shadow-lg hover:shadow-red-500/25 active:scale-[0.98] transition-all duration-200"
               >
                 {lang === "zh" ? "确认删除" : "Confirm"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Dialog Modal */}
+      <Dialog open={showUpdateDialog} onOpenChange={(open) => !open && setShowUpdateDialog(false)}>
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]">
+              <Compass className="size-5 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <DialogHeader className="gap-1.5 pb-0">
+                <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                  {t.updateAvailableTitle}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground pt-1 leading-relaxed">
+                  {t.updateDialogDesc.replace("{version}", newVersionInfo?.version || "")}
+                </DialogDescription>
+              </DialogHeader>
+              
+              {/* Version Comparison Badges */}
+              <div className="flex items-center gap-2 mt-3 select-none">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted border border-border/40 text-muted-foreground font-semibold">
+                  v{appVersion}
+                </span>
+                <span className="text-[10px] text-muted-foreground/30">→</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/15 border border-primary/20 text-primary font-bold">
+                  {newVersionInfo?.version}
+                </span>
+              </div>
+
+              {/* Changelog list */}
+              {newVersionInfo?.changelog && (
+                <div className="mt-4 space-y-1.5">
+                  <span className="text-[10px] font-bold text-muted-foreground/80">{t.changelogLabel}</span>
+                  <div className="max-h-36 overflow-y-auto p-3 rounded-xl border border-border/30 bg-muted/10 text-[11px] font-mono text-muted-foreground leading-normal whitespace-pre-wrap select-text">
+                    {newVersionInfo.changelog}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4 border-t border-border/30 mt-6">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowUpdateDialog(false)}
+                className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 text-muted-foreground hover:text-foreground active:scale-[0.98] transition-all duration-200 cursor-pointer"
+              >
+                {t.remindMeLaterBtn}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  if (newVersionInfo?.url) {
+                    handleOpenUrl(newVersionInfo.url);
+                  }
+                  setShowUpdateDialog(false);
+                }}
+                className="h-8 px-4 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/95 shadow-sm shadow-primary/10 active:scale-[0.98] transition-all duration-200 cursor-pointer"
+              >
+                {t.downloadNowBtn}
               </Button>
             </div>
           </DialogFooter>
