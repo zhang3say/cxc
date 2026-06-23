@@ -470,7 +470,7 @@ function App() {
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("");
   const [showUpdateDialog, setShowUpdateDialog] = useState<boolean>(false);
-  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "latest" | "error">("idle");
   const [newVersionInfo, setNewVersionInfo] = useState<{
     version: string;
     url: string;
@@ -653,8 +653,9 @@ function App() {
     const activeVersion = currentVer || appVersion;
     if (!activeVersion) return;
     
+    console.log("[CXC-Update] Starting update check from frontend. Version:", activeVersion, "manual:", manual);
     if (manual) {
-      setCheckingUpdate(true);
+      setUpdateStatus("checking");
     }
     try {
       const data = await invoke<{
@@ -663,29 +664,40 @@ function App() {
         changelog: string;
       }>("check_update");
       
+      console.log("[CXC-Update] Received data from backend:", data);
+      
       const hasUpdate = compareVersions(activeVersion, data.version);
       if (hasUpdate) {
+        console.log("[CXC-Update] New version available:", data.version);
         setNewVersionInfo({
           version: data.version,
           url: data.url,
           changelog: data.changelog || "",
         });
+        if (manual) {
+          setUpdateStatus("idle");
+        }
         setShowUpdateDialog(true);
       } else {
+        console.log("[CXC-Update] Current version is up-to-date.");
         if (manual) {
+          setUpdateStatus("latest");
           setToastMessage(t.updateNotAvailable);
-          setTimeout(() => setToastMessage(null), 2500);
+          setTimeout(() => {
+            setUpdateStatus("idle");
+            setToastMessage(null);
+          }, 3000);
         }
       }
     } catch (err) {
-      console.error("Check update failed:", err);
+      console.error("[CXC-Update] Check update failed with error:", err);
       if (manual) {
+        setUpdateStatus("error");
         setToastMessage(t.updateFailed);
-        setTimeout(() => setToastMessage(null), 2500);
-      }
-    } finally {
-      if (manual) {
-        setCheckingUpdate(false);
+        setTimeout(() => {
+          setUpdateStatus("idle");
+          setToastMessage(null);
+        }, 3000);
       }
     }
   };
@@ -2210,21 +2222,31 @@ function App() {
                       v{appVersion}
                     </span>
                     <span className="text-[10px] text-muted-foreground/20">•</span>
-                    <button
-                      type="button"
-                      disabled={checkingUpdate}
-                      onClick={() => handleCheckUpdate(true)}
-                      className="text-[10px] text-primary/60 hover:text-primary active:scale-[0.98] transition-all font-bold cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                    >
-                      {checkingUpdate ? (
-                        <>
-                          <Loader2 className="size-2.5 animate-spin" />
-                          <span>{t.checkingUpdate}</span>
-                        </>
-                      ) : (
-                        <span>{t.checkUpdateBtn}</span>
-                      )}
-                    </button>
+                    
+                    {updateStatus === "checking" ? (
+                      <span className="text-[10px] text-primary/70 font-bold flex items-center gap-1">
+                        <Loader2 className="size-2.5 animate-spin" />
+                        {t.checkingUpdate}
+                      </span>
+                    ) : updateStatus === "latest" ? (
+                      <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                        <Check className="size-3 stroke-[3]" />
+                        {t.updateNotAvailable}
+                      </span>
+                    ) : updateStatus === "error" ? (
+                      <span className="text-[10px] text-red-500 font-bold flex items-center gap-1 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                        <AlertTriangle className="size-3" />
+                        {t.updateFailed}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleCheckUpdate(true)}
+                        className="text-[10px] text-primary/60 hover:text-primary active:scale-[0.98] transition-all font-bold cursor-pointer flex items-center gap-1"
+                      >
+                        {t.checkUpdateBtn}
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="flex gap-2 justify-end ml-auto">

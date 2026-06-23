@@ -265,19 +265,31 @@ struct UpdateInfo {
 
 #[tauri::command]
 async fn check_update() -> Result<UpdateInfo, String> {
+    println!("[CXC-Update] Starting update check...");
     let client = reqwest::Client::builder()
         .user_agent("CXC-Desktop-App")
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err_msg = format!("Failed to build HTTP client: {}", e);
+            println!("[CXC-Update] Error: {}", err_msg);
+            err_msg
+        })?;
 
     let res = client
         .get("https://api.github.com/repos/zhang3say/cxc/releases/latest")
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err_msg = format!("HTTP request failed: {}", e);
+            println!("[CXC-Update] Error: {}", err_msg);
+            err_msg
+        })?;
 
+    println!("[CXC-Update] Response received with status: {}", res.status());
     if !res.status().is_success() {
-        return Err(format!("Request failed with status: {}", res.status()));
+        let err_msg = format!("Request failed with status: {}", res.status());
+        println!("[CXC-Update] Error: {}", err_msg);
+        return Err(err_msg);
     }
 
     #[derive(serde::Deserialize)]
@@ -287,7 +299,13 @@ async fn check_update() -> Result<UpdateInfo, String> {
         body: Option<String>,
     }
 
-    let release: GithubRelease = res.json().await.map_err(|e| e.to_string())?;
+    let release: GithubRelease = res.json().await.map_err(|e| {
+        let err_msg = format!("Failed to parse JSON: {}", e);
+        println!("[CXC-Update] Error: {}", err_msg);
+        err_msg
+    })?;
+
+    println!("[CXC-Update] Found remote version: {}", release.tag_name);
 
     Ok(UpdateInfo {
         version: release.tag_name,
