@@ -256,6 +256,46 @@ fn get_app_version(app_handle: tauri::AppHandle) -> String {
     app_handle.package_info().version.to_string()
 }
 
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    url: String,
+    changelog: String,
+}
+
+#[tauri::command]
+async fn check_update() -> Result<UpdateInfo, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("CXC-Desktop-App")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .get("https://api.github.com/repos/zhang3say/cxc/releases/latest")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Request failed with status: {}", res.status()));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct GithubRelease {
+        tag_name: String,
+        html_url: String,
+        body: Option<String>,
+    }
+
+    let release: GithubRelease = res.json().await.map_err(|e| e.to_string())?;
+
+    Ok(UpdateInfo {
+        version: release.tag_name,
+        url: release.html_url,
+        changelog: release.body.unwrap_or_default(),
+    })
+}
+
 fn do_switch_provider(
     app_handle: &tauri::AppHandle,
     name: String,
@@ -440,7 +480,8 @@ pub fn run() {
             test_all_providers,
             fetch_models,
             save_settings,
-            get_app_version
+            get_app_version,
+            check_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -657,16 +657,18 @@ function App() {
       setCheckingUpdate(true);
     }
     try {
-      const res = await fetch("https://api.github.com/repos/zhang3say/cxc/releases/latest");
-      if (!res.ok) throw new Error("Network response was not ok");
-      const data = await res.json();
+      const data = await invoke<{
+        version: string;
+        url: string;
+        changelog: string;
+      }>("check_update");
       
-      const hasUpdate = compareVersions(activeVersion, data.tag_name);
+      const hasUpdate = compareVersions(activeVersion, data.version);
       if (hasUpdate) {
         setNewVersionInfo({
-          version: data.tag_name,
-          url: data.html_url,
-          changelog: data.body || "",
+          version: data.version,
+          url: data.url,
+          changelog: data.changelog || "",
         });
         setShowUpdateDialog(true);
       } else {
@@ -2795,7 +2797,7 @@ function App() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/60 dark:border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_40px_rgba(59,130,246,0.04)] pl-3 pr-4 py-2.5 rounded-full text-[11px] font-bold text-foreground/90 flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 duration-200 select-none">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[9999] bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/60 dark:border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_40px_rgba(59,130,246,0.04)] pl-3 pr-4 py-2.5 rounded-full text-[11px] font-bold text-foreground/90 flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 duration-200 select-none">
           <div className="flex items-center justify-center size-5 rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0 shadow-sm">
             <Check className="size-3 stroke-[3]" />
           </div>
