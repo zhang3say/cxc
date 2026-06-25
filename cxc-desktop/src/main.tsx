@@ -142,14 +142,11 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         return ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-5-sonnet", "llama3"];
       }
       if (cmd === "save_settings") {
-        const { source, customDir, targetTool } = args;
-        if (targetTool === "codex") {
-          mockConfig.codex_source = source;
-          mockConfig.codex_custom_dir = customDir;
-        } else {
-          mockConfig.claude_source = source;
-          mockConfig.claude_custom_dir = customDir;
-        }
+        const { source, customDir, claudeCustomDir } = args;
+        mockConfig.codex_source = source;
+        mockConfig.claude_source = source;
+        mockConfig.codex_custom_dir = customDir;
+        mockConfig.claude_custom_dir = claudeCustomDir;
         return { ...mockConfig };
       }
       return null;

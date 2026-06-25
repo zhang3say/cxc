@@ -38,7 +38,7 @@ A persistent quick-access menu in the operating system's notification area. It a
 
 ## Codex Source (Codex 来源)
 
-The execution environment of the Target Tool (specifically Codex). It determines where CXC reads and writes the configuration. On Windows, it can be set to either "app" (native Windows Desktop App) or "wsl" (WSL CLI).
+The globally selected execution environment for configuration writes. CXC mirrors this App / WSL choice across Codex and Claude CLI, so both adapters resolve their target config files using the same source. On Windows, it can be set to either "app" (native Windows Desktop App) or "wsl" (WSL CLI).
 
 ## Codex Custom Directory (Codex 自定义目录)
 
@@ -50,9 +50,8 @@ A Target Tool adapter that manages Claude CLI configuration. Unlike Codex which 
 
 ## Claude Source (Claude 来源)
 
-Similar to Codex Source, determines which Claude CLI configuration to modify. On Windows, can be "app" (native Windows config at `%USERPROFILE%\.claude\`) or "wsl" (WSL config at `~/.claude/`). On Linux/WSL, "wsl" means local config, "app" means Windows host config accessed via `/mnt/c/`.
+Mirrors the same global App / WSL source choice used by Codex. It determines which Claude CLI configuration to modify. On Windows, it can be "app" (native Windows config at `%USERPROFILE%\.claude\`) or "wsl" (WSL config at `~/.claude/`). On Linux/WSL, "wsl" means local config, "app" means Windows host config accessed via `/mnt/c/`.
 
 ## Claude Models Configuration (Claude 模型配置)
 
 An optional multi-model configuration for Claude CLI providers. Allows mapping different model tiers (Opus, Sonnet, Haiku, Fable) to specific model IDs. When not configured, all tiers fall back to the Provider's primary `model` field. This enables providers like DeepSeek to map high-performance models (v4-pro) to Opus/Sonnet and fast models (v4-flash) to Haiku, matching the official provider recommendations.
-

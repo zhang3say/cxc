@@ -68,14 +68,14 @@ interface Config {
   // 旧字段（向后兼容，已废弃）
   active: string;
   providers: Provider[];
-  // 新字段：按 Target Tool 分开存储
+  // 新字段：Provider 仍按 Target Tool 分开存储
   codex_active_app?: string;
   codex_active_wsl?: string;
   codex_providers: Provider[];
   claude_active_app?: string;
   claude_active_wsl?: string;
   claude_providers: Provider[];
-  // 设置字段
+  // 设置字段：source 会被同步到两个字段里，custom_dir 仍各自独立
   codex_source?: string;
   codex_custom_dir?: string;
   claude_source?: string;
@@ -115,13 +115,14 @@ const locales = {
     tryAlteringSearch: "尝试修改您的搜索过滤条件",
     createFirst: "请配置您的第一个 API 中转节点以开始使用。",
     settingsTitle: "CXC 系统设置",
-    settingsDesc: "配置 Codex 和 Claude CLI 配置文件写入的相关设置。",
+    settingsDesc: "统一配置 App / WSL 全局写入环境，并分别管理 Codex 与 Claude CLI 的自定义目录。",
+    globalSourceLabel: "全局写入环境",
     codexSourceLabel: "Codex 来源配置",
     claudeSourceLabel: "Claude CLI 来源配置",
     desktopAppOption: "Desktop 客户端",
-    desktopAppDesc: "Windows 客户端 (~/.codex)",
+    desktopAppDesc: "写入 Windows / Desktop 侧配置",
     wslCliOption: "WSL 命令行",
-    wslCliDesc: "WSL 子系统环境路径",
+    wslCliDesc: "写入 WSL 侧配置",
     customDirLabel: "Codex 自定义目录",
     claudeCustomDirLabel: "Claude CLI 自定义目录",
     wslRecommended: "WSL 环境推荐",
@@ -220,13 +221,14 @@ const locales = {
     tryAlteringSearch: "Try altering your search filters",
     createFirst: "Create a new provider to get started.",
     settingsTitle: "CXC System Settings",
-    settingsDesc: "Configure global CXC settings and Target Tool sources.",
+    settingsDesc: "Configure one global App/WSL write target plus per-tool custom directories for Codex and Claude CLI.",
+    globalSourceLabel: "Global Write Environment",
     codexSourceLabel: "Codex Source (Codex 来源)",
     claudeSourceLabel: "Claude CLI Source (Claude CLI 来源)",
     desktopAppOption: "Desktop App",
-    desktopAppDesc: "Desktop version (~/.codex)",
+    desktopAppDesc: "Write to Windows/Desktop-side configs",
     wslCliOption: "WSL CLI",
-    wslCliDesc: "WSL environment paths",
+    wslCliDesc: "Write to WSL-side configs",
     customDirLabel: "Codex Custom Directory (自定义目录)",
     claudeCustomDirLabel: "Claude CLI Custom Directory",
     wslRecommended: "Recommended for WSL",
@@ -402,9 +404,14 @@ claude_active_wsl: "ClaudeAPI",
   ],
   codex_source: "app",
   codex_custom_dir: "",
-  claude_source: "wsl",
+  claude_source: "app",
   claude_custom_dir: "",
 };
+
+function getGlobalSource(config?: Config | null): "app" | "wsl" {
+  const source = config?.codex_source || config?.claude_source || "wsl";
+  return source === "app" ? "app" : "wsl";
+}
 
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -463,9 +470,8 @@ function App() {
     }
     return "codex";
   });
-  const [settingsSource, setSettingsSource] = useState<string>("app");
+  const [settingsSource, setSettingsSource] = useState<string>("wsl");
   const [settingsCustomDir, setSettingsCustomDir] = useState<string>("");
-  const [claudeSource, setClaudeSource] = useState<string>("wsl");
   const [claudeCustomDir, setClaudeCustomDir] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("");
@@ -776,18 +782,16 @@ function App() {
       const cfg = await invoke<Config>("get_config");
       setConfig(cfg);
       // Initialize settings from loaded config
-      setSettingsSource(cfg.codex_source || "app");
+      setSettingsSource(getGlobalSource(cfg));
       setSettingsCustomDir(cfg.codex_custom_dir || "");
-      setClaudeSource(cfg.claude_source || "wsl");
       setClaudeCustomDir(cfg.claude_custom_dir || "");
     } catch (e: any) {
       const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
       if (!isTauri) {
         // Fallback to mock config in browser
         setConfig(mockConfig);
-        setSettingsSource(mockConfig.codex_source || "app");
+        setSettingsSource(getGlobalSource(mockConfig));
         setSettingsCustomDir(mockConfig.codex_custom_dir || "");
-        setClaudeSource(mockConfig.claude_source || "wsl");
         setClaudeCustomDir(mockConfig.claude_custom_dir || "");
       } else {
         setError(e.toString());
@@ -808,13 +812,12 @@ function App() {
         const updated = {
           ...config,
         };
+        const currentSource = getGlobalSource(config);
         if (targetTool === "codex") {
-          const codexSource = config.codex_source || "app";
-          if (codexSource === "wsl") updated.codex_active_wsl = name;
+          if (currentSource === "wsl") updated.codex_active_wsl = name;
           else updated.codex_active_app = name;
         } else {
-          const claudeSource = config.claude_source || "wsl";
-          if (claudeSource === "app") updated.claude_active_app = name;
+          if (currentSource === "app") updated.claude_active_app = name;
           else updated.claude_active_wsl = name;
         }
         setConfig(updated);
@@ -991,37 +994,18 @@ function App() {
     if (!config) return;
     try {
       setError(null);
-      if (targetTool === "codex") {
-        const currentSrc = config.codex_source || "app";
-        const newSource = currentSrc === "wsl" ? "app" : "wsl";
-        
-        const updatedCfg = await invoke<Config>("save_settings", {
-          targetTool,
-          source: newSource,
-          customDir: config.codex_custom_dir || "",
-          claudeSource: config.claude_source || "wsl",
-          claudeCustomDir: config.claude_custom_dir || "",
-        });
-        setConfig(updatedCfg);
-        setSettingsSource(newSource);
-        setClaudeSource(updatedCfg.claude_source || "wsl");
-        showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
-      } else {
-        const currentSrc = config.claude_source || "wsl";
-        const newSource = currentSrc === "wsl" ? "app" : "wsl";
-        
-        const updatedCfg = await invoke<Config>("save_settings", {
-          targetTool,
-          source: config.codex_source || "app",
-          customDir: config.codex_custom_dir || "",
-          claudeSource: newSource,
-          claudeCustomDir: config.claude_custom_dir || "",
-        });
-        setConfig(updatedCfg);
-        setSettingsSource(updatedCfg.codex_source || "app");
-        setClaudeSource(newSource);
-        showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
-      }
+      const currentSrc = getGlobalSource(config);
+      const newSource = currentSrc === "wsl" ? "app" : "wsl";
+
+      const updatedCfg = await invoke<Config>("save_settings", {
+        targetTool,
+        source: newSource,
+        customDir: config.codex_custom_dir || "",
+        claudeCustomDir: config.claude_custom_dir || "",
+      });
+      setConfig(updatedCfg);
+      setSettingsSource(newSource);
+      showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
     } catch (e: any) {
       setError(e.toString());
     }
@@ -1143,17 +1127,14 @@ function App() {
     try {
       setSavingSettings(true);
       setError(null);
-      const finalSource = targetTool === "codex" ? settingsSource : claudeSource;
       const updatedCfg = await invoke<Config>("save_settings", {
         targetTool,
-        source: targetTool === "codex" ? finalSource : (config?.codex_source || "app"),
-        customDir: targetTool === "codex" ? settingsCustomDir : (config?.codex_custom_dir || ""),
-        claudeSource: targetTool === "claude" ? finalSource : (config?.claude_source || "wsl"),
-        claudeCustomDir: targetTool === "claude" ? claudeCustomDir : (config?.claude_custom_dir || ""),
+        source: settingsSource,
+        customDir: settingsCustomDir,
+        claudeCustomDir,
       });
       setConfig(updatedCfg);
-      setSettingsSource(updatedCfg.codex_source || "app");
-      setClaudeSource(updatedCfg.claude_source || "wsl");
+      setSettingsSource(getGlobalSource(updatedCfg));
       setShowSettings(false);
     } catch (e: any) {
       setError(e.toString());
@@ -1176,10 +1157,11 @@ function App() {
   const currentProviders = config
     ? (targetTool === "codex" ? config.codex_providers : config.claude_providers) ?? []
     : [];
+  const currentSource = getGlobalSource(config);
   const currentActive = config
     ? (targetTool === "codex" 
-        ? ((config.codex_source || "app") === "wsl" ? config.codex_active_wsl : config.codex_active_app) 
-        : ((config.claude_source || "wsl") === "app" ? config.claude_active_app : config.claude_active_wsl)) ?? ""
+        ? (currentSource === "wsl" ? config.codex_active_wsl : config.codex_active_app)
+        : (currentSource === "app" ? config.claude_active_app : config.claude_active_wsl)) ?? ""
     : "";
 
   function getProtectedSources(name: string): string[] {
@@ -1372,10 +1354,6 @@ function App() {
         </div>
       );
     };
-
-    const currentSource = config
-      ? (targetTool === "codex" ? config.codex_source : config.claude_source)
-      : (targetTool === "codex" ? "app" : "wsl");
 
     return (
       <>
@@ -1977,134 +1955,85 @@ function App() {
               {t.settingsTitle}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              {targetTool === "codex" ? "配置 Codex 配置文件写入的相关设置。" : "配置 Claude CLI 配置文件写入的相关设置。"}
+              {t.settingsDesc}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSaveSettings} className="space-y-4">
-            {targetTool === "codex" ? (
-              <>
-                {/* Codex Configuration */}
-                <div className="space-y-2">
-                  <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
-                    {t.codexSourceLabel}
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setSettingsSource("app")}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                        settingsSource === "app"
-                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
-                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-xs font-bold block">{t.desktopAppOption}</span>
-                        <span className="text-[10px] text-muted-foreground block mt-0.5">{t.desktopAppDesc}</span>
-                      </div>
-                      {settingsSource === "app" && <Check className="size-4 shrink-0 text-primary" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setSettingsSource("wsl")}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                        settingsSource === "wsl"
-                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
-                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-xs font-bold block">{t.wslCliOption}</span>
-                        <span className="text-[10px] text-muted-foreground block mt-0.5">{t.wslCliDesc}</span>
-                      </div>
-                      {settingsSource === "wsl" && <Check className="size-4 shrink-0 text-primary" />}
-                    </button>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                {t.globalSourceLabel}
+              </Label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setSettingsSource("app")}
+                  className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
+                    settingsSource === "app"
+                      ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
+                      : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">{t.desktopAppOption}</span>
+                    <span className="text-[10px] text-muted-foreground block mt-0.5">{t.desktopAppDesc}</span>
                   </div>
-                </div>
+                  {settingsSource === "app" && <Check className="size-4 shrink-0 text-primary" />}
+                </button>
 
-                {/* Codex custom directory */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="settings-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
-                    <span>{t.customDirLabel}</span>
-                    {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
-                  </Label>
-                  <Input
-                    id="settings-custom-dir"
-                    type="text"
-                    value={settingsCustomDir}
-                    onChange={(e) => setSettingsCustomDir(e.target.value)}
-                    placeholder={settingsSource === "wsl" ? t.wslPlaceholder : t.appPlaceholder}
-                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
-                  />
-                  <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
-                    {settingsSource === "wsl" ? t.wslNote : t.appNote}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Claude CLI Configuration */}
-                <div className="space-y-2">
-                  <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
-                    {t.claudeSourceLabel}
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setClaudeSource("wsl")}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                        claudeSource === "wsl"
-                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
-                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-xs font-bold block">{t.wslCliOption}</span>
-                        <span className="text-[10px] text-muted-foreground block mt-0.5">WSL 环境 (~/.claude)</span>
-                      </div>
-                      {claudeSource === "wsl" && <Check className="size-4 shrink-0 text-primary" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setClaudeSource("app")}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                        claudeSource === "app"
-                          ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
-                          : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-xs font-bold block">{t.desktopAppOption}</span>
-                        <span className="text-[10px] text-muted-foreground block mt-0.5">Windows 客户端 (~/.claude)</span>
-                      </div>
-                      {claudeSource === "app" && <Check className="size-4 shrink-0 text-primary" />}
-                    </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSource("wsl")}
+                  className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.98] ${
+                    settingsSource === "wsl"
+                      ? "border-primary/60 bg-primary/[0.04] text-primary shadow-sm shadow-primary/5"
+                      : "border-border/30 bg-muted/10 text-foreground hover:bg-muted/20"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">{t.wslCliOption}</span>
+                    <span className="text-[10px] text-muted-foreground block mt-0.5">{t.wslCliDesc}</span>
                   </div>
-                </div>
+                  {settingsSource === "wsl" && <Check className="size-4 shrink-0 text-primary" />}
+                </button>
+              </div>
+            </div>
 
-                {/* Claude custom directory */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="claude-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
-                    <span>{t.claudeCustomDirLabel}</span>
-                    {claudeSource === "app" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
-                  </Label>
-                  <Input
-                    id="claude-custom-dir"
-                    type="text"
-                    value={claudeCustomDir}
-                    onChange={(e) => setClaudeCustomDir(e.target.value)}
-                    placeholder={claudeSource === "app" ? t.claudeWslPlaceholder : t.appPlaceholder}
-                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
-                  />
-                  <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
-                    {claudeSource === "app" ? t.claudeWslNote : t.claudeAppNote}
-                  </p>
-                </div>
-              </>
-            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="settings-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
+                <span>{t.customDirLabel}</span>
+                {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
+              </Label>
+              <Input
+                id="settings-custom-dir"
+                type="text"
+                value={settingsCustomDir}
+                onChange={(e) => setSettingsCustomDir(e.target.value)}
+                placeholder={settingsSource === "wsl" ? t.wslPlaceholder : t.appPlaceholder}
+                className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
+              />
+              <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
+                {settingsSource === "wsl" ? t.wslNote : t.appNote}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="claude-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
+                <span>{t.claudeCustomDirLabel}</span>
+                {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
+              </Label>
+              <Input
+                id="claude-custom-dir"
+                type="text"
+                value={claudeCustomDir}
+                onChange={(e) => setClaudeCustomDir(e.target.value)}
+                placeholder={settingsSource === "wsl" ? t.claudeWslPlaceholder : t.appPlaceholder}
+                className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
+              />
+              <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
+                {settingsSource === "wsl" ? t.claudeWslNote : t.claudeAppNote}
+              </p>
+            </div>
 
             {/* General Settings (Theme, Language, Reload Config) */}
             <div className="border-t border-border/30 pt-4 mt-5 space-y-4">

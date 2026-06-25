@@ -33,8 +33,8 @@ impl ClaudeAdapter {
 
     fn resolve_claude_dir(cfg: Option<&crate::config::Config>) -> Result<PathBuf, TargetError> {
         let source = cfg
-            .and_then(|c| c.claude_source.as_deref())
-            .unwrap_or("wsl");
+            .map(crate::config::effective_source)
+            .unwrap_or(crate::config::SOURCE_WSL);
 
         let custom_dir = cfg.and_then(|c| {
             if !c.claude_custom_dir.is_empty() {

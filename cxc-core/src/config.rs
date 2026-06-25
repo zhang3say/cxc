@@ -7,6 +7,8 @@ use std::cell::RefCell;
 
 const CONFIG_FILE_NAME: &str = "config.yaml";
 const CONFIG_DIR_NAME: &str = "cxc";
+pub const SOURCE_APP: &str = "app";
+pub const SOURCE_WSL: &str = "wsl";
 
 thread_local! {
     static TEST_CONFIG_DIR: RefCell<Option<PathBuf>> = RefCell::new(None);
@@ -122,6 +124,44 @@ pub struct Config {
     pub providers: Vec<Provider>,
 }
 
+fn normalize_source(source: &str) -> &'static str {
+    if source == SOURCE_APP {
+        SOURCE_APP
+    } else {
+        SOURCE_WSL
+    }
+}
+
+pub fn effective_source(cfg: &Config) -> &'static str {
+    if let Some(source) = cfg.codex_source.as_deref() {
+        return normalize_source(source);
+    }
+    if let Some(source) = cfg.claude_source.as_deref() {
+        return normalize_source(source);
+    }
+    SOURCE_WSL
+}
+
+pub fn set_global_source(cfg: &mut Config, source: &str) {
+    let source = normalize_source(source);
+    cfg.codex_source = Some(source.to_string());
+    cfg.claude_source = Some(source.to_string());
+}
+
+fn sync_global_source_fields(cfg: &mut Config) -> bool {
+    if cfg.codex_source.is_none() && cfg.claude_source.is_none() {
+        return false;
+    }
+
+    let source = effective_source(cfg);
+    let changed = cfg.codex_source.as_deref() != Some(source)
+        || cfg.claude_source.as_deref() != Some(source);
+    if changed {
+        set_global_source(cfg, source);
+    }
+    changed
+}
+
 pub fn config_path() -> Result<PathBuf, ConfigError> {
     let mut path = if let Some(test_dir) = TEST_CONFIG_DIR.with(|dir| dir.borrow().clone()) {
         test_dir
@@ -175,6 +215,10 @@ pub fn load() -> Result<Config, ConfigError> {
             cfg.claude_active_wsl = cfg.claude_active.clone();
         }
         cfg.claude_active.clear();
+        changed = true;
+    }
+
+    if sync_global_source_fields(&mut cfg) {
         changed = true;
     }
 
@@ -663,6 +707,27 @@ mod tests {
         let loaded = load().unwrap();
         assert_eq!(loaded.codex_active_app, "node-a");
         assert_eq!(loaded.codex_active_wsl, "node-b");
+    }
+
+    #[test]
+    fn test_effective_source_defaults_to_wsl() {
+        let cfg = Config::default();
+        assert_eq!(effective_source(&cfg), SOURCE_WSL);
+    }
+
+    #[test]
+    fn test_load_syncs_global_source_fields() {
+        let (_dir, _path) = setup_test();
+        let cfg = Config {
+            codex_source: Some("app".to_string()),
+            claude_source: Some("wsl".to_string()),
+            ..Config::default()
+        };
+        save(&cfg).unwrap();
+
+        let loaded = load().unwrap();
+        assert_eq!(loaded.codex_source.as_deref(), Some(SOURCE_APP));
+        assert_eq!(loaded.claude_source.as_deref(), Some(SOURCE_APP));
     }
 
     #[test]

@@ -46,15 +46,7 @@ fn edit_provider(
     let mut cfg = config::load().map_err(|e| e.to_string())?;
 
     // Check if the active provider for this target_tool is being edited
-    let current_source = if target_tool == "codex" {
-        cfg.codex_source
-            .clone()
-            .unwrap_or_else(|| "app".to_string())
-    } else {
-        cfg.claude_source
-            .clone()
-            .unwrap_or_else(|| "wsl".to_string())
-    };
+    let current_source = config::effective_source(&cfg).to_string();
     let current_active = config::get_active(&cfg, &target_tool, &current_source)
         .map(|p| p.name.clone())
         .unwrap_or_default();
@@ -173,24 +165,13 @@ async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, 
 
 fn apply_source_settings(
     cfg: &mut Config,
-    target_tool: &str,
     source: &str,
     custom_dir: &str,
-    claude_source: &str,
     claude_custom_dir: &str,
 ) -> Result<(), String> {
-    match target_tool {
-        "codex" => {
-            cfg.codex_source = Some(source.to_string());
-            cfg.codex_custom_dir = custom_dir.to_string();
-        }
-        "claude" => {
-            cfg.claude_source = Some(claude_source.to_string());
-            cfg.claude_custom_dir = claude_custom_dir.to_string();
-        }
-        other => return Err(format!("unsupported target tool \"{}\"", other)),
-    }
-
+    config::set_global_source(cfg, source);
+    cfg.codex_custom_dir = custom_dir.to_string();
+    cfg.claude_custom_dir = claude_custom_dir.to_string();
     Ok(())
 }
 
@@ -200,26 +181,20 @@ fn save_settings(
     target_tool: String,
     source: String,
     custom_dir: String,
-    claude_source: String,
     claude_custom_dir: String,
 ) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     apply_source_settings(
         &mut cfg,
-        &target_tool,
         &source,
         &custom_dir,
-        &claude_source,
         &claude_custom_dir,
     )?;
     config::save(&cfg).map_err(|e| e.to_string())?;
 
-    // Re-apply the active provider only for the target tool whose source setting changed.
+    // Re-apply the active provider only for the target tool that initiated this save.
     if target_tool == "codex" {
-        let codex_src = cfg
-            .codex_source
-            .clone()
-            .unwrap_or_else(|| "app".to_string());
+        let codex_src = config::effective_source(&cfg).to_string();
         if let Some(p) = config::get_active(&cfg, "codex", &codex_src).cloned() {
             let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
             let tc = TargetConfig {
@@ -235,10 +210,7 @@ fn save_settings(
             codex_adapter.write(&tc).map_err(|e| e.to_string())?;
         }
     } else if target_tool == "claude" {
-        let claude_src = cfg
-            .claude_source
-            .clone()
-            .unwrap_or_else(|| "wsl".to_string());
+        let claude_src = config::effective_source(&cfg).to_string();
         if let Some(p) = config::get_active(&cfg, "claude", &claude_src).cloned() {
             let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
             claude_adapter
@@ -348,15 +320,7 @@ fn do_switch_provider(
             .map_err(|e| e.to_string())?;
     }
 
-    let source = if target_tool == "codex" {
-        cfg.codex_source
-            .clone()
-            .unwrap_or_else(|| "app".to_string())
-    } else {
-        cfg.claude_source
-            .clone()
-            .unwrap_or_else(|| "wsl".to_string())
-    };
+    let source = config::effective_source(&cfg).to_string();
 
     config::set_active(&mut cfg, &target_tool, &source, &name).map_err(|e| e.to_string())?;
 
@@ -382,7 +346,7 @@ fn update_tray_menu_with_config(app_handle: &tauri::AppHandle, cfg: &Config) -> 
     let codex_source = cfg
         .codex_source
         .clone()
-        .unwrap_or_else(|| "app".to_string());
+        .unwrap_or_else(|| config::effective_source(cfg).to_string());
     for p in &cfg.codex_providers {
         let is_active = match config::get_active(&cfg, "codex", &codex_source) {
             Some(active_p) => active_p.name == p.name,
@@ -520,41 +484,34 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_source_settings_for_codex_does_not_change_claude() {
+    fn test_apply_source_settings_updates_global_source_to_wsl() {
         let mut cfg = cfg_with_sources();
 
         apply_source_settings(
             &mut cfg,
-            "codex",
             "wsl",
             r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex",
-            "app",
             "C:\\Users\\lee\\.claude",
         )
         .unwrap();
 
         assert_eq!(cfg.codex_source.as_deref(), Some("wsl"));
+        assert_eq!(cfg.claude_source.as_deref(), Some("wsl"));
         assert_eq!(
             cfg.codex_custom_dir,
             r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex"
         );
-        assert_eq!(cfg.claude_source.as_deref(), Some("wsl"));
-        assert_eq!(
-            cfg.claude_custom_dir,
-            r"\\wsl.localhost\Ubuntu\home\lee\.claude"
-        );
+        assert_eq!(cfg.claude_custom_dir, "C:\\Users\\lee\\.claude");
     }
 
     #[test]
-    fn test_apply_source_settings_for_claude_does_not_change_codex() {
+    fn test_apply_source_settings_updates_global_source_to_app() {
         let mut cfg = cfg_with_sources();
 
         apply_source_settings(
             &mut cfg,
-            "claude",
-            "wsl",
-            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex",
             "app",
+            "C:\\Users\\lee\\.codex",
             "C:\\Users\\lee\\.claude",
         )
         .unwrap();

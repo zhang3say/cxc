@@ -14,7 +14,7 @@ CXC is a desktop GUI application for managing multiple API relay endpoint config
 ## Features
 
 - **Intuitive GUI** — Elegant translucent glassmorphism design with a dark mode theme for a premium user experience.
-- **Independent Environments (App / WSL)** — Track the Active Provider independently for Windows Desktop (App) and WSL CLI sources, allowing for seamless context switches.
+- **Global App / WSL Switching** — A single App/WSL toggle now applies globally, while Codex and Claude CLI still keep separate Active Provider records for their App and WSL contexts.
 - **Provider Management** — Easily add, edit, test, delete, and add remarks to providers.
 - **Model Discovery** — Automatically fetch and pick available models from a provider's endpoint instead of typing them manually.
 - **Connectivity Test** — Performs a real API connectivity request (not just a network ping) and measures latency to ensure the provider is functional.
@@ -79,4 +79,3 @@ This repo has been shared as open source on [Linux.do](https://linux.do/).
 ## License
 
 MIT
-
