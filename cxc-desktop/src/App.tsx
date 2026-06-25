@@ -1949,8 +1949,8 @@ function App() {
 
       {/* Settings Dialog Modal (Notion-style Settings) */}
       <Dialog open={showSettings} onOpenChange={(open) => !open && setShowSettings(false)}>
-        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
-          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4">
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
+          <DialogHeader className="gap-1.5 pb-4 border-b border-border/30 mb-4 shrink-0">
             <DialogTitle className="text-base font-bold tracking-tight">
               {t.settingsTitle}
             </DialogTitle>
@@ -1959,9 +1959,10 @@ function App() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveSettings} className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+          <form onSubmit={handleSaveSettings} className="flex flex-col overflow-hidden min-h-0">
+            <div className="space-y-4 overflow-y-auto pr-2 -mr-2 pb-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-border/50 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-border/80">
+              <div className="space-y-2">
+                <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                 {t.globalSourceLabel}
               </Label>
               <div className="grid grid-cols-2 gap-2.5">
@@ -2143,9 +2144,10 @@ function App() {
                   </Button>
                 </div>
               </div>
+              </div>
             </div>
 
-            <DialogFooter className="pt-4 border-t border-border/30 mt-6">
+            <DialogFooter className="pt-4 border-t border-border/30 mt-4 shrink-0">
               <div className="flex w-full items-center justify-between gap-2">
                 {appVersion && (
                   <div className="flex items-center gap-2 select-none">
