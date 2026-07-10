@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues and PRDs live as GitHub issues on `zhang3say/cxc`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs live as GitHub issues on `zhang3say/cxc` (PRs are not treated as a request surface). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
@@ -12,7 +12,7 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Single-context repo — one `CONTEXT.md` + `docs/adr/` at the root. See `docs/agents/domain.md`.
+Single-context repo — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 ## Git 提交规范
 - **会话结束前必须提交 Git**：在一场会话结束前（或单个完整需求开发并校验完成后），必须将所有有意义的改动（如修改代码、更新文档、新增功能或修复 Bug 等）进行一次完整的 Git 提交（commit）。避免在会话中途提交零碎或未经验证的改动。
