@@ -1504,14 +1504,16 @@ function App() {
               className="relative z-10 flex items-center justify-center w-1/3 h-full rounded-[6px] transition-colors duration-200 cursor-pointer"
               title="Grok"
             >
-              <svg className={`size-3.5 transition-all duration-300 ${targetTool === "grok" ? "scale-110 text-foreground" : "opacity-60 text-muted-foreground hover:text-foreground"}`} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 2.5a7.5 7.5 0 110 15 7.5 7.5 0 010-15zm-1.2 3.25h2.4v2.1l1.85-1.05.9 1.55-1.85 1.07 1.85 1.07-.9 1.55-1.85-1.05v2.1h-2.4v-2.1l-1.85 1.05-.9-1.55 1.85-1.07-1.85-1.07.9-1.55 1.85 1.05v-2.1z" fill="url(#grok-gradient-unified)" />
-                <defs>
-                  <linearGradient id="grok-gradient-unified" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#FFFFFF" />
-                    <stop offset="1" stopColor="#9CA3AF" />
-                  </linearGradient>
-                </defs>
+              {/* Grok logo from https://svgl.app/library/grok-light.svg — fill follows theme via currentColor */}
+              <svg
+                className={`size-3.5 transition-all duration-300 ${targetTool === "grok" ? "scale-110 text-foreground" : "opacity-60 text-muted-foreground hover:text-foreground"}`}
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path d="M395.479 633.828L735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792C826.26 494.285 807.561 616.253 724.288 699.996C641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282C896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326C1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916" />
+                <path d="M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668C403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2C533.19 86.9942 367.693 115.465 255.323 228.382C147.234 337.081 113.244 504.215 171.613 646.833C215.216 753.423 143.739 828.818 71.7385 904.916C46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339" />
               </svg>
             </button>
           </div>
