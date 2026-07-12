@@ -47,6 +47,8 @@ pub enum ConfigError {
         target_tool: String,
         sources: String,
     },
+    #[error("Unknown target tool: '{0}' (expected codex, claude, or grok)")]
+    UnknownTargetTool(String),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -113,6 +115,18 @@ pub struct Config {
     #[serde(default)]
     pub claude_custom_dir: String,
 
+    // Grok CLI 配置
+    #[serde(default)]
+    pub grok_active_app: String,
+    #[serde(default)]
+    pub grok_active_wsl: String,
+    #[serde(default)]
+    pub grok_providers: Vec<Provider>,
+    #[serde(default)]
+    pub grok_source: Option<String>,
+    #[serde(default)]
+    pub grok_custom_dir: String,
+
     // 旧字段（向后兼容，迁移后不再保存）
     #[serde(default, skip_serializing)]
     pub codex_active: String,
@@ -139,6 +153,9 @@ pub fn effective_source(cfg: &Config) -> &'static str {
     if let Some(source) = cfg.claude_source.as_deref() {
         return normalize_source(source);
     }
+    if let Some(source) = cfg.grok_source.as_deref() {
+        return normalize_source(source);
+    }
     SOURCE_WSL
 }
 
@@ -146,20 +163,70 @@ pub fn set_global_source(cfg: &mut Config, source: &str) {
     let source = normalize_source(source);
     cfg.codex_source = Some(source.to_string());
     cfg.claude_source = Some(source.to_string());
+    cfg.grok_source = Some(source.to_string());
 }
 
 fn sync_global_source_fields(cfg: &mut Config) -> bool {
-    if cfg.codex_source.is_none() && cfg.claude_source.is_none() {
+    if cfg.codex_source.is_none() && cfg.claude_source.is_none() && cfg.grok_source.is_none() {
         return false;
     }
 
     let source = effective_source(cfg);
     let changed = cfg.codex_source.as_deref() != Some(source)
-        || cfg.claude_source.as_deref() != Some(source);
+        || cfg.claude_source.as_deref() != Some(source)
+        || cfg.grok_source.as_deref() != Some(source);
     if changed {
         set_global_source(cfg, source);
     }
     changed
+}
+
+fn providers_mut<'a>(
+    cfg: &'a mut Config,
+    target_tool: &str,
+) -> Result<&'a mut Vec<Provider>, ConfigError> {
+    match target_tool {
+        "codex" => Ok(&mut cfg.codex_providers),
+        "claude" => Ok(&mut cfg.claude_providers),
+        "grok" => Ok(&mut cfg.grok_providers),
+        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
+    }
+}
+
+fn providers_ref<'a>(
+    cfg: &'a Config,
+    target_tool: &str,
+) -> Result<&'a Vec<Provider>, ConfigError> {
+    match target_tool {
+        "codex" => Ok(&cfg.codex_providers),
+        "claude" => Ok(&cfg.claude_providers),
+        "grok" => Ok(&cfg.grok_providers),
+        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
+    }
+}
+
+fn active_fields_mut<'a>(
+    cfg: &'a mut Config,
+    target_tool: &str,
+) -> Result<(&'a mut String, &'a mut String), ConfigError> {
+    match target_tool {
+        "codex" => Ok((&mut cfg.codex_active_app, &mut cfg.codex_active_wsl)),
+        "claude" => Ok((&mut cfg.claude_active_app, &mut cfg.claude_active_wsl)),
+        "grok" => Ok((&mut cfg.grok_active_app, &mut cfg.grok_active_wsl)),
+        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
+    }
+}
+
+fn active_fields_ref<'a>(
+    cfg: &'a Config,
+    target_tool: &str,
+) -> Result<(&'a String, &'a String), ConfigError> {
+    match target_tool {
+        "codex" => Ok((&cfg.codex_active_app, &cfg.codex_active_wsl)),
+        "claude" => Ok((&cfg.claude_active_app, &cfg.claude_active_wsl)),
+        "grok" => Ok((&cfg.grok_active_app, &cfg.grok_active_wsl)),
+        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
+    }
 }
 
 pub fn config_path() -> Result<PathBuf, ConfigError> {
@@ -264,71 +331,73 @@ fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Resul
 }
 
 pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Result<(), ConfigError> {
-    let providers = if target_tool == "codex" {
-        &mut cfg.codex_providers
-    } else {
-        &mut cfg.claude_providers
-    };
+    let providers = providers_mut(cfg, target_tool)?;
 
     if providers.iter().any(|prov| prov.name == p.name) {
         return Err(ConfigError::ProviderExists(p.name));
     }
     if p.wire_api.is_empty() {
-        p.wire_api = default_wire_api();
+        // Grok 默认 chat_completions，其余工具默认 responses
+        p.wire_api = if target_tool == "grok" {
+            "chat_completions".to_string()
+        } else {
+            default_wire_api()
+        };
     }
     providers.push(p.clone());
     save(cfg)
 }
 
 pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut updated: Provider) -> Result<(), ConfigError> {
-    let (providers, active_app, active_wsl) = if target_tool == "codex" {
-        (&mut cfg.codex_providers, &mut cfg.codex_active_app, &mut cfg.codex_active_wsl)
-    } else {
-        (&mut cfg.claude_providers, &mut cfg.claude_active_app, &mut cfg.claude_active_wsl)
-    };
+    {
+        let providers = providers_mut(cfg, target_tool)?;
 
-    let idx = providers
-        .iter()
-        .position(|prov| prov.name == old_name)
-        .ok_or_else(|| ConfigError::ProviderNotFound(old_name.to_string()))?;
+        let idx = providers
+            .iter()
+            .position(|prov| prov.name == old_name)
+            .ok_or_else(|| ConfigError::ProviderNotFound(old_name.to_string()))?;
 
-    if updated.name != old_name && providers.iter().any(|prov| prov.name == updated.name) {
-        return Err(ConfigError::ProviderExists(updated.name));
+        if updated.name != old_name && providers.iter().any(|prov| prov.name == updated.name) {
+            return Err(ConfigError::ProviderExists(updated.name));
+        }
+
+        if updated.wire_api.is_empty() {
+            updated.wire_api = if target_tool == "grok" {
+                "chat_completions".to_string()
+            } else {
+                default_wire_api()
+            };
+        }
+
+        let existing = &providers[idx];
+        if updated.last_test.is_none() {
+            updated.last_test = existing.last_test;
+        }
+        if updated.latency_ms.is_none() {
+            updated.latency_ms = existing.latency_ms;
+        }
+        if updated.last_ok.is_none() {
+            updated.last_ok = existing.last_ok;
+        }
+
+        providers[idx] = updated.clone();
     }
 
-    if updated.wire_api.is_empty() {
-        updated.wire_api = default_wire_api();
-    }
-
-    let existing = &providers[idx];
-    if updated.last_test.is_none() {
-        updated.last_test = existing.last_test;
-    }
-    if updated.latency_ms.is_none() {
-        updated.latency_ms = existing.latency_ms;
-    }
-    if updated.last_ok.is_none() {
-        updated.last_ok = existing.last_ok;
-    }
-
-    providers[idx] = updated.clone();
-
-    if *active_app == old_name {
-        *active_app = updated.name.clone();
-    }
-    if *active_wsl == old_name {
-        *active_wsl = updated.name.clone();
+    {
+        let (active_app, active_wsl) = active_fields_mut(cfg, target_tool)?;
+        if *active_app == old_name {
+            *active_app = updated.name.clone();
+        }
+        if *active_wsl == old_name {
+            *active_wsl = updated.name.clone();
+        }
     }
 
     save(cfg)
 }
 
 pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Result<(), ConfigError> {
-    let (providers, active_app, active_wsl) = if target_tool == "codex" {
-        (&mut cfg.codex_providers, &cfg.codex_active_app, &cfg.codex_active_wsl)
-    } else {
-        (&mut cfg.claude_providers, &cfg.claude_active_app, &cfg.claude_active_wsl)
-    };
+    let (active_app, active_wsl) = active_fields_ref(cfg, target_tool)?;
 
     let mut active_sources = Vec::new();
     if *active_app == name {
@@ -345,6 +414,8 @@ pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Resul
             sources: active_sources.join(", "),
         });
     }
+
+    let providers = providers_mut(cfg, target_tool)?;
     let idx = providers
         .iter()
         .position(|prov| prov.name == name)
@@ -355,51 +426,35 @@ pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Resul
 }
 
 pub fn set_active(cfg: &mut Config, target_tool: &str, source: &str, name: &str) -> Result<(), ConfigError> {
-    let providers = if target_tool == "codex" { &cfg.codex_providers } else { &cfg.claude_providers };
-    if !providers.iter().any(|prov| prov.name == name) {
-        return Err(ConfigError::ProviderNotFound(name.to_string()));
+    {
+        let providers = providers_ref(cfg, target_tool)?;
+        if !providers.iter().any(|prov| prov.name == name) {
+            return Err(ConfigError::ProviderNotFound(name.to_string()));
+        }
     }
-    
-    if target_tool == "codex" {
-        if source == "wsl" {
-            cfg.codex_active_wsl = name.to_string();
-        } else {
-            cfg.codex_active_app = name.to_string();
-        }
+
+    let (active_app, active_wsl) = active_fields_mut(cfg, target_tool)?;
+    if source == "wsl" {
+        *active_wsl = name.to_string();
     } else {
-        if source == "app" {
-            cfg.claude_active_app = name.to_string();
-        } else {
-            cfg.claude_active_wsl = name.to_string();
-        }
+        *active_app = name.to_string();
     }
     save(cfg)
 }
 
 pub fn get_provider<'a>(cfg: &'a Config, target_tool: &str, name: &str) -> Option<&'a Provider> {
-    let providers = if target_tool == "codex" {
-        &cfg.codex_providers
-    } else {
-        &cfg.claude_providers
-    };
+    let providers = providers_ref(cfg, target_tool).ok()?;
     providers.iter().find(|prov| prov.name == name)
 }
 
 pub fn get_active<'a>(cfg: &'a Config, target_tool: &str, source: &str) -> Option<&'a Provider> {
-    let active_name = if target_tool == "codex" {
-        if source == "wsl" { &cfg.codex_active_wsl } else { &cfg.codex_active_app }
-    } else {
-        if source == "app" { &cfg.claude_active_app } else { &cfg.claude_active_wsl }
-    };
+    let (active_app, active_wsl) = active_fields_ref(cfg, target_tool).ok()?;
+    let active_name = if source == "wsl" { active_wsl } else { active_app };
     get_provider(cfg, target_tool, active_name)
 }
 
 pub fn update_test_result(cfg: &mut Config, target_tool: &str, name: &str, latency_ms: i64, ok: bool) -> Result<(), ConfigError> {
-    let providers = if target_tool == "codex" {
-        &mut cfg.codex_providers
-    } else {
-        &mut cfg.claude_providers
-    };
+    let providers = providers_mut(cfg, target_tool)?;
 
     let idx = providers
         .iter()
@@ -721,6 +776,7 @@ mod tests {
         let cfg = Config {
             codex_source: Some("app".to_string()),
             claude_source: Some("wsl".to_string()),
+            grok_source: Some("wsl".to_string()),
             ..Config::default()
         };
         save(&cfg).unwrap();
@@ -728,6 +784,60 @@ mod tests {
         let loaded = load().unwrap();
         assert_eq!(loaded.codex_source.as_deref(), Some(SOURCE_APP));
         assert_eq!(loaded.claude_source.as_deref(), Some(SOURCE_APP));
+        assert_eq!(loaded.grok_source.as_deref(), Some(SOURCE_APP));
+    }
+
+    #[test]
+    fn test_grok_provider_crud_and_default_wire_api() {
+        let (_dir, _path) = setup_test();
+        let mut cfg = Config::default();
+        add_provider(
+            &mut cfg,
+            "grok",
+            Provider {
+                name: "relay".to_string(),
+                base_url: "https://example.com/v1".to_string(),
+                api_key: "sk-xxx".to_string(),
+                model: "grok-4.5".to_string(),
+                wire_api: "".to_string(),
+                remark: None,
+                last_test: None,
+                latency_ms: None,
+                last_ok: None,
+                claude_models: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(cfg.grok_providers.len(), 1);
+        assert_eq!(cfg.grok_providers[0].wire_api, "chat_completions");
+
+        set_active(&mut cfg, "grok", "wsl", "relay").unwrap();
+        assert_eq!(cfg.grok_active_wsl, "relay");
+        assert_eq!(get_active(&cfg, "grok", "wsl").unwrap().name, "relay");
+    }
+
+    #[test]
+    fn test_unknown_target_tool_errors() {
+        let (_dir, _path) = setup_test();
+        let mut cfg = Config::default();
+        let err = add_provider(
+            &mut cfg,
+            "unknown",
+            Provider {
+                name: "x".to_string(),
+                base_url: "https://x.com".to_string(),
+                api_key: "k".to_string(),
+                model: "m".to_string(),
+                wire_api: "".to_string(),
+                remark: None,
+                last_test: None,
+                latency_ms: None,
+                last_ok: None,
+                claude_models: None,
+            },
+        );
+        assert!(matches!(err, Err(ConfigError::UnknownTargetTool(_))));
     }
 
     #[test]

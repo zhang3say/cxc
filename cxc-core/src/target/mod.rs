@@ -1,5 +1,6 @@
 pub mod codex;
 pub mod claude;
+pub mod grok;
 
 use thiserror::Error;
 use std::path::PathBuf;

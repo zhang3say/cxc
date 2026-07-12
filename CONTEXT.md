@@ -2,15 +2,15 @@
 
 ## CXC (Code Cross-Connect)
 
-The project name. A meta-configuration tool that manages API relay endpoint configurations for AI coding tools (Codex, Claude, etc.). It provides a desktop application for users to quickly add, test, and switch API relay endpoints for their AI tools.
+The project name. A meta-configuration tool that manages API relay endpoint configurations for AI coding tools (Codex, Claude, Grok, etc.). It provides a desktop application for users to quickly add, test, and switch API relay endpoints for their AI tools.
 
 ## Provider（中转站）
 
-A named API relay endpoint configuration. Each Provider consists of a `name`, `base_url`, `api_key`, and `model`. Represents one API proxy or relay service that an AI coding tool (Codex, Claude) can be pointed at.
+A named API relay endpoint configuration. Each Provider consists of a `name`, `base_url`, `api_key`, and `model`. Represents one API proxy or relay service that an AI coding tool (Codex, Claude, Grok) can be pointed at.
 
 ## Target Tool（目标工具）
 
-An AI coding tool whose configuration CXC manages. Each Target Tool has a known config file path and format. Currently supported targets: Codex and Claude CLI. CXC writes Provider details into the Target Tool's config file when the user switches providers.
+An AI coding tool whose configuration CXC manages. Each Target Tool has a known config file path and format. Currently supported targets: Codex, Claude CLI, and Grok. CXC writes Provider details into the Target Tool's config file when the user switches providers.
 
 ## Active Provider
 
@@ -38,7 +38,7 @@ A persistent quick-access menu in the operating system's notification area. It a
 
 ## Codex Source (Codex 来源)
 
-The globally selected execution environment for configuration writes. CXC mirrors this App / WSL choice across Codex and Claude CLI, so both adapters resolve their target config files using the same source. On Windows, it can be set to either "app" (native Windows Desktop App) or "wsl" (WSL CLI).
+The globally selected execution environment for configuration writes. CXC mirrors this App / WSL choice across Codex, Claude CLI, and Grok, so all adapters resolve their target config files using the same source. On Windows, it can be set to either "app" (native Windows Desktop App) or "wsl" (WSL CLI).
 
 ## Codex Custom Directory (Codex 自定义目录)
 
@@ -55,3 +55,15 @@ Mirrors the same global App / WSL source choice used by Codex. It determines whi
 ## Claude Models Configuration (Claude 模型配置)
 
 An optional multi-model configuration for Claude CLI providers. Allows mapping different model tiers (Opus, Sonnet, Haiku, Fable) to specific model IDs. When not configured, all tiers fall back to the Provider's primary `model` field. This enables providers like DeepSeek to map high-performance models (v4-pro) to Opus/Sonnet and fast models (v4-flash) to Haiku, matching the official provider recommendations.
+
+## Grok CLI Adapter (Grok CLI 适配器)
+
+A Target Tool adapter that manages Grok CLI configuration. Grok uses a single `~/.grok/config.toml` file: CXC sets `[models].default` and writes `base_url` / `api_key` / `api_backend` under `[model."<model-id>"]`. Unrelated sections (ui, marketplace, skills, etc.) are preserved via `toml_edit`. OAuth `auth.json` is not modified; relay scenarios use the per-model `api_key` field.
+
+## Grok Source (Grok 来源)
+
+Mirrors the same global App / WSL source choice used by Codex and Claude. It determines which Grok configuration directory to modify (`~/.grok`, Windows host path, or WSL UNC path).
+
+## Grok Custom Directory (Grok 自定义目录)
+
+An optional directory path configuration in CXC. Used when the Grok config files reside in a non-standard path, such as inside a specific WSL distribution (accessed via Windows UNC paths like `\\wsl.localhost\Ubuntu\home\<user>\.grok`).

@@ -1,5 +1,7 @@
 use cxc_core::config::{self, Config, Provider};
-use cxc_core::target::{claude::ClaudeAdapter, codex::CodexAdapter, TargetAdapter, TargetConfig};
+use cxc_core::target::{
+    claude::ClaudeAdapter, codex::CodexAdapter, grok::GrokAdapter, TargetAdapter, TargetConfig,
+};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
@@ -52,26 +54,7 @@ fn edit_provider(
         .unwrap_or_default();
 
     if current_active == old_name || current_active == updated.name {
-        // Write updated config to target tool's config file
-        if target_tool == "codex" {
-            let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-            let tc = TargetConfig {
-                base_url: updated.base_url.clone(),
-                api_key: updated.api_key.clone(),
-                model: updated.model.clone(),
-                wire_api: if updated.wire_api.is_empty() {
-                    "responses".to_string()
-                } else {
-                    updated.wire_api.clone()
-                },
-            };
-            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-        } else if target_tool == "claude" {
-            let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-            claude_adapter
-                .write_provider(&updated)
-                .map_err(|e| e.to_string())?;
-        }
+        write_provider_to_target(&cfg, &target_tool, &updated)?;
     }
 
     config::edit_provider(&mut cfg, &target_tool, &old_name, updated).map_err(|e| e.to_string())?;
@@ -105,6 +88,7 @@ async fn test_provider(
     };
 
     let tester = cxc_core::connectivity::Tester::new();
+    // Claude uses Anthropic Messages API; Codex and Grok use OpenAI-compatible chat completions
     let is_claude = target_tool == "claude";
     let res = tester
         .test(&p.base_url, &p.api_key, &p.model, is_claude)
@@ -125,10 +109,11 @@ async fn test_all_providers(
     target_tool: String,
 ) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let providers = if target_tool == "codex" {
-        cfg.codex_providers.clone()
-    } else {
-        cfg.claude_providers.clone()
+    let providers = match target_tool.as_str() {
+        "codex" => cfg.codex_providers.clone(),
+        "claude" => cfg.claude_providers.clone(),
+        "grok" => cfg.grok_providers.clone(),
+        other => return Err(format!("Unknown target tool: {}", other)),
     };
 
     let mut tasks = vec![];
@@ -168,11 +153,60 @@ fn apply_source_settings(
     source: &str,
     custom_dir: &str,
     claude_custom_dir: &str,
+    grok_custom_dir: &str,
 ) -> Result<(), String> {
     config::set_global_source(cfg, source);
     cfg.codex_custom_dir = custom_dir.to_string();
     cfg.claude_custom_dir = claude_custom_dir.to_string();
+    cfg.grok_custom_dir = grok_custom_dir.to_string();
     Ok(())
+}
+
+fn default_wire_api_for_tool(target_tool: &str) -> &'static str {
+    if target_tool == "grok" {
+        "chat_completions"
+    } else {
+        "responses"
+    }
+}
+
+fn provider_to_target_config(p: &Provider, target_tool: &str) -> TargetConfig {
+    TargetConfig {
+        base_url: p.base_url.clone(),
+        api_key: p.api_key.clone(),
+        model: p.model.clone(),
+        wire_api: if p.wire_api.is_empty() {
+            default_wire_api_for_tool(target_tool).to_string()
+        } else {
+            p.wire_api.clone()
+        },
+    }
+}
+
+fn write_provider_to_target(
+    cfg: &Config,
+    target_tool: &str,
+    provider: &Provider,
+) -> Result<(), String> {
+    match target_tool {
+        "codex" => {
+            let adapter = CodexAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
+            adapter
+                .write(&provider_to_target_config(provider, target_tool))
+                .map_err(|e| e.to_string())
+        }
+        "claude" => {
+            let adapter = ClaudeAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
+            adapter.write_provider(provider).map_err(|e| e.to_string())
+        }
+        "grok" => {
+            let adapter = GrokAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
+            adapter
+                .write(&provider_to_target_config(provider, target_tool))
+                .map_err(|e| e.to_string())
+        }
+        other => Err(format!("Unknown target tool: {}", other)),
+    }
 }
 
 #[tauri::command]
@@ -182,6 +216,7 @@ fn save_settings(
     source: String,
     custom_dir: String,
     claude_custom_dir: String,
+    grok_custom_dir: String,
 ) -> Result<Config, String> {
     let mut cfg = config::load().map_err(|e| e.to_string())?;
     apply_source_settings(
@@ -189,34 +224,14 @@ fn save_settings(
         &source,
         &custom_dir,
         &claude_custom_dir,
+        &grok_custom_dir,
     )?;
     config::save(&cfg).map_err(|e| e.to_string())?;
 
     // Re-apply the active provider only for the target tool that initiated this save.
-    if target_tool == "codex" {
-        let codex_src = config::effective_source(&cfg).to_string();
-        if let Some(p) = config::get_active(&cfg, "codex", &codex_src).cloned() {
-            let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-            let tc = TargetConfig {
-                base_url: p.base_url.clone(),
-                api_key: p.api_key.clone(),
-                model: p.model.clone(),
-                wire_api: if p.wire_api.is_empty() {
-                    "responses".to_string()
-                } else {
-                    p.wire_api.clone()
-                },
-            };
-            codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-        }
-    } else if target_tool == "claude" {
-        let claude_src = config::effective_source(&cfg).to_string();
-        if let Some(p) = config::get_active(&cfg, "claude", &claude_src).cloned() {
-            let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-            claude_adapter
-                .write_provider(&p)
-                .map_err(|e| e.to_string())?;
-        }
+    let src = config::effective_source(&cfg).to_string();
+    if let Some(p) = config::get_active(&cfg, &target_tool, &src).cloned() {
+        write_provider_to_target(&cfg, &target_tool, &p)?;
     }
 
     let _ = update_tray_menu_with_config(&app_handle, &cfg);
@@ -297,28 +312,7 @@ fn do_switch_provider(
         .ok_or_else(|| format!("provider \"{}\" not found", name))?
         .clone();
 
-    // Write to target tool config file
-    if target_tool == "codex" {
-        let codex_adapter = CodexAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-
-        let tc = TargetConfig {
-            base_url: p.base_url.clone(),
-            api_key: p.api_key.clone(),
-            model: p.model.clone(),
-            wire_api: if p.wire_api.is_empty() {
-                "responses".to_string()
-            } else {
-                p.wire_api.clone()
-            },
-        };
-
-        codex_adapter.write(&tc).map_err(|e| e.to_string())?;
-    } else if target_tool == "claude" {
-        let claude_adapter = ClaudeAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-        claude_adapter
-            .write_provider(&p)
-            .map_err(|e| e.to_string())?;
-    }
+    write_provider_to_target(&cfg, &target_tool, &p)?;
 
     let source = config::effective_source(&cfg).to_string();
 
@@ -485,6 +479,8 @@ mod tests {
             codex_custom_dir: "C:\\Users\\lee\\.codex".to_string(),
             claude_source: Some("wsl".to_string()),
             claude_custom_dir: r"\\wsl.localhost\Ubuntu\home\lee\.claude".to_string(),
+            grok_source: Some("app".to_string()),
+            grok_custom_dir: r"\\wsl.localhost\Ubuntu\home\lee\.grok".to_string(),
             ..Config::default()
         }
     }
@@ -498,16 +494,22 @@ mod tests {
             "wsl",
             r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex",
             "C:\\Users\\lee\\.claude",
+            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.grok",
         )
         .unwrap();
 
         assert_eq!(cfg.codex_source.as_deref(), Some("wsl"));
         assert_eq!(cfg.claude_source.as_deref(), Some("wsl"));
+        assert_eq!(cfg.grok_source.as_deref(), Some("wsl"));
         assert_eq!(
             cfg.codex_custom_dir,
             r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex"
         );
         assert_eq!(cfg.claude_custom_dir, "C:\\Users\\lee\\.claude");
+        assert_eq!(
+            cfg.grok_custom_dir,
+            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.grok"
+        );
     }
 
     #[test]
@@ -519,6 +521,7 @@ mod tests {
             "app",
             "C:\\Users\\lee\\.codex",
             "C:\\Users\\lee\\.claude",
+            "C:\\Users\\lee\\.grok",
         )
         .unwrap();
 
@@ -526,5 +529,7 @@ mod tests {
         assert_eq!(cfg.codex_custom_dir, "C:\\Users\\lee\\.codex");
         assert_eq!(cfg.claude_source.as_deref(), Some("app"));
         assert_eq!(cfg.claude_custom_dir, "C:\\Users\\lee\\.claude");
+        assert_eq!(cfg.grok_source.as_deref(), Some("app"));
+        assert_eq!(cfg.grok_custom_dir, "C:\\Users\\lee\\.grok");
     }
 }

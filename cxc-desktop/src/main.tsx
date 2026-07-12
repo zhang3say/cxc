@@ -43,12 +43,16 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
     }
   ];
 
-  const mockConfig = {
+  const mockConfig: any = {
     active: "primary-relay",
     providers: mockProviders,
     codex_active: "primary-relay",
+    codex_active_app: "primary-relay",
+    codex_active_wsl: "",
     codex_providers: [...mockProviders],
     claude_active: "fallback-relay",
+    claude_active_app: "fallback-relay",
+    claude_active_wsl: "fallback-relay",
     claude_providers: [
       {
         name: "fallback-relay",
@@ -62,11 +66,34 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         last_ok: true
       }
     ],
+    grok_active_app: "grok-relay",
+    grok_active_wsl: "",
+    grok_providers: [
+      {
+        name: "grok-relay",
+        base_url: "https://lanxiu.cc/v1",
+        api_key: "sk-grok-key-placeholder",
+        model: "grok-4.5",
+        wire_api: "chat_completions",
+        remark: "Grok CLI relay",
+        last_test: "2026-06-12T15:08:00.000Z",
+        latency_ms: 80,
+        last_ok: true
+      }
+    ],
     codex_source: "app",
     codex_custom_dir: "",
     claude_source: "app",
-    claude_custom_dir: ""
+    claude_custom_dir: "",
+    grok_source: "app",
+    grok_custom_dir: ""
   };
+
+  function listForTool(targetTool: string) {
+    if (targetTool === "codex") return mockConfig.codex_providers;
+    if (targetTool === "claude") return mockConfig.claude_providers;
+    return mockConfig.grok_providers;
+  }
 
   (window as any).__TAURI_INTERNALS__ = {
     isMock: true,
@@ -83,16 +110,20 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         const { name, targetTool } = args;
         if (targetTool === "codex") {
           mockConfig.codex_active = name;
-        } else {
+          mockConfig.codex_active_app = name;
+        } else if (targetTool === "claude") {
           mockConfig.claude_active = name;
+          mockConfig.claude_active_app = name;
+        } else {
+          mockConfig.grok_active_app = name;
         }
         return { ...mockConfig };
       }
       if (cmd === "test_provider") {
         const { name, targetTool } = args;
         await new Promise(r => setTimeout(r, 800));
-        const list = targetTool === "codex" ? mockConfig.codex_providers : mockConfig.claude_providers;
-        const p = list.find(x => x.name === name);
+        const list = listForTool(targetTool);
+        const p = list.find((x: any) => x.name === name);
         if (p) {
           p.last_test = new Date().toISOString();
           p.latency_ms = Math.floor(Math.random() * 200) + 30;
@@ -102,7 +133,7 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
       }
       if (cmd === "test_all_providers") {
         const { targetTool } = args;
-        const list = targetTool === "codex" ? mockConfig.codex_providers : mockConfig.claude_providers;
+        const list = listForTool(targetTool);
         for (const p of list) {
           p.last_test = new Date().toISOString();
           p.latency_ms = Math.floor(Math.random() * 200) + 30;
@@ -113,9 +144,11 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
       if (cmd === "delete_provider") {
         const { name, targetTool } = args;
         if (targetTool === "codex") {
-          mockConfig.codex_providers = mockConfig.codex_providers.filter(x => x.name !== name);
+          mockConfig.codex_providers = mockConfig.codex_providers.filter((x: any) => x.name !== name);
+        } else if (targetTool === "claude") {
+          mockConfig.claude_providers = mockConfig.claude_providers.filter((x: any) => x.name !== name);
         } else {
-          mockConfig.claude_providers = mockConfig.claude_providers.filter(x => x.name !== name);
+          mockConfig.grok_providers = mockConfig.grok_providers.filter((x: any) => x.name !== name);
         }
         return { ...mockConfig };
       }
@@ -123,15 +156,17 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         const { provider, targetTool } = args;
         if (targetTool === "codex") {
           mockConfig.codex_providers.push(provider);
-        } else {
+        } else if (targetTool === "claude") {
           mockConfig.claude_providers.push(provider);
+        } else {
+          mockConfig.grok_providers.push(provider);
         }
         return { ...mockConfig };
       }
       if (cmd === "edit_provider") {
         const { oldName, updated, targetTool } = args;
-        const list = targetTool === "codex" ? mockConfig.codex_providers : mockConfig.claude_providers;
-        const idx = list.findIndex(x => x.name === oldName);
+        const list = listForTool(targetTool);
+        const idx = list.findIndex((x: any) => x.name === oldName);
         if (idx !== -1) {
           list[idx] = updated;
         }
@@ -139,14 +174,16 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
       }
       if (cmd === "fetch_models") {
         await new Promise(r => setTimeout(r, 800));
-        return ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-5-sonnet", "llama3"];
+        return ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-5-sonnet", "llama3", "grok-4.5"];
       }
       if (cmd === "save_settings") {
-        const { source, customDir, claudeCustomDir } = args;
+        const { source, customDir, claudeCustomDir, grokCustomDir } = args;
         mockConfig.codex_source = source;
         mockConfig.claude_source = source;
+        mockConfig.grok_source = source;
         mockConfig.codex_custom_dir = customDir;
         mockConfig.claude_custom_dir = claudeCustomDir;
+        mockConfig.grok_custom_dir = grokCustomDir || "";
         return { ...mockConfig };
       }
       return null;

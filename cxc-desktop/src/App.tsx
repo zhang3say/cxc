@@ -64,6 +64,8 @@ interface Provider {
   claude_models?: ClaudeModels;
 }
 
+type TargetTool = "codex" | "claude" | "grok";
+
 interface Config {
   // 旧字段（向后兼容，已废弃）
   active: string;
@@ -75,11 +77,16 @@ interface Config {
   claude_active_app?: string;
   claude_active_wsl?: string;
   claude_providers: Provider[];
-  // 设置字段：source 会被同步到两个字段里，custom_dir 仍各自独立
+  grok_active_app?: string;
+  grok_active_wsl?: string;
+  grok_providers?: Provider[];
+  // 设置字段：source 会被同步到所有工具，custom_dir 仍各自独立
   codex_source?: string;
   codex_custom_dir?: string;
   claude_source?: string;
   claude_custom_dir?: string;
+  grok_source?: string;
+  grok_custom_dir?: string;
 }
 
 const locales = {
@@ -115,7 +122,7 @@ const locales = {
     tryAlteringSearch: "尝试修改您的搜索过滤条件",
     createFirst: "请配置您的第一个 API 中转节点以开始使用。",
     settingsTitle: "CXC 系统设置",
-    settingsDesc: "统一配置 App / WSL 全局写入环境，并分别管理 Codex 与 Claude CLI 的自定义目录。",
+    settingsDesc: "统一配置 App / WSL 全局写入环境，并分别管理 Codex、Claude CLI 与 Grok 的自定义目录。",
     globalSourceLabel: "全局写入环境",
     codexSourceLabel: "Codex 来源配置",
     claudeSourceLabel: "Claude CLI 来源配置",
@@ -125,14 +132,18 @@ const locales = {
     wslCliDesc: "写入 WSL 侧配置",
     customDirLabel: "Codex 自定义目录",
     claudeCustomDirLabel: "Claude CLI 自定义目录",
+    grokCustomDirLabel: "Grok 自定义目录",
     wslRecommended: "WSL 环境推荐",
     wslPlaceholder: "例如: \\\\wsl.localhost\\Ubuntu\\home\\username\\.codex",
     claudeWslPlaceholder: "例如: \\\\wsl.localhost\\Ubuntu\\home\\username\\.claude",
+    grokWslPlaceholder: "例如: \\\\wsl.localhost\\Ubuntu\\home\\username\\.grok",
     appPlaceholder: "可选的自定义路径",
     wslNote: "WSL 注意事项: 请指定 WSL 中 .codex 文件夹的绝对 UNC network路径，以便 Windows 端的 CXC 能够成功写入配置文件。",
     claudeWslNote: "WSL 注意事项: 请指定 WSL 中 .claude 文件夹的绝对 UNC network路径，以便 Windows 端的 CXC 能够成功写入配置文件。",
+    grokWslNote: "WSL 注意事项: 请指定 WSL 中 .grok 文件夹的绝对 UNC network路径，以便 Windows 端的 CXC 能够成功写入配置文件。",
     appNote: "若留空，则默认使用您当前的用户家目录 (~/.codex)。",
     claudeAppNote: "若留空，则默认使用您当前的用户家目录 (~/.claude)。",
+    grokAppNote: "若留空，则默认使用您当前的用户家目录 (~/.grok)。",
     cancelBtn: "取消",
     saveSettingsBtn: "保存设置",
     savingSettingsBtn: "保存中...",
@@ -221,7 +232,7 @@ const locales = {
     tryAlteringSearch: "Try altering your search filters",
     createFirst: "Create a new provider to get started.",
     settingsTitle: "CXC System Settings",
-    settingsDesc: "Configure one global App/WSL write target plus per-tool custom directories for Codex and Claude CLI.",
+    settingsDesc: "Configure one global App/WSL write target plus per-tool custom directories for Codex, Claude CLI, and Grok.",
     globalSourceLabel: "Global Write Environment",
     codexSourceLabel: "Codex Source (Codex 来源)",
     claudeSourceLabel: "Claude CLI Source (Claude CLI 来源)",
@@ -231,14 +242,18 @@ const locales = {
     wslCliDesc: "Write to WSL-side configs",
     customDirLabel: "Codex Custom Directory (自定义目录)",
     claudeCustomDirLabel: "Claude CLI Custom Directory",
+    grokCustomDirLabel: "Grok Custom Directory",
     wslRecommended: "Recommended for WSL",
     wslPlaceholder: "\\\\wsl.localhost\\Ubuntu\\home\\username\\.codex",
     claudeWslPlaceholder: "\\\\wsl.localhost\\Ubuntu\\home\\username\\.claude",
+    grokWslPlaceholder: "\\\\wsl.localhost\\Ubuntu\\home\\username\\.grok",
     appPlaceholder: "Optional custom path",
     wslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .codex folder so CXC on Windows can write config files successfully.",
     claudeWslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .claude folder so CXC on Windows can write config files successfully.",
+    grokWslNote: "WSL Note: Please specify the absolute UNC network path to your WSL .grok folder so CXC on Windows can write config files successfully.",
     appNote: "Defaults to your home directory (~/.codex) if left blank.",
     claudeAppNote: "Defaults to your home directory (~/.claude) if left blank.",
+    grokAppNote: "Defaults to your home directory (~/.grok) if left blank.",
     cancelBtn: "Cancel",
     saveSettingsBtn: "Save Settings",
     savingSettingsBtn: "Saving...",
@@ -406,11 +421,54 @@ claude_active_wsl: "ClaudeAPI",
   codex_custom_dir: "",
   claude_source: "app",
   claude_custom_dir: "",
+  grok_active_app: "GrokRelay",
+  grok_active_wsl: "",
+  grok_providers: [
+    {
+      name: "GrokRelay",
+      base_url: "https://lanxiu.cc/v1",
+      model: "grok-4.5",
+      api_key: "sk-grok-key-placeholder",
+      wire_api: "chat_completions",
+      remark: "Grok CLI relay",
+      latency_ms: 80,
+      last_ok: true,
+      last_test: new Date().toISOString()
+    }
+  ],
+  grok_source: "app",
+  grok_custom_dir: "",
 };
 
 function getGlobalSource(config?: Config | null): "app" | "wsl" {
-  const source = config?.codex_source || config?.claude_source || "wsl";
+  const source = config?.codex_source || config?.claude_source || config?.grok_source || "wsl";
   return source === "app" ? "app" : "wsl";
+}
+
+function providersForTool(config: Config, tool: TargetTool): Provider[] {
+  if (tool === "codex") return config.codex_providers ?? [];
+  if (tool === "claude") return config.claude_providers ?? [];
+  return config.grok_providers ?? [];
+}
+
+function activeForTool(config: Config, tool: TargetTool, source: "app" | "wsl"): string {
+  if (tool === "codex") {
+    return (source === "wsl" ? config.codex_active_wsl : config.codex_active_app) ?? "";
+  }
+  if (tool === "claude") {
+    return (source === "app" ? config.claude_active_app : config.claude_active_wsl) ?? "";
+  }
+  return (source === "app" ? config.grok_active_app : config.grok_active_wsl) ?? "";
+}
+
+function defaultWireApi(tool: TargetTool): string {
+  return tool === "grok" ? "chat_completions" : "responses";
+}
+
+function toolDisplayName(tool: TargetTool): string {
+  if (tool === "codex") return "Codex";
+  if (tool === "claude") return "Claude";
+  return "Grok";
 }
 
 function App() {
@@ -463,16 +521,17 @@ function App() {
   // Settings State
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [targetTool, setTargetTool] = useState<"codex" | "claude">(() => {
+  const [targetTool, setTargetTool] = useState<TargetTool>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("cxc-target-tool");
-      if (saved === "codex" || saved === "claude") return saved;
+      if (saved === "codex" || saved === "claude" || saved === "grok") return saved;
     }
     return "codex";
   });
   const [settingsSource, setSettingsSource] = useState<string>("wsl");
   const [settingsCustomDir, setSettingsCustomDir] = useState<string>("");
   const [claudeCustomDir, setClaudeCustomDir] = useState<string>("");
+  const [grokCustomDir, setGrokCustomDir] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("");
   const [showUpdateDialog, setShowUpdateDialog] = useState<boolean>(false);
@@ -501,7 +560,7 @@ function App() {
 
   // Connectivity Test State
   const [testingProviders, setTestingProviders] = useState<Record<string, boolean>>({});
-  const [testingAll, setTestingAll] = useState<"codex" | "claude" | null>(null);
+  const [testingAll, setTestingAll] = useState<TargetTool | null>(null);
 
   // Quick Model Switch State
   const [quickSwitchProvider, setQuickSwitchProvider] = useState<Provider | null>(null);
@@ -785,6 +844,7 @@ function App() {
       setSettingsSource(getGlobalSource(cfg));
       setSettingsCustomDir(cfg.codex_custom_dir || "");
       setClaudeCustomDir(cfg.claude_custom_dir || "");
+      setGrokCustomDir(cfg.grok_custom_dir || "");
     } catch (e: any) {
       const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
       if (!isTauri) {
@@ -793,6 +853,7 @@ function App() {
         setSettingsSource(getGlobalSource(mockConfig));
         setSettingsCustomDir(mockConfig.codex_custom_dir || "");
         setClaudeCustomDir(mockConfig.claude_custom_dir || "");
+        setGrokCustomDir(mockConfig.grok_custom_dir || "");
       } else {
         setError(e.toString());
       }
@@ -816,9 +877,12 @@ function App() {
         if (targetTool === "codex") {
           if (currentSource === "wsl") updated.codex_active_wsl = name;
           else updated.codex_active_app = name;
-        } else {
+        } else if (targetTool === "claude") {
           if (currentSource === "app") updated.claude_active_app = name;
           else updated.claude_active_wsl = name;
+        } else {
+          if (currentSource === "app") updated.grok_active_app = name;
+          else updated.grok_active_wsl = name;
         }
         setConfig(updated);
       } else {
@@ -858,7 +922,10 @@ function App() {
   }
 
   function openAddForm() {
-    setFormValues(initialFormValues);
+    setFormValues({
+      ...initialFormValues,
+      wire_api: defaultWireApi(targetTool),
+    });
     setFetchedModels([]);
     setFetchError(null);
     setShowForm("add");
@@ -1002,6 +1069,7 @@ function App() {
         source: newSource,
         customDir: config.codex_custom_dir || "",
         claudeCustomDir: config.claude_custom_dir || "",
+        grokCustomDir: config.grok_custom_dir || "",
       });
       setConfig(updatedCfg);
       setSettingsSource(newSource);
@@ -1079,8 +1147,13 @@ function App() {
       const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
       if (!isTauri && config) {
         await new Promise((resolve) => setTimeout(resolve, 800));
-        const targetListKey = targetTool === "codex" ? "codex_providers" : "claude_providers";
-        const providers = [...config[targetListKey]];
+        const targetListKey =
+          targetTool === "codex"
+            ? "codex_providers"
+            : targetTool === "claude"
+              ? "claude_providers"
+              : "grok_providers";
+        const providers = [...(config[targetListKey] ?? [])];
         const index = providers.findIndex((p) => p.name === name);
         if (index !== -1) {
           providers[index] = {
@@ -1132,6 +1205,7 @@ function App() {
         source: settingsSource,
         customDir: settingsCustomDir,
         claudeCustomDir,
+        grokCustomDir,
       });
       setConfig(updatedCfg);
       setSettingsSource(getGlobalSource(updatedCfg));
@@ -1154,15 +1228,9 @@ function App() {
   }
 
   // 根据当前选中的 Target Tool 获取对应的 providers 列表和 active 名称
-  const currentProviders = config
-    ? (targetTool === "codex" ? config.codex_providers : config.claude_providers) ?? []
-    : [];
+  const currentProviders = config ? providersForTool(config, targetTool) : [];
   const currentSource = getGlobalSource(config);
-  const currentActive = config
-    ? (targetTool === "codex" 
-        ? (currentSource === "wsl" ? config.codex_active_wsl : config.codex_active_app)
-        : (currentSource === "app" ? config.claude_active_app : config.claude_active_wsl)) ?? ""
-    : "";
+  const currentActive = config ? activeForTool(config, targetTool, currentSource) : "";
 
   function getProtectedSources(name: string): string[] {
     if (!config) return [];
@@ -1171,9 +1239,12 @@ function App() {
     if (targetTool === "codex") {
       if (config.codex_active_app === name) protectedSources.push("app");
       if (config.codex_active_wsl === name) protectedSources.push("wsl");
-    } else {
+    } else if (targetTool === "claude") {
       if (config.claude_active_app === name) protectedSources.push("app");
       if (config.claude_active_wsl === name) protectedSources.push("wsl");
+    } else {
+      if (config.grok_active_app === name) protectedSources.push("app");
+      if (config.grok_active_wsl === name) protectedSources.push("wsl");
     }
 
     return protectedSources;
@@ -1186,7 +1257,7 @@ function App() {
     const sourceText = protectedSources
       .map((source) => (source === "app" ? "App" : "WSL"))
       .join(lang === "zh" ? "、" : ", ");
-    const toolText = targetTool === "codex" ? "Codex" : "Claude";
+    const toolText = toolDisplayName(targetTool);
 
     return lang === "zh"
       ? `${toolText} 的 ${sourceText} 正在使用该节点，切换后才能删除`
@@ -1387,19 +1458,24 @@ function App() {
 
             <div className="h-4 w-px bg-border/60 mx-1 shrink-0" />
 
-            {/* Target Tool Switcher with absolute active slide animation */}
-          <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 shrink-0 h-8 w-16 overflow-hidden animate-in fade-in duration-300">
+            {/* Target Tool Switcher with absolute active slide animation (3 tools) */}
+          <div className="relative flex items-center p-0.5 rounded-lg bg-muted/40 border border-border/60 shrink-0 h-8 w-24 overflow-hidden animate-in fade-in duration-300">
             {/* Sliding Active Indicator */}
             <div
               className="absolute top-0.5 bottom-0.5 rounded-[6px] bg-card shadow-sm border border-border/10 transition-all duration-300 ease-out"
               style={{
-                left: targetTool === "codex" ? "2px" : "calc(50% + 1px)",
-                width: "calc(50% - 3px)",
+                left:
+                  targetTool === "codex"
+                    ? "2px"
+                    : targetTool === "claude"
+                      ? "calc(33.333% + 1px)"
+                      : "calc(66.666% + 0px)",
+                width: "calc(33.333% - 3px)",
               }}
             />
             <button
               onClick={() => setTargetTool("codex")}
-              className="relative z-10 flex items-center justify-center w-1/2 h-full rounded-[6px] transition-colors duration-200 cursor-pointer"
+              className="relative z-10 flex items-center justify-center w-1/3 h-full rounded-[6px] transition-colors duration-200 cursor-pointer"
               title="Codex"
             >
               <svg className={`size-3.5 transition-all duration-300 ${targetTool === "codex" ? "scale-110 rotate-3 text-foreground" : "opacity-60 text-muted-foreground hover:text-foreground"}`} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1416,11 +1492,26 @@ function App() {
             </button>
             <button
               onClick={() => setTargetTool("claude")}
-              className="relative z-10 flex items-center justify-center w-1/2 h-full rounded-[6px] transition-colors duration-200 cursor-pointer"
+              className="relative z-10 flex items-center justify-center w-1/3 h-full rounded-[6px] transition-colors duration-200 cursor-pointer"
               title="Claude"
             >
               <svg className={`size-3.5 transition-all duration-300 ${targetTool === "claude" ? "scale-110 -rotate-3 text-foreground" : "opacity-60 text-muted-foreground hover:text-foreground"}`} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fillRule="nonzero"></path>
+              </svg>
+            </button>
+            <button
+              onClick={() => setTargetTool("grok")}
+              className="relative z-10 flex items-center justify-center w-1/3 h-full rounded-[6px] transition-colors duration-200 cursor-pointer"
+              title="Grok"
+            >
+              <svg className={`size-3.5 transition-all duration-300 ${targetTool === "grok" ? "scale-110 text-foreground" : "opacity-60 text-muted-foreground hover:text-foreground"}`} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 2.5a7.5 7.5 0 110 15 7.5 7.5 0 010-15zm-1.2 3.25h2.4v2.1l1.85-1.05.9 1.55-1.85 1.07 1.85 1.07-.9 1.55-1.85-1.05v2.1h-2.4v-2.1l-1.85 1.05-.9-1.55 1.85-1.07-1.85-1.07.9-1.55 1.85 1.05v-2.1z" fill="url(#grok-gradient-unified)" />
+                <defs>
+                  <linearGradient id="grok-gradient-unified" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#FFFFFF" />
+                    <stop offset="1" stopColor="#9CA3AF" />
+                  </linearGradient>
+                </defs>
               </svg>
             </button>
           </div>
@@ -2036,6 +2127,24 @@ function App() {
               </p>
             </div>
 
+            <div className="space-y-1.5">
+              <Label htmlFor="grok-custom-dir" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 flex items-center justify-between">
+                <span>{t.grokCustomDirLabel}</span>
+                {settingsSource === "wsl" && <span className="text-[10px] text-primary font-semibold">({t.wslRecommended})</span>}
+              </Label>
+              <Input
+                id="grok-custom-dir"
+                type="text"
+                value={grokCustomDir}
+                onChange={(e) => setGrokCustomDir(e.target.value)}
+                placeholder={settingsSource === "wsl" ? t.grokWslPlaceholder : t.appPlaceholder}
+                className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
+              />
+              <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
+                {settingsSource === "wsl" ? t.grokWslNote : t.grokAppNote}
+              </p>
+            </div>
+
             {/* General Settings (Theme, Language, Reload Config) */}
             <div className="border-t border-border/30 pt-4 mt-5 space-y-4">
               <Label className="text-[11px] font-extrabold text-foreground/90 flex items-center gap-1.5 uppercase tracking-wider">
@@ -2329,10 +2438,10 @@ function App() {
                   <Input
                     id="form-model"
                     type="text"
-                    required={targetTool === "codex"}
+                    required={targetTool !== "claude"}
                     value={formValues.model}
                     onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                    placeholder="gpt-4o"
+                    placeholder={targetTool === "grok" ? "grok-4.5" : "gpt-4o"}
                     className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
                   />
                 )}
@@ -2507,19 +2616,34 @@ function App() {
                     </div>
                   )}
 
+                  {(targetTool === "codex" || targetTool === "grok") && (
                   <div className="space-y-1.5">
                     <Label htmlFor="form-wire" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                       {t.wireApiLabel}
                     </Label>
-                    <Input
-                      id="form-wire"
-                      type="text"
-                      value={formValues.wire_api}
-                      onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
-                      placeholder="responses"
-                      className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
-                    />
+                    {targetTool === "grok" ? (
+                      <select
+                        id="form-wire"
+                        value={formValues.wire_api || "chat_completions"}
+                        onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
+                        className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
+                      >
+                        <option value="chat_completions">chat_completions</option>
+                        <option value="responses">responses</option>
+                        <option value="messages">messages</option>
+                      </select>
+                    ) : (
+                      <Input
+                        id="form-wire"
+                        type="text"
+                        value={formValues.wire_api}
+                        onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
+                        placeholder="responses"
+                        className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
+                      />
+                    )}
                   </div>
+                  )}
                 </div>
               )}
             </div>
