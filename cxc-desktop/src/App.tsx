@@ -126,9 +126,9 @@ const locales = {
     globalSourceLabel: "全局写入环境",
     codexSourceLabel: "Codex 来源配置",
     claudeSourceLabel: "Claude CLI 来源配置",
-    desktopAppOption: "Desktop 客户端",
-    desktopAppDesc: "写入 Windows / Desktop 侧配置",
-    wslCliOption: "WSL 命令行",
+    desktopAppOption: "Win",
+    desktopAppDesc: "写入 Windows 主机侧配置",
+    wslCliOption: "WSL",
     wslCliDesc: "写入 WSL 侧配置",
     customDirLabel: "Codex 自定义目录",
     claudeCustomDirLabel: "Claude CLI 自定义目录",
@@ -236,9 +236,9 @@ const locales = {
     globalSourceLabel: "Global Write Environment",
     codexSourceLabel: "Codex Source (Codex 来源)",
     claudeSourceLabel: "Claude CLI Source (Claude CLI 来源)",
-    desktopAppOption: "Desktop App",
-    desktopAppDesc: "Write to Windows/Desktop-side configs",
-    wslCliOption: "WSL CLI",
+    desktopAppOption: "Win",
+    desktopAppDesc: "Write to Windows host configs",
+    wslCliOption: "WSL",
     wslCliDesc: "Write to WSL-side configs",
     customDirLabel: "Codex Custom Directory (自定义目录)",
     claudeCustomDirLabel: "Claude CLI Custom Directory",
@@ -1073,7 +1073,7 @@ function App() {
       });
       setConfig(updatedCfg);
       setSettingsSource(newSource);
-      showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Desktop"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Desktop"}`);
+      showToast(lang === "zh" ? `已切换环境为 ${newSource === "wsl" ? "WSL" : "Win"}` : `Environment switched to ${newSource === "wsl" ? "WSL" : "Win"}`);
     } catch (e: any) {
       setError(e.toString());
     }
@@ -1255,7 +1255,7 @@ function App() {
     if (protectedSources.length === 0) return t.deleteConnTitle;
 
     const sourceText = protectedSources
-      .map((source) => (source === "app" ? "App" : "WSL"))
+      .map((source) => (source === "app" ? "Win" : "WSL"))
       .join(lang === "zh" ? "、" : ", ");
     const toolText = toolDisplayName(targetTool);
 
@@ -1525,7 +1525,7 @@ function App() {
               className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 bg-muted/30 hover:bg-muted/60 transition-colors text-[9px] font-extrabold tracking-wider text-muted-foreground hover:text-foreground cursor-pointer shrink-0 select-none uppercase shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)] animate-in fade-in slide-in-from-left-2 duration-300"
             >
               <span className={`size-1.5 rounded-full shrink-0 ${currentSource === "wsl" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]" : "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.4)]"}`} />
-              <span>{currentSource === "wsl" ? "WSL" : "Desktop"}</span>
+              <span>{currentSource === "wsl" ? "WSL" : "Win"}</span>
             </button>
             
             {/* Custom High-Quality Hover Tooltip */}
@@ -1536,8 +1536,8 @@ function App() {
               </div>
               <p className="mt-1 text-muted-foreground font-medium leading-normal">
                 {currentSource === "wsl"
-                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击可一键静默切换为 Desktop 环境，未配置自定义目录时将自动使用默认路径。" : "Currently writing to the WSL configuration file. Click to silently toggle to Desktop environment (defaults to standard paths if not custom-configured).")
-                  : (lang === "zh" ? "当前已将配置写入本地 Desktop 配置文件。点击可一键静默切换为 WSL 环境，未配置自定义目录时将自动使用默认路径。" : "Currently writing to the Desktop configuration file. Click to silently toggle to WSL environment (defaults to standard paths if not custom-configured).")
+                  ? (lang === "zh" ? "当前已将配置写入本地 WSL 配置文件。点击可一键静默切换为 Win 环境，未配置自定义目录时将自动使用默认路径。" : "Currently writing to the WSL configuration file. Click to silently toggle to Win environment (defaults to standard paths if not custom-configured).")
+                  : (lang === "zh" ? "当前已将配置写入本地 Win 配置文件。点击可一键静默切换为 WSL 环境，未配置自定义目录时将自动使用默认路径。" : "Currently writing to the Win configuration file. Click to silently toggle to WSL environment (defaults to standard paths if not custom-configured).")
                 }
               </p>
             </div>
