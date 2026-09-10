@@ -357,7 +357,7 @@ impl TargetAdapter for CodexAdapter {
                 "[model_providers.codex]\n",
                 "base_url = \"\"\n",
                 "name = \"codex\"\n",
-                "requires_openai_auth = false\n",
+                "requires_openai_auth = true\n",
                 "wire_api = \"responses\"\n",
             ))
         };
@@ -378,8 +378,8 @@ impl TargetAdapter for CodexAdapter {
         doc["model_providers"]["codex"]["base_url"] = toml_edit::value(&config.base_url);
         doc["model_providers"]["codex"]["wire_api"] = toml_edit::value(&config.wire_api);
         doc["model_providers"]["codex"]["name"] = toml_edit::value("codex");
-        // false = disable OpenAI-native auth check; required for third-party relay gateways
-        doc["model_providers"]["codex"]["requires_openai_auth"] = toml_edit::value(false);
+        // true = enable OpenAI-compatible auth (uses OPENAI_API_KEY from auth.json as Bearer token)
+        doc["model_providers"]["codex"]["requires_openai_auth"] = toml_edit::value(true);
 
         // Validate by re-parsing
         let out = doc.to_string();
@@ -744,7 +744,7 @@ trust_level = "trusted"
     }
 
     #[test]
-    fn test_write_sets_requires_openai_auth_false() {
+    fn test_write_sets_requires_openai_auth_true() {
         let (_dir, adapter) = setup_codex_dir();
         let new_cfg = TargetConfig {
             base_url: "https://coderelay.cn/v1".to_string(),
@@ -756,8 +756,8 @@ trust_level = "trusted"
 
         let content = fs::read_to_string(adapter.config_path()).unwrap();
         assert!(
-            content.contains("requires_openai_auth = false"),
-            "requires_openai_auth should be false for relay gateway, got:\n{}",
+            content.contains("requires_openai_auth = true"),
+            "requires_openai_auth should be true for relay gateway, got:\n{}",
             content
         );
     }
