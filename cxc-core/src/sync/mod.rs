@@ -23,8 +23,6 @@ pub enum SyncError {
     Json(#[from] serde_json::Error),
     #[error("Sync payload is encrypted, but no secret key was provided")]
     MissingSecretKey,
-    #[error("Sync payload is not encrypted, but a secret key was provided")]
-    UnexpectedSecretKey,
     #[error("Missing Gist Token: Please provide a valid GitHub Personal Access Token")]
     MissingToken,
     #[error("Missing Gist ID: Please provide an existing Gist ID or choose to create one")]
@@ -42,8 +40,6 @@ pub struct SyncConfig {
     pub gist_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_key: Option<String>,
-    #[serde(default)]
-    pub auto_sync: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_synced_at: Option<DateTime<Local>>,
 }
@@ -235,7 +231,7 @@ pub async fn pull_from_gist(
     let payload = unpack_payload(&raw_content, sync_config.secret_key.as_deref())?;
 
     // Create a local backup before overwriting
-    let _ = backup_config_file();
+    backup_config_file()?;
 
     apply_payload_overwrite(cfg, payload.clone());
     sync_config.last_synced_at = Some(Local::now());
@@ -269,7 +265,7 @@ pub async fn sync_and_merge(
     let remote_payload = unpack_payload(&raw_content, sync_config.secret_key.as_deref())?;
 
     // Backup local config before merging
-    let _ = backup_config_file();
+    backup_config_file()?;
 
     // Perform merge locally
     apply_payload_merge(cfg, remote_payload);

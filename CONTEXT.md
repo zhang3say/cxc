@@ -70,12 +70,13 @@ An optional directory path configuration in CXC. Used when the Grok config files
 
 ## GitHub Gist Sync (配置同步)
 
-A cross-device configuration synchronization mechanism using GitHub Secret Gists. It allows users to sync Provider lists across multiple workstations via a GitHub Personal Access Token without requiring centralized backend servers.
+基于 GitHub Secret Gist 的跨设备配置同步机制。允许用户仅凭借具备 Gist 权限的 GitHub Personal Access Token 即可在多台开发工作站之间同步服务商 Provider 列表，免除集中式后端服务器的搭建与运维。
 
 ## Sync Payload (同步载荷)
 
-The cross-platform dataset synchronized between devices. Contains the full list of Provider configurations for Codex, Claude CLI, and Grok. Intentionally excludes machine-specific execution environments (`app`/`wsl`), local custom directories, and active selections to prevent cross-platform configuration pollution.
+跨设备流转的标准化数据集。包含 Codex、Claude CLI 和 Grok 的全量中转服务商配置。显式排除当前机器特异性的执行环境来源（`app` / `wsl`）、本地自定义路径（WSL UNC 路径）以及各端各自的激活状态，杜绝跨操作系统与异构环境之间的配置污染。
 
 ## End-to-End Encryption (端到端加密)
 
-An optional client-side security feature for sync data. When enabled with a user passphrase, the Sync Payload is encrypted using AES-256-GCM before uploading to GitHub Gist, ensuring API keys and credentials are never stored in plaintext on cloud services.
+面向同步数据的客户端主动安全加固机制。当用户设置了同步主密码时，同步载荷在上传到 GitHub Gist 前会在本地通过 AES-256-GCM 算法全量加密，确保 API Key 与机密中转凭证在云端永不以明文留存。
+

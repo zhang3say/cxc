@@ -263,6 +263,11 @@ async fn test_gist_connection(token: String, gist_id: Option<String>) -> Result<
         .map_err(|e| e.to_string())
 }
 
+fn finish_sync_op(app_handle: &tauri::AppHandle, cfg: Config) -> Result<Config, String> {
+    let _ = update_tray_menu_with_config(app_handle, &cfg);
+    Ok(cfg)
+}
+
 #[tauri::command]
 async fn sync_gist_push(
     app_handle: tauri::AppHandle,
@@ -272,8 +277,7 @@ async fn sync_gist_push(
     let _ = cxc_core::sync::push_to_gist(&mut cfg, &mut sync_config)
         .await
         .map_err(|e| e.to_string())?;
-    let _ = update_tray_menu_with_config(&app_handle, &cfg);
-    Ok(cfg)
+    finish_sync_op(&app_handle, cfg)
 }
 
 #[tauri::command]
@@ -285,8 +289,7 @@ async fn sync_gist_pull(
     let _ = cxc_core::sync::pull_from_gist(&mut cfg, &mut sync_config)
         .await
         .map_err(|e| e.to_string())?;
-    let _ = update_tray_menu_with_config(&app_handle, &cfg);
-    Ok(cfg)
+    finish_sync_op(&app_handle, cfg)
 }
 
 #[tauri::command]
@@ -298,8 +301,7 @@ async fn sync_gist_merge(
     let _ = cxc_core::sync::sync_and_merge(&mut cfg, &mut sync_config)
         .await
         .map_err(|e| e.to_string())?;
-    let _ = update_tray_menu_with_config(&app_handle, &cfg);
-    Ok(cfg)
+    finish_sync_op(&app_handle, cfg)
 }
 
 #[derive(serde::Serialize)]

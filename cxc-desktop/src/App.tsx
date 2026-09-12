@@ -100,7 +100,6 @@ export interface SyncConfig {
   gist_token: string;
   gist_id: string;
   secret_key?: string | null;
-  auto_sync: boolean;
   last_synced_at?: string | null;
 }
 
@@ -1295,18 +1294,21 @@ function App() {
     }
   }
 
+  function getSyncConfigPayload(): SyncConfig {
+    return {
+      gist_token: syncGistToken.trim(),
+      gist_id: syncGistId.trim(),
+      secret_key: syncSecretKey.trim() || null,
+      last_synced_at: syncLastSyncedAt,
+    };
+  }
+
   async function handleSyncMerge() {
     if (!syncGistToken.trim()) return;
     try {
       setSyncLoadingAction("merge");
       setSyncStatusMessage(null);
-      const sc: SyncConfig = {
-        gist_token: syncGistToken.trim(),
-        gist_id: syncGistId.trim(),
-        secret_key: syncSecretKey.trim() || null,
-        auto_sync: false,
-        last_synced_at: syncLastSyncedAt,
-      };
+      const sc = getSyncConfigPayload();
       const updatedCfg = await invoke<Config>("sync_gist_merge", { syncConfig: sc });
       setConfig(updatedCfg);
       if (updatedCfg.sync?.gist_id) {
@@ -1327,13 +1329,7 @@ function App() {
     try {
       setSyncLoadingAction("push");
       setSyncStatusMessage(null);
-      const sc: SyncConfig = {
-        gist_token: syncGistToken.trim(),
-        gist_id: syncGistId.trim(),
-        secret_key: syncSecretKey.trim() || null,
-        auto_sync: false,
-        last_synced_at: syncLastSyncedAt,
-      };
+      const sc = getSyncConfigPayload();
       const updatedCfg = await invoke<Config>("sync_gist_push", { syncConfig: sc });
       setConfig(updatedCfg);
       if (updatedCfg.sync?.gist_id) {
@@ -1354,13 +1350,7 @@ function App() {
     try {
       setSyncLoadingAction("pull");
       setSyncStatusMessage(null);
-      const sc: SyncConfig = {
-        gist_token: syncGistToken.trim(),
-        gist_id: syncGistId.trim(),
-        secret_key: syncSecretKey.trim() || null,
-        auto_sync: false,
-        last_synced_at: syncLastSyncedAt,
-      };
+      const sc = getSyncConfigPayload();
       const updatedCfg = await invoke<Config>("sync_gist_pull", { syncConfig: sc });
       setConfig(updatedCfg);
       setSyncLastSyncedAt(updatedCfg.sync?.last_synced_at || new Date().toISOString());
@@ -1390,13 +1380,7 @@ function App() {
 
       if (syncGistToken.trim() || syncGistId.trim()) {
         await invoke("save_sync_config", {
-          syncConfig: {
-            gist_token: syncGistToken.trim(),
-            gist_id: syncGistId.trim(),
-            secret_key: syncSecretKey.trim() || null,
-            auto_sync: false,
-            last_synced_at: syncLastSyncedAt,
-          },
+          syncConfig: getSyncConfigPayload(),
         });
       }
 
@@ -2415,7 +2399,7 @@ function App() {
 
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
-                    <Lock className="size-3 text-emerald-500" />
+                    <Lock className="size-3 text-sticker-green" />
                     <span>{t.secretKeyLabel}</span>
                   </Label>
                   <div className="relative">
@@ -2478,7 +2462,7 @@ function App() {
                   {syncLoadingAction === "push" ? (
                     <Loader2 className="size-3 animate-spin" />
                   ) : (
-                    <CloudUpload className="size-3 text-sky-500" />
+                    <CloudUpload className="size-3 text-sticker-sky" />
                   )}
                   <span>{syncLoadingAction === "push" ? t.syncingPush : t.syncPushBtn}</span>
                 </Button>
@@ -2493,7 +2477,7 @@ function App() {
                   {syncLoadingAction === "pull" ? (
                     <Loader2 className="size-3 animate-spin" />
                   ) : (
-                    <CloudDownload className="size-3 text-amber-500" />
+                    <CloudDownload className="size-3 text-sticker-orange" />
                   )}
                   <span>{syncLoadingAction === "pull" ? t.syncingPull : t.syncPullBtn}</span>
                 </Button>

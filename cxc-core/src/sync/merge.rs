@@ -4,10 +4,14 @@ use std::collections::HashMap;
 /// Merges local and remote provider lists based on the provider `name`.
 /// - Providers unique to either list are preserved.
 /// - When a provider exists in both lists:
-///   - If remote has non-empty fields (like remark or claude_models) and local doesn't, remote values are adopted.
-///   - Connection parameters (base_url, api_key, model, wire_api) from remote are preferred if they differ,
-///     as remote represents the synced cloud state.
-///   - The latest test metrics (latency_ms, last_ok, last_test) are preserved from whichever has the more recent test.
+///   - Remarks and claude_models: if one side has None and the other has Some, the non-empty configuration is adopted.
+///   - Connection parameters (base_url, api_key, model, wire_api) and test metrics (last_test, latency_ms, last_ok)
+///     are kept strictly coupled:
+///     - If both sets of connection parameters are identical, the more recent test metrics are adopted.
+///     - If connection parameters differ:
+///       - If remote has a more recent test timestamp than local, remote's parameters and test metrics are adopted.
+///       - If local has a more recent test timestamp (or equal), local's parameters and test metrics are preserved.
+///       - If neither side has been tested, remote's parameters are adopted as the synced cloud baseline.
 pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider> {
     let mut map: HashMap<String, Provider> = HashMap::new();
 
@@ -19,37 +23,55 @@ pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider>
     // Merge in remote providers
     for r in remote {
         if let Some(l) = map.get_mut(&r.name) {
-            // Update connection parameters from remote
-            l.base_url = r.base_url.clone();
-            l.api_key = r.api_key.clone();
-            l.model = r.model.clone();
-            l.wire_api = r.wire_api.clone();
+            let connection_identical = l.base_url == r.base_url
+                && l.api_key == r.api_key
+                && l.model == r.model
+                && l.wire_api == r.wire_api;
 
-            // Remarks: if remote has a remark, prefer it; otherwise keep local
-            if r.remark.is_some() {
-                l.remark = r.remark.clone();
-            }
-
-            // Claude models configuration
-            if r.claude_models.is_some() {
-                l.claude_models = r.claude_models.clone();
-            }
-
-            // Test results: pick the more recent test
-            match (&l.last_test, &r.last_test) {
-                (Some(lt), Some(rt)) => {
-                    if rt > lt {
+            if connection_identical {
+                // Adopt newer test metrics if available
+                match (&l.last_test, &r.last_test) {
+                    (Some(lt), Some(rt)) if rt > lt => {
                         l.last_test = r.last_test;
                         l.latency_ms = r.latency_ms;
                         l.last_ok = r.last_ok;
                     }
+                    (None, Some(_)) => {
+                        l.last_test = r.last_test;
+                        l.latency_ms = r.latency_ms;
+                        l.last_ok = r.last_ok;
+                    }
+                    _ => {}
                 }
-                (None, Some(_)) => {
+            } else {
+                // Connection parameters differ: decide which one is newer, keeping parameters and test metrics coupled
+                let prefer_remote = match (&l.last_test, &r.last_test) {
+                    (Some(lt), Some(rt)) => rt > lt,
+                    (None, Some(_)) => true,
+                    (Some(_), None) => false,
+                    (None, None) => true, // default to remote if neither has test timestamp
+                };
+
+                if prefer_remote {
+                    l.base_url = r.base_url.clone();
+                    l.api_key = r.api_key.clone();
+                    l.model = r.model.clone();
+                    l.wire_api = r.wire_api.clone();
                     l.last_test = r.last_test;
                     l.latency_ms = r.latency_ms;
                     l.last_ok = r.last_ok;
                 }
-                _ => {}
+                // Else: preserve local connection parameters and test metrics
+            }
+
+            // Adopt remarks if local is missing them
+            if l.remark.is_none() && r.remark.is_some() {
+                l.remark = r.remark.clone();
+            }
+
+            // Adopt Claude models if local is missing them
+            if l.claude_models.is_none() && r.claude_models.is_some() {
+                l.claude_models = r.claude_models.clone();
             }
         } else {
             // Provider is only present on remote, add it
@@ -83,6 +105,7 @@ pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{Duration, Local};
 
     #[test]
     fn test_merge_disjoint_providers() {
@@ -120,39 +143,74 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_overlapping_providers() {
+    fn test_merge_overlapping_providers_preserves_newer_local() {
+        let now = Local::now();
         let local = vec![Provider {
             name: "common".to_string(),
-            base_url: "https://old-url.com".to_string(),
-            api_key: "old-key".to_string(),
-            model: "old-model".to_string(),
+            base_url: "https://local-updated.com".to_string(),
+            api_key: "local-key".to_string(),
+            model: "gpt-4o".to_string(),
             wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
+            remark: Some("local remark".to_string()),
+            last_test: Some(now),
+            latency_ms: Some(42),
+            last_ok: Some(true),
             claude_models: None,
         }];
 
         let remote = vec![Provider {
             name: "common".to_string(),
-            base_url: "https://new-url.com".to_string(),
-            api_key: "new-key".to_string(),
-            model: "new-model".to_string(),
-            wire_api: "chat".to_string(),
-            remark: Some("updated remark".to_string()),
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
+            base_url: "https://remote-older.com".to_string(),
+            api_key: "remote-key".to_string(),
+            model: "gpt-4o".to_string(),
+            wire_api: "responses".to_string(),
+            remark: Some("remote remark".to_string()),
+            last_test: Some(now - Duration::hours(1)),
+            latency_ms: Some(150),
+            last_ok: Some(true),
             claude_models: None,
         }];
 
         let merged = merge_providers(&local, &remote);
         assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].name, "common");
-        assert_eq!(merged[0].base_url, "https://new-url.com");
-        assert_eq!(merged[0].api_key, "new-key");
-        assert_eq!(merged[0].wire_api, "chat");
+        assert_eq!(merged[0].base_url, "https://local-updated.com");
+        assert_eq!(merged[0].latency_ms, Some(42));
+    }
+
+    #[test]
+    fn test_merge_overlapping_providers_adopts_newer_remote() {
+        let now = Local::now();
+        let local = vec![Provider {
+            name: "common".to_string(),
+            base_url: "https://local-older.com".to_string(),
+            api_key: "local-key".to_string(),
+            model: "gpt-4o".to_string(),
+            wire_api: "responses".to_string(),
+            remark: None,
+            last_test: Some(now - Duration::hours(2)),
+            latency_ms: Some(200),
+            last_ok: Some(true),
+            claude_models: None,
+        }];
+
+        let remote = vec![Provider {
+            name: "common".to_string(),
+            base_url: "https://remote-newer.com".to_string(),
+            api_key: "remote-key".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            wire_api: "chat".to_string(),
+            remark: Some("updated remark".to_string()),
+            last_test: Some(now),
+            latency_ms: Some(60),
+            last_ok: Some(true),
+            claude_models: None,
+        }];
+
+        let merged = merge_providers(&local, &remote);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].base_url, "https://remote-newer.com");
+        assert_eq!(merged[0].model, "gpt-4o-mini");
+        assert_eq!(merged[0].latency_ms, Some(60));
         assert_eq!(merged[0].remark, Some("updated remark".to_string()));
     }
 }
