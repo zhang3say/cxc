@@ -67,3 +67,15 @@ Mirrors the same global App / WSL source choice used by Codex and Claude. It det
 ## Grok Custom Directory (Grok 自定义目录)
 
 An optional directory path configuration in CXC. Used when the Grok config files reside in a non-standard path, such as inside a specific WSL distribution (accessed via Windows UNC paths like `\\wsl.localhost\Ubuntu\home\<user>\.grok`).
+
+## GitHub Gist Sync (配置同步)
+
+A cross-device configuration synchronization mechanism using GitHub Secret Gists. It allows users to sync Provider lists across multiple workstations via a GitHub Personal Access Token without requiring centralized backend servers.
+
+## Sync Payload (同步载荷)
+
+The cross-platform dataset synchronized between devices. Contains the full list of Provider configurations for Codex, Claude CLI, and Grok. Intentionally excludes machine-specific execution environments (`app`/`wsl`), local custom directories, and active selections to prevent cross-platform configuration pollution.
+
+## End-to-End Encryption (端到端加密)
+
+An optional client-side security feature for sync data. When enabled with a user passphrase, the Sync Payload is encrypted using AES-256-GCM before uploading to GitHub Gist, ensuring API keys and credentials are never stored in plaintext on cloud services.

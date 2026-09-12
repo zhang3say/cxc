@@ -20,6 +20,10 @@ dirs = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.5"
 unicode-width = "0.1"
+aes-gcm = "0.10"
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3.10"

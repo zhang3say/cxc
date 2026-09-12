@@ -243,6 +243,65 @@ fn get_app_version(app_handle: tauri::AppHandle) -> String {
     app_handle.package_info().version.to_string()
 }
 
+#[tauri::command]
+fn get_sync_config() -> Result<cxc_core::sync::SyncConfig, String> {
+    let cfg = config::load().map_err(|e| e.to_string())?;
+    Ok(config::get_sync_config(&cfg))
+}
+
+#[tauri::command]
+fn save_sync_config(sync_config: cxc_core::sync::SyncConfig) -> Result<(), String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    config::update_sync_config(&mut cfg, sync_config);
+    config::save(&cfg).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn test_gist_connection(token: String, gist_id: Option<String>) -> Result<String, String> {
+    cxc_core::sync::test_gist_connection(&token, gist_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sync_gist_push(
+    app_handle: tauri::AppHandle,
+    mut sync_config: cxc_core::sync::SyncConfig,
+) -> Result<Config, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    let _ = cxc_core::sync::push_to_gist(&mut cfg, &mut sync_config)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = update_tray_menu_with_config(&app_handle, &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+async fn sync_gist_pull(
+    app_handle: tauri::AppHandle,
+    mut sync_config: cxc_core::sync::SyncConfig,
+) -> Result<Config, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    let _ = cxc_core::sync::pull_from_gist(&mut cfg, &mut sync_config)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = update_tray_menu_with_config(&app_handle, &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+async fn sync_gist_merge(
+    app_handle: tauri::AppHandle,
+    mut sync_config: cxc_core::sync::SyncConfig,
+) -> Result<Config, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+    let _ = cxc_core::sync::sync_and_merge(&mut cfg, &mut sync_config)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = update_tray_menu_with_config(&app_handle, &cfg);
+    Ok(cfg)
+}
+
 #[derive(serde::Serialize)]
 struct UpdateInfo {
     version: String,
@@ -463,7 +522,13 @@ pub fn run() {
             fetch_models,
             save_settings,
             get_app_version,
-            check_update
+            check_update,
+            get_sync_config,
+            save_sync_config,
+            test_gist_connection,
+            sync_gist_push,
+            sync_gist_pull,
+            sync_gist_merge
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

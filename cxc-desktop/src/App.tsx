@@ -41,6 +41,11 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  Lock,
+  ExternalLink,
 } from "lucide-react";
 
 interface ClaudeModels {
@@ -87,6 +92,16 @@ interface Config {
   claude_custom_dir?: string;
   grok_source?: string;
   grok_custom_dir?: string;
+  // 同步配置
+  sync?: SyncConfig;
+}
+
+export interface SyncConfig {
+  gist_token: string;
+  gist_id: string;
+  secret_key?: string | null;
+  auto_sync: boolean;
+  last_synced_at?: string | null;
 }
 
 const locales = {
@@ -198,7 +213,31 @@ const locales = {
     updateDialogDesc: "发现新版本 {version}，是否前往下载？",
     changelogLabel: "更新日志：",
     downloadNowBtn: "立即下载",
-    remindMeLaterBtn: "以后再说"
+    remindMeLaterBtn: "以后再说",
+    syncSectionTitle: "云端同步 (GitHub Gist)",
+    syncSectionDesc: "通过 GitHub Secret Gist 跨设备同步节点配置，支持端到端 AES-256 加密与双向智能合并。",
+    gistTokenLabel: "GitHub Token (Personal Access Token) *",
+    gistTokenPlaceholder: "ghp_xxxxxxxxxxxx (需要 gist 权限)",
+    gistIdLabel: "Gist ID (留空首次将自动新建)",
+    gistIdPlaceholder: "可选，若已有同步 Gist 请在此粘贴 ID",
+    secretKeyLabel: "端到端加密密码 (强烈推荐)",
+    secretKeyPlaceholder: "设置主密码以加密 API Key，留空为明文",
+    testGistBtn: "测试连接",
+    testingGist: "连接测试中...",
+    createGistHelp: "如何创建 GitHub Token？",
+    syncMergeBtn: "智能合并",
+    syncPushBtn: "推送到云端",
+    syncPullBtn: "从云端拉取",
+    syncingMerge: "合并同步中...",
+    syncingPush: "推送到云端中...",
+    syncingPull: "从云端拉取中...",
+    lastSyncedLabel: "上次同步时间：",
+    neverSynced: "从未同步",
+    syncSuccessMerge: "双向智能合并同步完成！",
+    syncSuccessPush: "配置已成功推送到云端 Gist！",
+    syncSuccessPull: "已从云端拉取最新配置并保存备份！",
+    syncTestSuccess: (user: string) => `GitHub 连接成功！认证用户：${user}`,
+    syncTestFailed: "连接失败，请检查 Token 权限或网络",
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -308,7 +347,31 @@ const locales = {
     updateDialogDesc: "A new version {version} is available. Would you like to download it now?",
     changelogLabel: "Changelog:",
     downloadNowBtn: "Download Now",
-    remindMeLaterBtn: "Later"
+    remindMeLaterBtn: "Later",
+    syncSectionTitle: "Cloud Sync (GitHub Gist)",
+    syncSectionDesc: "Sync providers across devices via GitHub Secret Gist with E2EE AES-256 encryption and smart merge.",
+    gistTokenLabel: "GitHub Token (PAT) *",
+    gistTokenPlaceholder: "ghp_xxxxxxxxxxxx (requires gist scope)",
+    gistIdLabel: "Gist ID (Leave empty to auto-create)",
+    gistIdPlaceholder: "Optional. Paste existing Gist ID if you have one",
+    secretKeyLabel: "E2EE Encryption Passphrase (Recommended)",
+    secretKeyPlaceholder: "Set passphrase to encrypt API keys, leave empty for plaintext",
+    testGistBtn: "Test Connection",
+    testingGist: "Testing...",
+    createGistHelp: "How to create a GitHub Token?",
+    syncMergeBtn: "Smart Merge",
+    syncPushBtn: "Push to Cloud",
+    syncPullBtn: "Pull from Cloud",
+    syncingMerge: "Merging...",
+    syncingPush: "Pushing...",
+    syncingPull: "Pulling...",
+    lastSyncedLabel: "Last synced: ",
+    neverSynced: "Never",
+    syncSuccessMerge: "Smart bidirectional merge completed!",
+    syncSuccessPush: "Successfully pushed to GitHub Gist!",
+    syncSuccessPull: "Pulled latest config from cloud (backup created)!",
+    syncTestSuccess: (user: string) => `GitHub connected! User: ${user}`,
+    syncTestFailed: "Connection failed. Please verify Token permissions or network.",
   }
 };
 
@@ -541,6 +604,17 @@ function App() {
     url: string;
     changelog: string;
   } | null>(null);
+
+  // Sync State
+  const [syncGistToken, setSyncGistToken] = useState<string>("");
+  const [syncGistId, setSyncGistId] = useState<string>("");
+  const [syncSecretKey, setSyncSecretKey] = useState<string>("");
+  const [syncLastSyncedAt, setSyncLastSyncedAt] = useState<string | null>(null);
+  const [showGistToken, setShowGistToken] = useState<boolean>(false);
+  const [showSyncSecret, setShowSyncSecret] = useState<boolean>(false);
+  const [testingGist, setTestingGist] = useState<boolean>(false);
+  const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
+  const [syncLoadingAction, setSyncLoadingAction] = useState<"merge" | "push" | "pull" | null>(null);
 
   useEffect(() => {
     localStorage.setItem("cxc-target-tool", targetTool);
@@ -845,6 +919,12 @@ function App() {
       setSettingsCustomDir(cfg.codex_custom_dir || "");
       setClaudeCustomDir(cfg.claude_custom_dir || "");
       setGrokCustomDir(cfg.grok_custom_dir || "");
+      if (cfg.sync) {
+        setSyncGistToken(cfg.sync.gist_token || "");
+        setSyncGistId(cfg.sync.gist_id || "");
+        setSyncSecretKey(cfg.sync.secret_key || "");
+        setSyncLastSyncedAt(cfg.sync.last_synced_at || null);
+      }
     } catch (e: any) {
       const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
       if (!isTauri) {
@@ -1195,6 +1275,104 @@ function App() {
     }
   }
 
+  async function handleTestGistConnection() {
+    if (!syncGistToken.trim()) return;
+    try {
+      setTestingGist(true);
+      setSyncStatusMessage(null);
+      const username = await invoke<string>("test_gist_connection", {
+        token: syncGistToken.trim(),
+        gistId: syncGistId.trim() ? syncGistId.trim() : null,
+      });
+      const msg = typeof t.syncTestSuccess === "function" ? t.syncTestSuccess(username) : `GitHub connected! User: ${username}`;
+      setSyncStatusMessage(msg);
+      setToastMessage(msg);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e: any) {
+      setSyncStatusMessage(e.toString());
+    } finally {
+      setTestingGist(false);
+    }
+  }
+
+  async function handleSyncMerge() {
+    if (!syncGistToken.trim()) return;
+    try {
+      setSyncLoadingAction("merge");
+      setSyncStatusMessage(null);
+      const sc: SyncConfig = {
+        gist_token: syncGistToken.trim(),
+        gist_id: syncGistId.trim(),
+        secret_key: syncSecretKey.trim() || null,
+        auto_sync: false,
+        last_synced_at: syncLastSyncedAt,
+      };
+      const updatedCfg = await invoke<Config>("sync_gist_merge", { syncConfig: sc });
+      setConfig(updatedCfg);
+      if (updatedCfg.sync?.gist_id) {
+        setSyncGistId(updatedCfg.sync.gist_id);
+      }
+      setSyncLastSyncedAt(updatedCfg.sync?.last_synced_at || new Date().toISOString());
+      setToastMessage(t.syncSuccessMerge);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e: any) {
+      setSyncStatusMessage(e.toString());
+    } finally {
+      setSyncLoadingAction(null);
+    }
+  }
+
+  async function handleSyncPush() {
+    if (!syncGistToken.trim()) return;
+    try {
+      setSyncLoadingAction("push");
+      setSyncStatusMessage(null);
+      const sc: SyncConfig = {
+        gist_token: syncGistToken.trim(),
+        gist_id: syncGistId.trim(),
+        secret_key: syncSecretKey.trim() || null,
+        auto_sync: false,
+        last_synced_at: syncLastSyncedAt,
+      };
+      const updatedCfg = await invoke<Config>("sync_gist_push", { syncConfig: sc });
+      setConfig(updatedCfg);
+      if (updatedCfg.sync?.gist_id) {
+        setSyncGistId(updatedCfg.sync.gist_id);
+      }
+      setSyncLastSyncedAt(updatedCfg.sync?.last_synced_at || new Date().toISOString());
+      setToastMessage(t.syncSuccessPush);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e: any) {
+      setSyncStatusMessage(e.toString());
+    } finally {
+      setSyncLoadingAction(null);
+    }
+  }
+
+  async function handleSyncPull() {
+    if (!syncGistToken.trim() || !syncGistId.trim()) return;
+    try {
+      setSyncLoadingAction("pull");
+      setSyncStatusMessage(null);
+      const sc: SyncConfig = {
+        gist_token: syncGistToken.trim(),
+        gist_id: syncGistId.trim(),
+        secret_key: syncSecretKey.trim() || null,
+        auto_sync: false,
+        last_synced_at: syncLastSyncedAt,
+      };
+      const updatedCfg = await invoke<Config>("sync_gist_pull", { syncConfig: sc });
+      setConfig(updatedCfg);
+      setSyncLastSyncedAt(updatedCfg.sync?.last_synced_at || new Date().toISOString());
+      setToastMessage(t.syncSuccessPull);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e: any) {
+      setSyncStatusMessage(e.toString());
+    } finally {
+      setSyncLoadingAction(null);
+    }
+  }
+
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -1209,6 +1387,19 @@ function App() {
       });
       setConfig(updatedCfg);
       setSettingsSource(getGlobalSource(updatedCfg));
+
+      if (syncGistToken.trim() || syncGistId.trim()) {
+        await invoke("save_sync_config", {
+          syncConfig: {
+            gist_token: syncGistToken.trim(),
+            gist_id: syncGistId.trim(),
+            secret_key: syncSecretKey.trim() || null,
+            auto_sync: false,
+            last_synced_at: syncLastSyncedAt,
+          },
+        });
+      }
+
       setShowSettings(false);
     } catch (e: any) {
       setError(e.toString());
@@ -2145,6 +2336,168 @@ function App() {
               <p className="text-[10px] text-muted-foreground/80 leading-normal mt-1">
                 {settingsSource === "wsl" ? t.grokWslNote : t.grokAppNote}
               </p>
+            </div>
+
+            {/* Cloud Sync (GitHub Gist) */}
+            <div className="border-t border-border/30 pt-4 mt-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] font-extrabold text-foreground/90 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Cloud className="size-3.5 text-primary" />
+                  <span>{t.syncSectionTitle}</span>
+                </Label>
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=gist&description=CXC%20Config%20Sync"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleOpenUrl("https://github.com/settings/tokens/new?scopes=gist&description=CXC%20Config%20Sync");
+                  }}
+                  className="text-[10px] text-primary hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  <span>{t.createGistHelp}</span>
+                  <ExternalLink className="size-2.5" />
+                </a>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                {t.syncSectionDesc}
+              </p>
+
+              {/* Token input */}
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold text-muted-foreground">
+                  {t.gistTokenLabel}
+                </Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showGistToken ? "text" : "password"}
+                      value={syncGistToken}
+                      onChange={(e) => setSyncGistToken(e.target.value)}
+                      placeholder={t.gistTokenPlaceholder}
+                      className="bg-muted/10 border-border/30 h-8 rounded-md text-xs pr-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGistToken(!showGistToken)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      {showGistToken ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestGistConnection}
+                    disabled={testingGist || !syncGistToken.trim()}
+                    className="h-8 px-2.5 text-[10px] font-bold shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    {testingGist ? <Loader2 className="size-3 animate-spin" /> : <Activity className="size-3 text-primary" />}
+                    <span>{testingGist ? t.testingGist : t.testGistBtn}</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Gist ID & Passphrase Grid */}
+              <div className="grid grid-cols-1 gap-2.5">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground">
+                    {t.gistIdLabel}
+                  </Label>
+                  <Input
+                    type="text"
+                    value={syncGistId}
+                    onChange={(e) => setSyncGistId(e.target.value)}
+                    placeholder={t.gistIdPlaceholder}
+                    className="bg-muted/10 border-border/30 h-8 rounded-md text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
+                    <Lock className="size-3 text-emerald-500" />
+                    <span>{t.secretKeyLabel}</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type={showSyncSecret ? "text" : "password"}
+                      value={syncSecretKey}
+                      onChange={(e) => setSyncSecretKey(e.target.value)}
+                      placeholder={t.secretKeyPlaceholder}
+                      className="bg-muted/10 border-border/30 h-8 rounded-md text-xs pr-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSyncSecret(!showSyncSecret)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      {showSyncSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Last synced status & message */}
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
+                <span>
+                  {t.lastSyncedLabel}
+                  <strong className="text-foreground/85 font-semibold">
+                    {syncLastSyncedAt ? new Date(syncLastSyncedAt).toLocaleString() : t.neverSynced}
+                  </strong>
+                </span>
+                {syncStatusMessage && (
+                  <span className="text-primary font-medium truncate max-w-[200px]" title={syncStatusMessage}>
+                    {syncStatusMessage}
+                  </span>
+                )}
+              </div>
+
+              {/* Action Buttons: Merge, Push, Pull */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <Button
+                  type="button"
+                  onClick={handleSyncMerge}
+                  disabled={syncLoadingAction !== null || !syncGistToken.trim()}
+                  className="h-8 bg-primary hover:bg-primary/90 text-white text-[11px] font-bold flex items-center justify-center gap-1 rounded-lg shadow-sm cursor-pointer active:scale-[0.98]"
+                >
+                  {syncLoadingAction === "merge" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3" />
+                  )}
+                  <span>{syncLoadingAction === "merge" ? t.syncingMerge : t.syncMergeBtn}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSyncPush}
+                  disabled={syncLoadingAction !== null || !syncGistToken.trim()}
+                  className="h-8 border-border/40 bg-muted/10 hover:bg-muted/20 text-[11px] font-bold flex items-center justify-center gap-1 rounded-lg shadow-sm cursor-pointer active:scale-[0.98]"
+                >
+                  {syncLoadingAction === "push" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <CloudUpload className="size-3 text-sky-500" />
+                  )}
+                  <span>{syncLoadingAction === "push" ? t.syncingPush : t.syncPushBtn}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSyncPull}
+                  disabled={syncLoadingAction !== null || !syncGistToken.trim() || !syncGistId.trim()}
+                  className="h-8 border-border/40 bg-muted/10 hover:bg-muted/20 text-[11px] font-bold flex items-center justify-center gap-1 rounded-lg shadow-sm cursor-pointer active:scale-[0.98]"
+                >
+                  {syncLoadingAction === "pull" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <CloudDownload className="size-3 text-amber-500" />
+                  )}
+                  <span>{syncLoadingAction === "pull" ? t.syncingPull : t.syncPullBtn}</span>
+                </Button>
+              </div>
             </div>
 
             {/* General Settings (Theme, Language, Reload Config) */}

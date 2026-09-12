@@ -127,6 +127,10 @@ pub struct Config {
     #[serde(default)]
     pub grok_custom_dir: String,
 
+    // 同步配置
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<crate::sync::SyncConfig>,
+
     // 旧字段（向后兼容，迁移后不再保存）
     #[serde(default, skip_serializing)]
     pub codex_active: String,
@@ -328,6 +332,34 @@ fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Resul
         fs::set_permissions(&path, perms)?;
     }
     Ok(())
+}
+
+/// Creates a backup copy of the current config.yaml file before performing disruptive operations like sync pulls.
+pub fn backup_config_file() -> Result<Option<PathBuf>, ConfigError> {
+    let path = config_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let backup_name = format!("{}.backup.{}", CONFIG_FILE_NAME, timestamp);
+    let mut backup_path = path.clone();
+    backup_path.set_file_name(backup_name);
+
+    fs::copy(&path, &backup_path).map_err(|err| ConfigError::WriteError {
+        path: backup_path.clone(),
+        source: err,
+    })?;
+
+    Ok(Some(backup_path))
+}
+
+pub fn get_sync_config(cfg: &Config) -> crate::sync::SyncConfig {
+    cfg.sync.clone().unwrap_or_default()
+}
+
+pub fn update_sync_config(cfg: &mut Config, sync: crate::sync::SyncConfig) {
+    cfg.sync = Some(sync);
 }
 
 pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Result<(), ConfigError> {
