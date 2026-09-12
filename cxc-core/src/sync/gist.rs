@@ -70,7 +70,7 @@ impl GistClient {
         let mut headers = HeaderMap::new();
         headers.insert(
             USER_AGENT,
-            HeaderValue::from_static("CXC-Desktop/0.0.6 (https://github.com/zhang3say/cxc)"),
+            HeaderValue::from_static(concat!("CXC-Desktop/", env!("CARGO_PKG_VERSION"), " (https://github.com/zhang3say/cxc)")),
         );
         headers.insert(
             ACCEPT,
