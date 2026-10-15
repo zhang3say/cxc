@@ -58,7 +58,19 @@ An optional multi-model configuration for Claude CLI providers. Allows mapping d
 
 ## Grok CLI Adapter (Grok CLI 适配器)
 
-A Target Tool adapter that manages Grok CLI configuration. Grok uses a single `~/.grok/config.toml` file: CXC sets `[models].default` and writes `base_url` / `api_key` / `api_backend` under `[model."<model-id>"]`. Unrelated sections (ui, marketplace, skills, etc.) are preserved via `toml_edit`. OAuth `auth.json` is not modified; relay scenarios use the per-model `api_key` field.
+A Target Tool adapter that manages Grok CLI configuration. Grok uses a single `~/.grok/config.toml` file: CXC sets `[models].default` and writes the endpoint as a relay block `[model_providers."<中转站名称>"]` carrying `base_url` / `api_key` / `api_backend`, while each managed model block keeps only `model` and a `model_provider` reference (see ADR-0015). Unrelated sections (ui, marketplace, skills, etc.) are preserved via `toml_edit`. OAuth `auth.json` is not modified; relay scenarios use the per-model `api_key` field.
+
+## Grok Relay Model List (Grok 中转站模型列表)
+
+The optional `grok_models` list on a Grok Provider: extra models written alongside the default model, all referencing the same relay block. Removing a model from the list never deletes its block from `config.toml`.
+
+## Grok web_search Policy (Grok web_search 策略)
+
+The `grok_web_search` setting on a Grok Provider deciding how CXC treats `[models].web_search`, which is a separate pin and does **not** follow `[models].default`: keep the file as is, follow the relay's default model, name a specific model, or unset it (searches then use the official endpoint).
+
+## Grok Relay Reorganize (Grok 中转站整理)
+
+A one-time migration action that rewrites `[model.*]` blocks into the relay-centric structure: models sharing an endpoint are grouped into one `[model_providers.<id>]` block, duplicated `base_url` / `api_key` / `api_backend` are removed, and the discovered models are written back into CXC's `grok_models` list. The block key comes from the matching CXC Provider name, or falls back to an existing block key and finally to the `base_url` host.
 
 ## Grok Source (Grok 来源)
 

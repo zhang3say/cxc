@@ -65,6 +65,24 @@ pub struct ClaudeModels {
     pub subagent: Option<String>,
 }
 
+/// Grok 的 `[models].web_search` 处置策略。
+///
+/// web_search 不跟随 `[models].default`，它是独立的一份 pin：不设置时走官方端点，
+/// 指向中转站模型时才经由中转站。因此切换中转站时必须显式决定它的去向。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum GrokWebSearch {
+    /// 保持配置文件现状（CXC 不写也不删该字段）
+    #[default]
+    Keep,
+    /// 跟随本中转站的默认模型
+    Follow,
+    /// 指定模型（通常是本中转站下的某个模型）
+    Model { model: String },
+    /// 删除该字段，让 web_search 回到官方端点
+    Unset,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Provider {
     pub name: String,
@@ -83,6 +101,12 @@ pub struct Provider {
     pub last_ok: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_models: Option<ClaudeModels>,
+    /// Grok：该中转站下要一并写入的附加模型（不含默认模型）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grok_models: Option<Vec<String>>,
+    /// Grok：`[models].web_search` 的处置策略
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grok_web_search: Option<GrokWebSearch>,
 }
 
 fn default_wire_api() -> String {
@@ -529,6 +553,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         };
         add_provider(&mut cfg, "codex", p).unwrap();
 
@@ -552,6 +578,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         };
         add_provider(&mut cfg, "codex", p.clone()).unwrap();
         let err = add_provider(&mut cfg, "codex", p);
@@ -573,6 +601,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -585,6 +615,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         assert_eq!(cfg.codex_active_app, "");
@@ -605,6 +637,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -617,6 +651,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "b").unwrap();
         remove_provider(&mut cfg, "codex", "a").unwrap();
@@ -639,6 +675,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
@@ -668,6 +706,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "claude", "app", "shared").unwrap();
         set_active(&mut cfg, "claude", "wsl", "shared").unwrap();
@@ -698,6 +738,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         let err = remove_provider(&mut cfg, "codex", "nonexistent");
@@ -719,6 +761,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -731,6 +775,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         set_active(&mut cfg, "codex", "app", "b").unwrap();
@@ -752,6 +798,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -774,6 +822,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "node-b".to_string(),
@@ -786,6 +836,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         set_active(&mut cfg, "codex", "app", "node-a").unwrap();
@@ -837,6 +889,8 @@ mod tests {
                 latency_ms: None,
                 last_ok: None,
                 claude_models: None,
+                grok_models: None,
+                grok_web_search: None,
             },
         )
         .unwrap();
@@ -867,6 +921,8 @@ mod tests {
                 latency_ms: None,
                 last_ok: None,
                 claude_models: None,
+                grok_models: None,
+                grok_web_search: None,
             },
         );
         assert!(matches!(err, Err(ConfigError::UnknownTargetTool(_))));
@@ -888,6 +944,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         use std::os::unix::fs::PermissionsExt;
@@ -910,6 +968,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         update_test_result(&mut cfg, "codex", "a", 123, true).unwrap();
@@ -934,6 +994,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -956,6 +1018,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         let updated = Provider {
@@ -969,6 +1033,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
@@ -994,6 +1060,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -1006,6 +1074,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
@@ -1020,6 +1090,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
@@ -1043,6 +1115,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -1055,6 +1129,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }).unwrap();
 
         let updated = Provider {
@@ -1068,6 +1144,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         };
         let err = edit_provider(&mut cfg, "codex", "a", updated);
         assert!(err.is_err());

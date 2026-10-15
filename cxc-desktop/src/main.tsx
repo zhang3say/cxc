@@ -78,7 +78,9 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         remark: "Grok CLI relay",
         last_test: "2026-06-12T15:08:00.000Z",
         latency_ms: 80,
-        last_ok: true
+        last_ok: true,
+        grok_models: ["grok-4.5-mini"],
+        grok_web_search: { mode: "follow" }
       }
     ],
     codex_source: "app",

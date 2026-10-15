@@ -46,6 +46,8 @@ import {
   CloudDownload,
   Lock,
   ExternalLink,
+  X,
+  Layers,
 } from "lucide-react";
 
 interface ClaudeModels {
@@ -67,6 +69,26 @@ interface Provider {
   latency_ms?: number;
   last_ok?: boolean;
   claude_models?: ClaudeModels;
+  // Grok：该中转站下一并维护的附加模型（不含默认模型）
+  grok_models?: string[];
+  // Grok：[models].web_search 的处置策略（未设置 = 保持配置文件现状）
+  grok_web_search?: GrokWebSearchPolicy;
+}
+
+type GrokWebSearchPolicy =
+  | { mode: "keep" }
+  | { mode: "follow" }
+  | { mode: "model"; model: string }
+  | { mode: "unset" };
+
+interface GrokMigrationReport {
+  models_grouped: number;
+  created_providers: string[];
+  reused_providers: string[];
+  renamed_providers: [string, string][];
+  skipped_models: string[];
+  web_search: string | null;
+  groups: [string, string[]][];
 }
 
 type TargetTool = "codex" | "claude" | "grok";
@@ -237,6 +259,29 @@ const locales = {
     syncSuccessPull: "已从云端拉取最新配置并保存备份！",
     syncTestSuccess: (user: string) => `GitHub 连接成功！认证用户：${user}`,
     syncTestFailed: "连接失败，请检查 Token 权限或网络",
+    grokModelsLabel: "中转站模型列表",
+    grokModelsHint: "除默认模型外，切换时一并写入并为这些模型指向本中转站（可选）。",
+    grokModelsPlaceholder: "输入模型标识符",
+    grokModelsAdd: "添加",
+    grokModelsEmpty: "暂无附加模型",
+    grokModelsPickFromFetched: "从拉取结果选择",
+    grokWebSearchLabel: "web_search 模型",
+    grokWebSearchHint: "web_search 不跟随默认模型：不设置时搜索走官方端点，指向本中转站时经由本中转站。",
+    grokWebSearchFollow: "跟随本中转站默认模型",
+    grokWebSearchCustom: "指定模型",
+    grokWebSearchUnset: "不设置（走官方端点）",
+    grokWebSearchKeep: "保持配置文件现状",
+    grokWebSearchOfflineHint: "被指定的模型需支持 Responses 的 web_search 工具，否则搜索会报错。",
+    grokMigrateBtn: "按中转站整理配置",
+    grokMigrateTitle: "把 Grok 配置整理成中转站结构",
+    grokMigrateDesc: "扫描 config.toml 里的 [model.*]，把重复的 base_url / api_key / api_backend 收拢到 [model_providers.*]，并让模型通过 model_provider 引用它。写入前会自动备份。",
+    grokMigrateConfirm: "开始整理",
+    grokMigrating: "整理中...",
+    grokMigrateDone: (grouped: number, relays: number) => `整理完成：${grouped} 个模型归入 ${relays} 个中转站`,
+    grokMigrateNoChange: "配置已经是中转站结构，无需整理",
+    grokMigrateFailed: "整理失败",
+    grokMigrateSkipped: (names: string) => `跳过（无端点信息）：${names}`,
+    grokMigrateRenamed: (renames: string) => `中转站块已改名：${renames}`,
   },
   en: {
     subtitle: "Relay Configuration Manager",
@@ -371,6 +416,29 @@ const locales = {
     syncSuccessPull: "Pulled latest config from cloud (backup created)!",
     syncTestSuccess: (user: string) => `GitHub connected! User: ${user}`,
     syncTestFailed: "Connection failed. Please verify Token permissions or network.",
+    grokModelsLabel: "Relay Model List",
+    grokModelsHint: "Extra models written alongside the default one, all pointing at this relay (optional).",
+    grokModelsPlaceholder: "Model id",
+    grokModelsAdd: "Add",
+    grokModelsEmpty: "No extra models yet",
+    grokModelsPickFromFetched: "Pick from fetched models",
+    grokWebSearchLabel: "web_search model",
+    grokWebSearchHint: "web_search does not follow the default model: unset sends searches to the official endpoint, pointing it here routes them through this relay.",
+    grokWebSearchFollow: "Follow this relay's default model",
+    grokWebSearchCustom: "Specific model",
+    grokWebSearchUnset: "Unset (use official endpoint)",
+    grokWebSearchKeep: "Keep config file as is",
+    grokWebSearchOfflineHint: "The chosen model must support the Responses API web_search tool, otherwise searches fail.",
+    grokMigrateBtn: "Reorganize by relay",
+    grokMigrateTitle: "Reorganize Grok config around relays",
+    grokMigrateDesc: "Scans [model.*] in config.toml, gathers duplicated base_url / api_key / api_backend into [model_providers.*], and points each model at its relay with model_provider. A backup is written first.",
+    grokMigrateConfirm: "Reorganize",
+    grokMigrating: "Reorganizing...",
+    grokMigrateDone: (grouped: number, relays: number) => `Done: ${grouped} models grouped into ${relays} relays`,
+    grokMigrateNoChange: "Config already uses the relay structure, nothing to do",
+    grokMigrateFailed: "Reorganize failed",
+    grokMigrateSkipped: (names: string) => `Skipped (no endpoint info): ${names}`,
+    grokMigrateRenamed: (renames: string) => `Renamed relay blocks: ${renames}`,
   }
 };
 
@@ -390,6 +458,8 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
     fable: "",
     subagent: "",
   },
+  grok_models: [],
+  grok_web_search: { mode: "follow" },
 };
 
 const mockConfig: Config = {
@@ -495,7 +565,9 @@ claude_active_wsl: "ClaudeAPI",
       remark: "Grok CLI relay",
       latency_ms: 80,
       last_ok: true,
-      last_test: new Date().toISOString()
+      last_test: new Date().toISOString(),
+      grok_models: ["grok-4.5-mini"],
+      grok_web_search: { mode: "follow" },
     }
   ],
   grok_source: "app",
@@ -630,6 +702,14 @@ function App() {
   const [fetchingModels, setFetchingModels] = useState<boolean>(false);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Grok 中转站附加模型输入
+  const [grokModelInput, setGrokModelInput] = useState<string>("");
+
+  // Grok 配置整理（一次性迁移）
+  const [showGrokMigrate, setShowGrokMigrate] = useState<boolean>(false);
+  const [migratingGrok, setMigratingGrok] = useState<boolean>(false);
+  const [grokMigrateError, setGrokMigrateError] = useState<string | null>(null);
 
   // Connectivity Test State
   const [testingProviders, setTestingProviders] = useState<Record<string, boolean>>({});
@@ -1007,6 +1087,7 @@ function App() {
     });
     setFetchedModels([]);
     setFetchError(null);
+    setGrokModelInput("");
     setShowForm("add");
     setEditingName(null);
     setShowApiKey(false);
@@ -1028,13 +1109,114 @@ function App() {
         fable: "",
         subagent: "",
       },
+      grok_models: p.grok_models || [],
+      grok_web_search: p.grok_web_search || { mode: "keep" },
     });
     setFetchedModels([]);
     setFetchError(null);
+    setGrokModelInput("");
     setShowForm("edit");
     setEditingName(p.name);
     setShowApiKey(false);
     setShowAdvanced(false);
+  }
+
+  /** 把模型加入 Grok 中转站的附加模型列表 */
+  function addGrokModelValue(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setFormValues((prev) => {
+      const models = prev.grok_models || [];
+      if (models.includes(trimmed) || trimmed === prev.model.trim()) return prev;
+      return { ...prev, grok_models: [...models, trimmed] };
+    });
+  }
+
+  function removeGrokModel(model: string) {
+    setFormValues((prev) => ({
+      ...prev,
+      grok_models: (prev.grok_models || []).filter((m) => m !== model),
+    }));
+  }
+
+  function setGrokWebSearchMode(mode: "keep" | "follow" | "model" | "unset") {
+    setFormValues((prev) => {
+      if (mode === "model") {
+        const current =
+          prev.grok_web_search?.mode === "model"
+            ? prev.grok_web_search.model
+            : (prev.grok_models || [])[0] || "";
+        return { ...prev, grok_web_search: { mode: "model", model: current } };
+      }
+      return { ...prev, grok_web_search: { mode } as GrokWebSearchPolicy };
+    });
+  }
+
+  async function handleMigrateGrokConfig() {
+    try {
+      setMigratingGrok(true);
+      setGrokMigrateError(null);
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (!isTauri) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        const report: GrokMigrationReport = {
+          models_grouped: 5,
+          created_providers: ["mustore", "JYHLab"],
+          reused_providers: [],
+          renamed_providers: [["g2a.serverholdplease.lol", "mustore"]],
+          skipped_models: [],
+          web_search: "grok-4.5",
+          groups: [
+            ["mustore", ["grok-4.6", "grok-4.5"]],
+            ["JYHLab", ["gpt-5.6-terra"]],
+          ],
+        };
+        setConfig((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            grok_providers: (prev.grok_providers || []).map((p) => {
+              const group = report.groups.find(([key]) => key === p.name);
+              if (!group) return p;
+              const extras = group[1].filter((m) => m !== p.model);
+              return {
+                ...p,
+                grok_models: extras.length > 0 ? extras : undefined,
+                grok_web_search:
+                  report.web_search === null
+                    ? { mode: "unset" }
+                    : report.web_search === p.model
+                      ? { mode: "follow" }
+                      : group[1].includes(report.web_search)
+                        ? { mode: "model", model: report.web_search }
+                        : p.grok_web_search,
+              };
+            }),
+          };
+        });
+        showToast(t.grokMigrateDone(report.models_grouped, report.created_providers.length + report.reused_providers.length));
+        setShowGrokMigrate(false);
+        return;
+      }
+
+      const res = await invoke<{ report: GrokMigrationReport; config: Config }>("migrate_grok_config");
+      setConfig(res.config);
+      const relayCount = res.report.created_providers.length + res.report.reused_providers.length;
+      if (res.report.models_grouped === 0) {
+        showToast(t.grokMigrateNoChange);
+      } else {
+        showToast(t.grokMigrateDone(res.report.models_grouped, relayCount));
+      }
+      if (res.report.skipped_models.length > 0) {
+        setGrokMigrateError(t.grokMigrateSkipped(res.report.skipped_models.join(", ")));
+        return;
+      }
+      setShowGrokMigrate(false);
+    } catch (e: any) {
+      setGrokMigrateError(e.toString());
+    } finally {
+      setMigratingGrok(false);
+    }
   }
 
   async function handleFetchModels() {
@@ -1185,13 +1367,25 @@ function App() {
 
     try {
       setError(null);
+      const providerPayload: Provider = { ...formValues };
+      if (targetTool === "grok") {
+        // 附加模型里去掉默认模型与重复项
+        const extras = (formValues.grok_models || [])
+          .map((m) => m.trim())
+          .filter((m) => m && m !== formValues.model.trim());
+        providerPayload.grok_models = extras.length > 0 ? Array.from(new Set(extras)) : undefined;
+      } else {
+        providerPayload.grok_models = undefined;
+        providerPayload.grok_web_search = undefined;
+      }
+
       let updatedCfg: Config;
       if (showForm === "add") {
-        updatedCfg = await invoke<Config>("add_provider", { provider: formValues, targetTool });
+        updatedCfg = await invoke<Config>("add_provider", { provider: providerPayload, targetTool });
       } else {
         updatedCfg = await invoke<Config>("edit_provider", {
           oldName: editingName,
-          updated: formValues,
+          updated: providerPayload,
           targetTool
         });
       }
@@ -1756,6 +1950,27 @@ function App() {
             </Button>
           )}
 
+          {/* Grok：把配置文件整理成中转站结构 */}
+          {targetTool === "grok" && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                setGrokMigrateError(null);
+                setShowGrokMigrate(true);
+              }}
+              disabled={migratingGrok}
+              className="size-8 border-border bg-card text-foreground shadow-sm transition-all"
+              title={t.grokMigrateBtn}
+            >
+              {migratingGrok ? (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              ) : (
+                <Layers className="size-4 text-muted-foreground" />
+              )}
+            </Button>
+          )}
+
           {/* Add Provider Button */}
           <Button
             onClick={openAddForm}
@@ -1911,6 +2126,14 @@ function App() {
                             >
                               {p.model}
                             </span>
+                            {targetTool === "grok" && (p.grok_models?.length || 0) > 0 && (
+                              <span
+                                className="shrink-0 rounded-md border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary"
+                                title={(p.grok_models || []).join(", ")}
+                              >
+                                +{p.grok_models?.length}
+                              </span>
+                            )}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
@@ -2085,6 +2308,14 @@ function App() {
                               >
                                 {p.model}
                               </span>
+                              {targetTool === "grok" && (p.grok_models?.length || 0) > 0 && (
+                                <span
+                                  className="shrink-0 rounded-md border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary"
+                                  title={(p.grok_models || []).join(", ")}
+                                >
+                                  +{p.grok_models?.length}
+                                </span>
+                              )}
                             </div>
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Key:</span>
@@ -2955,6 +3186,125 @@ function App() {
                     </div>
                   )}
 
+                  {targetTool === "grok" && (
+                    <div className="space-y-3 border border-border/30 rounded-xl p-4 bg-muted/5">
+                      <Label className="text-[11px] font-extrabold text-muted-foreground/80 flex items-center gap-1.5 uppercase tracking-wider">
+                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-md text-[9px] font-bold">Optional</span>
+                        {t.grokModelsLabel}
+                      </Label>
+                      <p className="text-[10px] text-muted-foreground/75 leading-normal">{t.grokModelsHint}</p>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {(formValues.grok_models || []).length === 0 && (
+                          <span className="text-[10px] text-muted-foreground/60">{t.grokModelsEmpty}</span>
+                        )}
+                        {(formValues.grok_models || []).map((m) => (
+                          <span
+                            key={m}
+                            className="inline-flex items-center gap-1 rounded-md border border-border/40 bg-background px-2 py-0.5 text-[10px] font-medium text-foreground/80"
+                          >
+                            {m}
+                            <button
+                              type="button"
+                              onClick={() => removeGrokModel(m)}
+                              className="text-muted-foreground/60 hover:text-red-500 transition-colors cursor-pointer"
+                              title={t.deleteConnTitle}
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Input
+                          type="text"
+                          value={grokModelInput}
+                          onChange={(e) => setGrokModelInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addGrokModelValue(grokModelInput);
+                              setGrokModelInput("");
+                            }
+                          }}
+                          placeholder={t.grokModelsPlaceholder}
+                          className="h-8 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={() => {
+                            addGrokModelValue(grokModelInput);
+                            setGrokModelInput("");
+                          }}
+                          className="h-8 text-[10px] border border-border/40 bg-muted/5 text-muted-foreground hover:bg-muted/15 font-extrabold px-2.5 rounded-md shadow-sm transition-all active:scale-[0.96] shrink-0"
+                        >
+                          {t.grokModelsAdd}
+                        </Button>
+                      </div>
+
+                      {fetchedModels.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => addGrokModelValue(e.target.value)}
+                          className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
+                        >
+                          <option value="">{t.grokModelsPickFromFetched}</option>
+                          {fetchedModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      <div className="space-y-1.5 pt-2 border-t border-border/30">
+                        <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                          {t.grokWebSearchLabel}
+                        </Label>
+                        <select
+                          value={formValues.grok_web_search?.mode || "keep"}
+                          onChange={(e) => setGrokWebSearchMode(e.target.value as "keep" | "follow" | "model" | "unset")}
+                          className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
+                        >
+                          <option value="keep">{t.grokWebSearchKeep}</option>
+                          <option value="follow">{t.grokWebSearchFollow}</option>
+                          <option value="model">{t.grokWebSearchCustom}</option>
+                          <option value="unset">{t.grokWebSearchUnset}</option>
+                        </select>
+                        {formValues.grok_web_search?.mode === "model" && (
+                          fetchedModels.length > 0 ? (
+                            <select
+                              value={formValues.grok_web_search.model || ""}
+                              onChange={(e) => setFormValues({ ...formValues, grok_web_search: { mode: "model", model: e.target.value } })}
+                              className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
+                            >
+                              <option value="">{t.selectModelDefault}</option>
+                              {fetchedModels.map((m) => (
+                                <option key={m} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={formValues.grok_web_search.model || ""}
+                              onChange={(e) => setFormValues({ ...formValues, grok_web_search: { mode: "model", model: e.target.value } })}
+                              placeholder={formValues.model || "grok-4.5"}
+                              className="h-8 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
+                            />
+                          )
+                        )}
+                        <p className="text-[10px] text-muted-foreground/70 leading-normal">
+                          {t.grokWebSearchHint} {t.grokWebSearchOfflineHint}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {(targetTool === "codex" || targetTool === "grok") && (
                   <div className="space-y-1.5">
                     <Label htmlFor="form-wire" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
@@ -3105,6 +3455,61 @@ function App() {
       </Dialog>
 
       {/* Confirm Delete Dialog */}
+      {/* Grok 配置整理（中转站结构） */}
+      <Dialog open={showGrokMigrate} onOpenChange={(open) => !open && setShowGrokMigrate(false)}>
+        <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center border border-primary/20">
+              <Layers className="size-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <DialogHeader className="gap-1.5 pb-0">
+                <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                  {t.grokMigrateTitle}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground pt-1 leading-relaxed">
+                  {t.grokMigrateDesc}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
+
+          {grokMigrateError && (
+            <div className="mt-4 rounded-lg border border-red-200/60 bg-red-500/5 p-3 dark:border-red-900/40 dark:bg-red-950/10 text-red-600 dark:text-red-400 text-xs leading-normal">
+              {grokMigrateError}
+            </div>
+          )}
+
+          <DialogFooter className="pt-4 border-t border-border/30 mt-6">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowGrokMigrate(false)}
+                className="h-8 px-4 rounded-lg border border-border/40 bg-muted/5 text-xs font-bold hover:bg-muted/15 text-muted-foreground hover:text-foreground active:scale-[0.98] transition-all duration-200"
+              >
+                {t.cancelBtn}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleMigrateGrokConfig}
+                disabled={migratingGrok}
+                className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/95 active:scale-[0.98] transition-all shadow-sm shadow-primary/10"
+              >
+                {migratingGrok ? (
+                  <>
+                    <Loader2 className="size-3 mr-1 animate-spin" />
+                    {t.grokMigrating}
+                  </>
+                ) : (
+                  t.grokMigrateConfirm
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md bg-card/95 dark:bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl p-6 gap-0 overflow-hidden duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]">
           <div className="flex items-start gap-4">

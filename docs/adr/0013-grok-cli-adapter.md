@@ -13,7 +13,7 @@ Grok 与现有工具的差异：
 | 维度 | Codex | Claude CLI | Grok |
 |------|-------|------------|------|
 | 配置文件 | `config.toml` + `auth.json` | `settings.json` (`env`) | `config.toml` |
-| 模型入口 | 顶层 `model` + `model_providers.codex` | 多个 `ANTHROPIC_*` 环境变量 | `[models].default` + `[model.<id>]` |
+| 模型入口 | 顶层 `model` + `model_providers.codex` | 多个 `ANTHROPIC_*` 环境变量 | `[models].default` + `[model.<id>]`（ADR-0015 起改为中转站维度） |
 | 协议字段 | `wire_api` | 无 | `api_backend` |
 | 默认协议 | `responses` | Anthropic Messages | `chat_completions` |
 | 密钥位置 | `auth.json` 的 `OPENAI_API_KEY` | `env.ANTHROPIC_AUTH_TOKEN` | `[model.<id>].api_key` |
@@ -21,6 +21,10 @@ Grok 与现有工具的差异：
 ## 决策
 
 ### 1. 配置写入范围
+
+> **注（2026-10-15）**：本节的写入结构已被 [ADR-0015](0015-grok-provider-centric-write.md) 取代——端点与协议改为写进
+> `[model_providers."<中转站名称>"]`，模型块只保留 `model` 与 `model_provider` 引用。下表中的
+> `wire_api → api_backend` 映射、不修改 `auth.json` / 无关 section、`toml_edit` 保格式、写前备份仍然有效。
 
 **决定：只改 API 相关字段，保留其余配置**
 

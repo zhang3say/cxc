@@ -61,7 +61,7 @@ CXC 将其自身的服务商列表和配置存储在系统特定的配置目录�
 当您在 CXC 中切换服务商时，它会自动更新目标工具的配置：
 - **Codex** — 更新配置目录下的 `config.toml` (设置 model, base_url, wire_api) 和 `auth.json` (设置 API Key)
 - **Claude CLI** — 更新 `settings.json` 中的 `env` 对象 (设置 API Key、Base URL 及多模型映射关系)
-- **Grok** — 更新 `config.toml` 中的 `[models].default` 与 `[model."<id>"]`（设置 base_url、api_key、api_backend）
+- **Grok** — 更新 `config.toml` 中的 `[models].default` 与 `[model_providers.<中转站名称>]`（端点与 `api_backend` 收拢在中转站块），模型通过 `model_provider` 引用它；`[models].web_search` 按中转站的策略写入或清除
 
 在进行任何写入之前，目标配置文件都会被自动备份为 `.bak` 文件。
 

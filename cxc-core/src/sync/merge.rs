@@ -4,7 +4,8 @@ use std::collections::HashMap;
 /// Merges local and remote provider lists based on the provider `name`.
 /// - Providers unique to either list are preserved.
 /// - When a provider exists in both lists:
-///   - Remarks and claude_models: if one side has None and the other has Some, the non-empty configuration is adopted.
+///   - Remarks, claude_models, grok_models and grok_web_search: if one side has None and the other has Some,
+///     the non-empty configuration is adopted.
 ///   - Connection parameters (base_url, api_key, model, wire_api) and test metrics (last_test, latency_ms, last_ok)
 ///     are kept strictly coupled:
 ///     - If both sets of connection parameters are identical, the more recent test metrics are adopted.
@@ -73,6 +74,14 @@ pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider>
             if l.claude_models.is_none() && r.claude_models.is_some() {
                 l.claude_models = r.claude_models.clone();
             }
+
+            // Adopt Grok model list / web_search policy if local is missing them
+            if l.grok_models.is_none() && r.grok_models.is_some() {
+                l.grok_models = r.grok_models.clone();
+            }
+            if l.grok_web_search.is_none() && r.grok_web_search.is_some() {
+                l.grok_web_search = r.grok_web_search.clone();
+            }
         } else {
             // Provider is only present on remote, add it
             map.insert(r.name.clone(), r.clone());
@@ -120,6 +129,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }];
 
         let remote = vec![Provider {
@@ -133,6 +144,8 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -156,6 +169,8 @@ mod tests {
             latency_ms: Some(42),
             last_ok: Some(true),
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }];
 
         let remote = vec![Provider {
@@ -169,6 +184,8 @@ mod tests {
             latency_ms: Some(150),
             last_ok: Some(true),
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -191,6 +208,8 @@ mod tests {
             latency_ms: Some(200),
             last_ok: Some(true),
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }];
 
         let remote = vec![Provider {
@@ -204,6 +223,8 @@ mod tests {
             latency_ms: Some(60),
             last_ok: Some(true),
             claude_models: None,
+            grok_models: None,
+            grok_web_search: None,
         }];
 
         let merged = merge_providers(&local, &remote);

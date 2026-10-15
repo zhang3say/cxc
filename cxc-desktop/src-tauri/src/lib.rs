@@ -1,6 +1,7 @@
-use cxc_core::config::{self, Config, Provider};
+use cxc_core::config::{self, Config, GrokWebSearch, Provider};
 use cxc_core::target::{
-    claude::ClaudeAdapter, codex::CodexAdapter, grok::GrokAdapter, TargetAdapter, TargetConfig,
+    claude::ClaudeAdapter, codex::CodexAdapter, grok::GrokAdapter, grok::GrokReorgReport,
+    TargetAdapter, TargetConfig,
 };
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -201,9 +202,7 @@ fn write_provider_to_target(
         }
         "grok" => {
             let adapter = GrokAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
-            adapter
-                .write(&provider_to_target_config(provider, target_tool))
-                .map_err(|e| e.to_string())
+            adapter.write_provider(provider).map_err(|e| e.to_string())
         }
         other => Err(format!("Unknown target tool: {}", other)),
     }
@@ -236,6 +235,62 @@ fn save_settings(
 
     let _ = update_tray_menu_with_config(&app_handle, &cfg);
     Ok(cfg)
+}
+
+#[derive(serde::Serialize)]
+struct GrokMigrationResponse {
+    report: GrokReorgReport,
+    config: Config,
+}
+
+/// 把迁移结果回填到 CXC 的 Grok 中转站：附加模型列表与 web_search 处置策略。
+///
+/// 只有中转站块键与 CXC 里的中转站名称一致时才回填，其余块由用户自行处理。
+fn apply_grok_reorg_to_config(cfg: &mut Config, report: &GrokReorgReport) {
+    for (key, models) in &report.groups {
+        let Some(provider) = cfg.grok_providers.iter_mut().find(|p| &p.name == key) else {
+            continue;
+        };
+
+        let default_model = provider.model.clone();
+        let extras: Vec<String> = models
+            .iter()
+            .filter(|model| **model != default_model)
+            .cloned()
+            .collect();
+        provider.grok_models = if extras.is_empty() { None } else { Some(extras) };
+
+        provider.grok_web_search = match report.web_search.as_deref() {
+            None => Some(GrokWebSearch::Unset),
+            Some(model) if model == default_model => Some(GrokWebSearch::Follow),
+            Some(model) if models.iter().any(|m| m == model) => Some(GrokWebSearch::Model {
+                model: model.to_string(),
+            }),
+            // 指向别处的模型：保持配置文件现状，交给用户决定
+            Some(_) => None,
+        };
+    }
+}
+
+#[tauri::command]
+fn migrate_grok_config(app_handle: tauri::AppHandle) -> Result<GrokMigrationResponse, String> {
+    let mut cfg = config::load().map_err(|e| e.to_string())?;
+
+    let adapter = GrokAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
+    let report = adapter
+        .reorganize_provider_centric(&cfg)
+        .map_err(|e| e.to_string())?;
+
+    apply_grok_reorg_to_config(&mut cfg, &report);
+    config::save(&cfg).map_err(|e| e.to_string())?;
+
+    let _ = update_tray_menu_with_config(&app_handle, &cfg);
+    let _ = app_handle.emit("config-updated", &cfg);
+
+    Ok(GrokMigrationResponse {
+        report,
+        config: cfg,
+    })
 }
 
 #[tauri::command]
@@ -523,6 +578,7 @@ pub fn run() {
             test_all_providers,
             fetch_models,
             save_settings,
+            migrate_grok_config,
             get_app_version,
             check_update,
             get_sync_config,

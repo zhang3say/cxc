@@ -61,7 +61,7 @@ CXC stores its own provider list and settings in the system-specific config dire
 When switching providers, CXC updates:
 - **Codex** — Updates `config.toml` (sets model, base_url, wire_api) and `auth.json` (sets API Key) in the Codex config directory.
 - **Claude CLI** — Updates the `env` object (sets API Key, Base URL, and optional model mappings) in `settings.json`.
-- **Grok** — Updates `[models].default` and `[model."<id>"]` in `config.toml` (sets base_url, api_key, api_backend).
+- **Grok** — Updates `[models].default` and `[model_providers.<relay name>]` in `config.toml` (endpoint and `api_backend` live on the relay block), and points each model at it with `model_provider`; `[models].web_search` is written or cleared according to the relay's policy.
 
 Before making any modifications, target config files are automatically backed up as `.bak` files.
 

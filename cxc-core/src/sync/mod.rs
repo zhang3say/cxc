@@ -317,6 +317,8 @@ mod tests {
                 latency_ms: None,
                 last_ok: None,
                 claude_models: None,
+                grok_models: None,
+                grok_web_search: None,
             }],
             claude_providers: vec![],
             grok_providers: vec![],
