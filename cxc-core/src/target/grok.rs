@@ -311,6 +311,14 @@ impl GrokAdapter {
     /// 受 CXC 管理的模型块里，`base_url` / `api_key` / `api_backend` 会被清掉——模型自身字段
     /// 优先级高于 provider 块，留着旧值会让本次切换不生效；其余字段原样保留。
     pub fn write_provider(&self, provider: &Provider) -> Result<(), TargetError> {
+        self.write_provider_with(provider, true)
+    }
+
+    fn write_provider_with(
+        &self,
+        provider: &Provider,
+        manage_effort: bool,
+    ) -> Result<(), TargetError> {
         let key = provider_key(&provider.name)?;
         let mut models = Self::managed_models(provider);
         if models.is_empty() {
@@ -378,7 +386,7 @@ impl GrokAdapter {
         }
 
         apply_web_search(&mut doc, provider)?;
-        apply_reasoning_effort(&mut doc, provider);
+        apply_reasoning_effort(&mut doc, provider, manage_effort);
 
         let out = doc.to_string();
         let _ = out
@@ -657,7 +665,7 @@ impl TargetAdapter for GrokAdapter {
             reasoning_effort: None,
             plan_reasoning_effort: None,
         };
-        self.write_provider(&provider)
+        self.write_provider_with(&provider, false)
     }
 }
 
@@ -834,18 +842,29 @@ fn apply_web_search(doc: &mut DocumentMut, provider: &Provider) -> Result<(), Ta
     Ok(())
 }
 
-/// 有推理档位时只写入当前模型块。不改 `[models].default_reasoning_effort`。没填则保持原样。
-fn apply_reasoning_effort(doc: &mut DocumentMut, provider: &Provider) {
-    let Some(level) = provider.reasoning_effort_level() else {
-        return;
-    };
+/// 有推理档位时只写入当前模型块。不改 `[models].default_reasoning_effort`。
+/// 启用卡片且没填时，只删当前模型块的 `reasoning_effort`。
+fn apply_reasoning_effort(doc: &mut DocumentMut, provider: &Provider, manage_effort: bool) {
     let model = provider.model.trim();
     if model.is_empty() {
         return;
     }
-    ensure_table(doc, MODEL_SECTION);
-    ensure_standard_table(doc, MODEL_SECTION, model);
-    doc[MODEL_SECTION][model]["reasoning_effort"] = toml_edit::value(level);
+    if let Some(level) = provider.reasoning_effort_level() {
+        ensure_table(doc, MODEL_SECTION);
+        ensure_standard_table(doc, MODEL_SECTION, model);
+        doc[MODEL_SECTION][model]["reasoning_effort"] = toml_edit::value(level);
+        return;
+    }
+    if !manage_effort {
+        return;
+    }
+    if let Some(block) = doc
+        .get_mut(MODEL_SECTION)
+        .and_then(|section| section.get_mut(model))
+        .and_then(|item| item.as_table_mut())
+    {
+        block.remove("reasoning_effort");
+    }
 }
 
 fn collect_providers(doc: &DocumentMut) -> BTreeMap<String, Endpoint> {
@@ -1167,7 +1186,7 @@ model_provider = "nope"
         assert!(model_field(&adapter, "grok-4.5", "api_backend").is_none());
         // 其它模型自身字段不受影响
         assert_eq!(model_field(&adapter, "grok-4.5", "context_window").unwrap(), "222000");
-        assert_eq!(model_field(&adapter, "grok-4.5", "reasoning_effort").unwrap(), "high");
+        assert!(model_field(&adapter, "grok-4.5", "reasoning_effort").is_none());
 
         let cfg = adapter.read().unwrap();
         assert_eq!(cfg.base_url, "https://g2a.example.com/v1");
@@ -1261,9 +1280,10 @@ model_provider = "nope"
     }
 
     #[test]
-    fn test_write_provider_reasoning_effort_unset_leaves_file() {
+    fn test_write_provider_reasoning_effort_unset_removes_only_current_model() {
         let (_dir, adapter) = setup_grok_dir();
-        let p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
+        let mut p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.5");
+        p.reasoning_effort = Some("none".to_string());
 
         adapter.write_provider(&p).unwrap();
 
@@ -1274,11 +1294,12 @@ model_provider = "nope"
                 .and_then(|v| v.as_str()),
             Some("high")
         );
-        assert_eq!(
-            model_field(&adapter, "grok-4.5", "reasoning_effort").unwrap(),
-            "high"
-        );
+        assert!(model_field(&adapter, "grok-4.5", "reasoning_effort").is_none());
+
+        let other = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
+        adapter.write_provider(&other).unwrap();
         assert!(model_field(&adapter, "grok-4.6", "reasoning_effort").is_none());
+        assert!(model_field(&adapter, "grok-4.5", "reasoning_effort").is_none());
     }
 
     #[test]
@@ -1428,6 +1449,10 @@ api_backend = "chat_completions"
         assert_eq!(got.api_key, new_cfg.api_key);
         assert_eq!(got.model, new_cfg.model);
         assert_eq!(got.wire_api, "chat_completions");
+        assert_eq!(
+            model_field(&adapter, "grok-4.5", "reasoning_effort").unwrap(),
+            "high"
+        );
 
         assert!(dir.path().join("config.toml.bak").exists());
     }

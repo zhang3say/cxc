@@ -272,7 +272,7 @@ impl ClaudeAdapter {
             model: provider.model.clone(),
             wire_api: String::new(), // Claude doesn't use this field
         };
-        self.write_with_provider(&config, provider)
+        self.write_with_provider(&config, provider, true)
     }
 
     /// Internal write method that has access to full Provider for claude_models
@@ -280,6 +280,7 @@ impl ClaudeAdapter {
         &self,
         config: &TargetConfig,
         provider: &Provider,
+        manage_effort: bool,
     ) -> Result<(), TargetError> {
         // Check if .claude directory exists
         if !self.claude_dir.exists() {
@@ -386,7 +387,7 @@ impl ClaudeAdapter {
             env.remove("CLAUDE_CODE_SUBAGENT_MODEL");
         }
 
-        apply_reasoning_effort(&mut settings, provider);
+        apply_reasoning_effort(&mut settings, provider, manage_effort);
 
         // Write settings
         let out = serde_json::to_string_pretty(&settings)
@@ -474,14 +475,23 @@ impl TargetAdapter for ClaudeAdapter {
             reasoning_effort: None,
             plan_reasoning_effort: None,
         };
-        self.write_with_provider(config, &provider)
+        self.write_with_provider(config, &provider, false)
     }
 }
 
 /// 有推理档位时写全局 `effortLevel`，并去掉各模型上的 `effortLevel`，避免按模型的值盖住全局档位。
-/// 没填则不碰这份设置。
-fn apply_reasoning_effort(settings: &mut serde_json::Value, provider: &Provider) {
+/// 启用卡片且没填时只删除全局 `effortLevel`。
+fn apply_reasoning_effort(
+    settings: &mut serde_json::Value,
+    provider: &Provider,
+    manage_effort: bool,
+) {
     let Some(level) = provider.reasoning_effort_level() else {
+        if manage_effort {
+            if let Some(obj) = settings.as_object_mut() {
+                obj.remove("effortLevel");
+            }
+        }
         return;
     };
     settings["effortLevel"] = json!(level);
@@ -850,6 +860,52 @@ mod tests {
         adapter.write_provider(&provider).unwrap();
         let data = fs::read_to_string(adapter.settings_path()).unwrap();
         let got: serde_json::Value = serde_json::from_str(&data).unwrap();
-        assert_eq!(got["effortLevel"], "high");
+        assert!(got.get("effortLevel").is_none());
+        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
+        assert!(got["modelSettings"]["claude-fable-5.1"]
+            .get("effortLevel")
+            .is_none());
+    }
+
+    #[test]
+    fn test_write_reasoning_effort_unset_removes_only_global_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = json!({
+            "effortLevel": "high",
+            "env": { "CLAUDE_CODE_EFFORT_LEVEL": "max" },
+            "modelSettings": {
+                "claude-fable-5.1": { "maxEffortLevel": "max", "effortLevel": "low" }
+            }
+        });
+        fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        let adapter = ClaudeAdapter::new_with_dir(dir.path());
+        let provider = Provider {
+            name: "relay".to_string(),
+            base_url: "https://new.example.com".to_string(),
+            api_key: "sk-new".to_string(),
+            model: "claude-fable-5.1".to_string(),
+            wire_api: String::new(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: Some("none".to_string()),
+            plan_reasoning_effort: None,
+        };
+        adapter.write_provider(&provider).unwrap();
+
+        let data = fs::read_to_string(adapter.settings_path()).unwrap();
+        let got: serde_json::Value = serde_json::from_str(&data).unwrap();
+        assert!(got.get("effortLevel").is_none());
+        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["effortLevel"], "low");
+        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
     }
 }

@@ -63,7 +63,7 @@ CXC 将其自身的服务商列表和配置存储在系统特定的配置目录�
 - **Claude CLI** — 更新 `settings.json` 中的 `env` 对象 (设置 API Key、Base URL 及多模型映射关系)
 - **Grok** — 更新 `config.toml` 中的 `[models].default` 与 `[model_providers.<中转站名称>]`（端点与 `api_backend` 收拢在中转站块），当前模型通过 `model_provider` 引用它；`[models].web_search` 缺省写成同一个模型，也可按中转站的策略指定、保持或清除
 
-每个中转站可以选一个推理档位。启用时写入该工具的当前档位；没选则不改目标配置里已有的值。Codex 的普通会话和计划模式分开设置。Claude 写入全局档位。
+每个中转站可以选一个推理档位。启用时写入该工具的当前档位；选不设置则删掉对应的键。Codex 的普通会话和计划模式分开设置。Claude 写入全局档位。
 
 在进行任何写入之前，目标配置文件都会被自动备份为 `.bak` 文件。
 

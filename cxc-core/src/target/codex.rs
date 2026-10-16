@@ -283,6 +283,7 @@ impl CodexAdapter {
             },
             provider.reasoning_effort_level(),
             provider.plan_reasoning_effort_level(),
+            true,
         )
     }
 
@@ -291,6 +292,7 @@ impl CodexAdapter {
         config: &TargetConfig,
         reasoning_effort: Option<&str>,
         plan_reasoning_effort: Option<&str>,
+        manage_effort: bool,
     ) -> Result<(), TargetError> {
         if !self.codex_dir.exists() {
             fs::create_dir_all(&self.codex_dir).map_err(|err| TargetError::WriteError {
@@ -327,12 +329,13 @@ impl CodexAdapter {
 
         doc["model"] = toml_edit::value(&config.model);
         doc["model_provider"] = toml_edit::value("codex");
-        if let Some(level) = reasoning_effort {
-            doc["model_reasoning_effort"] = toml_edit::value(level);
-        }
-        if let Some(level) = plan_reasoning_effort {
-            doc["plan_mode_reasoning_effort"] = toml_edit::value(level);
-        }
+        apply_effort_key(&mut doc, "model_reasoning_effort", reasoning_effort, manage_effort);
+        apply_effort_key(
+            &mut doc,
+            "plan_mode_reasoning_effort",
+            plan_reasoning_effort,
+            manage_effort,
+        );
 
         promote_model_providers_to_tables(&mut doc);
 
@@ -436,7 +439,18 @@ impl TargetAdapter for CodexAdapter {
     }
 
     fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
-        self.write_with_reasoning(config, None, None)
+        self.write_with_reasoning(config, None, None, false)
+    }
+}
+
+/// 有档位就写入顶层键。启用卡片时空着则删掉该键。`manage_effort` 为假时保留原键。
+fn apply_effort_key(doc: &mut DocumentMut, key: &str, level: Option<&str>, manage_effort: bool) {
+    if let Some(level) = level {
+        doc[key] = toml_edit::value(level);
+        return;
+    }
+    if manage_effort {
+        doc.as_table_mut().remove(key);
     }
 }
 
@@ -675,7 +689,7 @@ trust_level = "trusted"
             .parse()
             .unwrap();
         assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
-        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("low"));
+        assert!(doc.get("plan_mode_reasoning_effort").is_none());
         assert_eq!(
             doc["agents"]["default_subagent_reasoning_effort"].as_str(),
             Some("medium")
@@ -689,11 +703,33 @@ trust_level = "trusted"
             .unwrap()
             .parse()
             .unwrap();
-        assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
+        assert!(doc.get("model_reasoning_effort").is_none());
         assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("xhigh"));
 
         provider.plan_reasoning_effort = Some("  ".to_string());
         adapter.write_provider(&provider).unwrap();
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(doc.get("model_reasoning_effort").is_none());
+        assert!(doc.get("plan_mode_reasoning_effort").is_none());
+        assert_eq!(
+            doc["agents"]["default_subagent_reasoning_effort"].as_str(),
+            Some("medium")
+        );
+
+        provider.reasoning_effort = Some("max".to_string());
+        provider.plan_reasoning_effort = Some("xhigh".to_string());
+        adapter.write_provider(&provider).unwrap();
+        adapter
+            .write(&TargetConfig {
+                base_url: provider.base_url.clone(),
+                api_key: provider.api_key.clone(),
+                model: provider.model.clone(),
+                wire_api: provider.wire_api.clone(),
+            })
+            .unwrap();
         let doc: DocumentMut = fs::read_to_string(adapter.config_path())
             .unwrap()
             .parse()

@@ -104,21 +104,21 @@ pub struct Provider {
     /// Grok：`[models].web_search` 的处置策略。未设置时按跟随默认模型写入。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grok_web_search: Option<GrokWebSearch>,
-    /// 推理档位。空着表示启用时不改目标文件里的当前档位。
+    /// 推理档位。空着或 `none` 表示启用时删掉目标文件里对应的键。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    /// Codex 计划模式推理档位。空着表示不改 `plan_mode_reasoning_effort`。
+    /// Codex 计划模式推理档位。空着或 `none` 表示启用时删掉 `plan_mode_reasoning_effort`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan_reasoning_effort: Option<String>,
 }
 
 impl Provider {
-    /// 去掉空白后的推理档位。空着表示写入时不改目标文件。
+    /// 去掉空白后的推理档位。空着或 `none` 表示不设置。
     pub fn reasoning_effort_level(&self) -> Option<&str> {
         trimmed_level(&self.reasoning_effort)
     }
 
-    /// 去掉空白后的计划模式推理档位。空着表示不改 Codex 的计划模式档位。
+    /// 去掉空白后的计划模式推理档位。空着或 `none` 表示不设置。
     pub fn plan_reasoning_effort_level(&self) -> Option<&str> {
         trimmed_level(&self.plan_reasoning_effort)
     }
@@ -133,7 +133,7 @@ fn trimmed_level(value: &Option<String>) -> Option<&str> {
     value
         .as_deref()
         .map(str::trim)
-        .filter(|level| !level.is_empty())
+        .filter(|level| !level.is_empty() && !level.eq_ignore_ascii_case("none"))
 }
 
 fn default_wire_api() -> String {
@@ -643,6 +643,31 @@ mod tests {
         let loaded = load().unwrap();
         assert!(loaded.codex_providers[0].reasoning_effort.is_none());
         assert!(loaded.codex_providers[0].plan_reasoning_effort.is_none());
+
+        let none_level = Provider {
+            name: "none-level".to_string(),
+            base_url: "https://example.com/v1".to_string(),
+            api_key: "sk-xxx".to_string(),
+            model: "gpt-4".to_string(),
+            wire_api: "responses".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: Some("none".to_string()),
+            plan_reasoning_effort: Some(" None ".to_string()),
+        };
+        add_provider(&mut cfg, "codex", none_level).unwrap();
+        let loaded = load().unwrap();
+        let stored = loaded
+            .codex_providers
+            .iter()
+            .find(|p| p.name == "none-level")
+            .unwrap();
+        assert!(stored.reasoning_effort.is_none());
+        assert!(stored.plan_reasoning_effort.is_none());
     }
 
     #[test]

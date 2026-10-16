@@ -63,7 +63,7 @@ When switching providers, CXC updates:
 - **Claude CLI** — Updates the `env` object (sets API Key, Base URL, and optional model mappings) in `settings.json`.
 - **Grok** — Updates `[models].default` and `[model_providers.<relay name>]` in `config.toml` (endpoint and `api_backend` live on the relay block), and points the current model at it with `model_provider`. `[models].web_search` defaults to that same model, or follows the relay's policy to pin, keep, or clear it.
 
-Each relay can store one reasoning effort. Activating the card writes that level; leaving it unset keeps the level already in the tool config. Codex sets the normal session and plan mode separately. Claude writes one global level.
+Each relay can store one reasoning effort. Activating the card writes that level; leaving it unset removes the corresponding key. Codex sets the normal session and plan mode separately. Claude writes one global level.
 
 Before making any modifications, target config files are automatically backed up as `.bak` files.
 

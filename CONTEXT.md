@@ -10,7 +10,7 @@ A named API relay endpoint configuration. Each Provider consists of a `name`, `b
 
 ## Reasoning Effort（推理档位）
 
-The selected reasoning level on a Provider. Every model on that card uses it. Codex also keeps a separate plan-mode level on the same card. When a level is absent, CXC leaves the corresponding value in the target tool as it is.
+The selected reasoning level on a Provider. Every model on that card uses it. Codex also keeps a separate plan-mode level on the same card. When a level is absent, activating the card removes the corresponding key in the target tool. `none` is not a level.
 _Avoid_: 推理强度, reasoning menu, effort cap
 
 ## Target Tool（目标工具）

@@ -70,9 +70,9 @@ interface Provider {
   claude_models?: ClaudeModels;
   // Grok：[models].web_search 的处置策略（未设置 = 跟随本中转站默认模型）
   grok_web_search?: GrokWebSearchPolicy;
-  // 推理档位。空着表示启用时不改目标文件。
+  // 推理档位。空着表示启用时删掉目标文件里对应的键。
   reasoning_effort?: string;
-  // Codex 计划模式推理档位。空着表示不改文件里的计划模式档位。
+  // Codex 计划模式推理档位。空着表示启用时删掉计划模式档位。
   plan_reasoning_effort?: string;
 }
 
@@ -97,8 +97,14 @@ type TargetTool = "codex" | "claude" | "grok";
 const REASONING_EFFORT_OPTIONS: Record<TargetTool, string[]> = {
   codex: ["low", "medium", "high", "xhigh", "max", "ultra"],
   claude: ["low", "medium", "high", "xhigh", "max"],
-  grok: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+  grok: ["minimal", "low", "medium", "high", "xhigh", "max"],
 };
+
+function storedEffort(value?: string): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed.toLowerCase() === "none") return "";
+  return trimmed;
+}
 
 interface Config {
   // 旧字段（向后兼容，已废弃）
@@ -274,9 +280,9 @@ const locales = {
     grokWebSearchKeep: "保持配置文件现状",
     grokWebSearchOfflineHint: "被指定的模型需支持 Responses 的 web_search 工具，否则搜索会报错。",
     reasoningEffortLabel: "推理档位",
-    reasoningEffortKeep: "不改文件",
-    reasoningEffortHint: "启用这张卡片时写入当前档位。没选则不改目标配置里已有的值。",
-    reasoningEffortHintClaude: "写入 Claude 的全局档位，不按模型分开。没选则不改文件。",
+    reasoningEffortKeep: "不设置",
+    reasoningEffortHint: "启用时写入当前模型的档位。选不设置则去掉该模型的 reasoning_effort。",
+    reasoningEffortHintClaude: "写入全局档位。选不设置则在启用时去掉全局 effortLevel。",
     planReasoningEffortLabel: "Plan推理档位",
     grokMigrateBtn: "按中转站整理配置",
     grokMigrateTitle: "把 Grok 配置整理成中转站结构",
@@ -430,9 +436,9 @@ const locales = {
     grokWebSearchKeep: "Keep config file as is",
     grokWebSearchOfflineHint: "The chosen model must support the Responses API web_search tool, otherwise searches fail.",
     reasoningEffortLabel: "Reasoning effort",
-    reasoningEffortKeep: "Leave file unchanged",
-    reasoningEffortHint: "Written when this card is activated. Leave it unset to keep the level already in the tool config.",
-    reasoningEffortHintClaude: "Writes Claude's global effort level, not a per-model level. Leave it unset to keep the file as it is.",
+    reasoningEffortKeep: "Unset",
+    reasoningEffortHint: "Written to the current model's reasoning_effort when this card is activated. Unset removes that key.",
+    reasoningEffortHintClaude: "Writes the global effort level. Unset removes the global effortLevel when this card is activated.",
     planReasoningEffortLabel: "Plan reasoning effort",
     grokMigrateBtn: "Reorganize by relay",
     grokMigrateTitle: "Reorganize Grok config around relays",
@@ -1111,8 +1117,8 @@ function App() {
         subagent: "",
       },
       grok_web_search: p.grok_web_search || { mode: "follow" },
-      reasoning_effort: p.reasoning_effort || "",
-      plan_reasoning_effort: p.plan_reasoning_effort || "",
+      reasoning_effort: storedEffort(p.reasoning_effort),
+      plan_reasoning_effort: storedEffort(p.plan_reasoning_effort),
     });
     setFetchedModels([]);
     setFetchError(null);
@@ -1382,10 +1388,10 @@ function App() {
       if (targetTool !== "grok") {
         providerPayload.grok_web_search = undefined;
       }
-      const effort = providerPayload.reasoning_effort?.trim();
-      providerPayload.reasoning_effort = effort ? effort : undefined;
-      const planEffort = providerPayload.plan_reasoning_effort?.trim();
-      providerPayload.plan_reasoning_effort = planEffort ? planEffort : undefined;
+      const effort = storedEffort(providerPayload.reasoning_effort);
+      providerPayload.reasoning_effort = effort || undefined;
+      const planEffort = storedEffort(providerPayload.plan_reasoning_effort);
+      providerPayload.plan_reasoning_effort = planEffort || undefined;
       if (targetTool !== "codex") {
         providerPayload.plan_reasoning_effort = undefined;
       }
