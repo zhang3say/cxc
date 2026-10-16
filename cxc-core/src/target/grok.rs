@@ -655,6 +655,7 @@ impl TargetAdapter for GrokAdapter {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         };
         self.write_provider(&provider)
     }
@@ -1012,6 +1013,7 @@ yolo = false
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }
     }
 

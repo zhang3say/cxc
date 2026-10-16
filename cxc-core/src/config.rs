@@ -107,20 +107,33 @@ pub struct Provider {
     /// 推理档位。空着表示启用时不改目标文件里的当前档位。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
+    /// Codex 计划模式推理档位。空着表示不改 `plan_mode_reasoning_effort`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_reasoning_effort: Option<String>,
 }
 
 impl Provider {
     /// 去掉空白后的推理档位。空着表示写入时不改目标文件。
     pub fn reasoning_effort_level(&self) -> Option<&str> {
-        self.reasoning_effort
-            .as_deref()
-            .map(str::trim)
-            .filter(|level| !level.is_empty())
+        trimmed_level(&self.reasoning_effort)
+    }
+
+    /// 去掉空白后的计划模式推理档位。空着表示不改 Codex 的计划模式档位。
+    pub fn plan_reasoning_effort_level(&self) -> Option<&str> {
+        trimmed_level(&self.plan_reasoning_effort)
     }
 
     pub fn normalize_reasoning_effort(&mut self) {
         self.reasoning_effort = self.reasoning_effort_level().map(str::to_string);
+        self.plan_reasoning_effort = self.plan_reasoning_effort_level().map(str::to_string);
     }
+}
+
+fn trimmed_level(value: &Option<String>) -> Option<&str> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|level| !level.is_empty())
 }
 
 fn default_wire_api() -> String {
@@ -598,6 +611,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         };
         add_provider(&mut cfg, "codex", p).unwrap();
 
@@ -623,10 +637,12 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: Some("  ".to_string()),
+            plan_reasoning_effort: Some("  ".to_string()),
         };
         add_provider(&mut cfg, "codex", p).unwrap();
         let loaded = load().unwrap();
         assert!(loaded.codex_providers[0].reasoning_effort.is_none());
+        assert!(loaded.codex_providers[0].plan_reasoning_effort.is_none());
     }
 
     #[test]
@@ -646,6 +662,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         };
         add_provider(&mut cfg, "codex", p.clone()).unwrap();
         let err = add_provider(&mut cfg, "codex", p);
@@ -669,6 +686,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -683,6 +701,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         assert_eq!(cfg.codex_active_app, "");
@@ -705,6 +724,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -719,6 +739,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "b").unwrap();
         remove_provider(&mut cfg, "codex", "a").unwrap();
@@ -743,6 +764,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
@@ -774,6 +796,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         set_active(&mut cfg, "claude", "app", "shared").unwrap();
         set_active(&mut cfg, "claude", "wsl", "shared").unwrap();
@@ -806,6 +829,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         let err = remove_provider(&mut cfg, "codex", "nonexistent");
@@ -829,6 +853,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -843,6 +868,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         set_active(&mut cfg, "codex", "app", "b").unwrap();
@@ -866,6 +892,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -890,6 +917,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "node-b".to_string(),
@@ -904,6 +932,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         set_active(&mut cfg, "codex", "app", "node-a").unwrap();
@@ -957,6 +986,7 @@ mod tests {
                 claude_models: None,
                 grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
             },
         )
         .unwrap();
@@ -989,6 +1019,7 @@ mod tests {
                 claude_models: None,
                 grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
             },
         );
         assert!(matches!(err, Err(ConfigError::UnknownTargetTool(_))));
@@ -1012,6 +1043,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         use std::os::unix::fs::PermissionsExt;
@@ -1036,6 +1068,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         update_test_result(&mut cfg, "codex", "a", 123, true).unwrap();
@@ -1062,6 +1095,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -1086,6 +1120,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         let updated = Provider {
@@ -1101,6 +1136,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
@@ -1128,6 +1164,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -1142,6 +1179,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
@@ -1158,6 +1196,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
@@ -1183,6 +1222,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -1197,6 +1237,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }).unwrap();
 
         let updated = Provider {
@@ -1212,6 +1253,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         };
         let err = edit_provider(&mut cfg, "codex", "a", updated);
         assert!(err.is_err());

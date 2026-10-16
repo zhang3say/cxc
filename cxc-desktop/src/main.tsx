@@ -17,7 +17,9 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
       remark: "Fast primary inference",
       last_test: "2026-06-12T15:10:00.000Z",
       latency_ms: 85,
-      last_ok: true
+      last_ok: true,
+      reasoning_effort: "high",
+      plan_reasoning_effort: "xhigh"
     },
     {
       name: "fallback-relay",

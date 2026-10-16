@@ -4,7 +4,7 @@ use std::collections::HashMap;
 /// Merges local and remote provider lists based on the provider `name`.
 /// - Providers unique to either list are preserved.
 /// - When a provider exists in both lists:
-///   - Remarks, claude_models, grok_web_search and reasoning_effort: if one side has None and
+///   - Remarks, claude_models, grok_web_search, reasoning_effort and plan_reasoning_effort: if one side has None and
 ///     the other has Some, the non-empty configuration is adopted.
 ///   - Connection parameters (base_url, api_key, model, wire_api) and test metrics (last_test, latency_ms, last_ok)
 ///     are kept strictly coupled:
@@ -83,6 +83,9 @@ pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider>
             if l.reasoning_effort.is_none() && r.reasoning_effort.is_some() {
                 l.reasoning_effort = r.reasoning_effort.clone();
             }
+            if l.plan_reasoning_effort.is_none() && r.plan_reasoning_effort.is_some() {
+                l.plan_reasoning_effort = r.plan_reasoning_effort.clone();
+            }
         } else {
             // Provider is only present on remote, add it
             map.insert(r.name.clone(), r.clone());
@@ -132,6 +135,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }];
 
         let remote = vec![Provider {
@@ -147,6 +151,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -172,6 +177,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }];
 
         let remote = vec![Provider {
@@ -187,6 +193,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -211,6 +218,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }];
 
         let remote = vec![Provider {
@@ -226,6 +234,7 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: None,
+            plan_reasoning_effort: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -238,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_merge_reasoning_effort_adopts_remote_only_when_local_missing() {
-        let bare = |name: &str, effort: Option<&str>| Provider {
+        let bare = |name: &str, effort: Option<&str>, plan: Option<&str>| Provider {
             name: name.to_string(),
             base_url: "https://api.example.com".to_string(),
             api_key: "k".to_string(),
@@ -251,12 +260,18 @@ mod tests {
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: effort.map(str::to_string),
+            plan_reasoning_effort: plan.map(str::to_string),
         };
         let merged = merge_providers(
-            &[bare("empty", None), bare("set", Some("max"))],
-            &[bare("empty", Some("high")), bare("set", Some("low"))],
+            &[bare("empty", None, None), bare("set", Some("max"), Some("high"))],
+            &[
+                bare("empty", Some("high"), Some("xhigh")),
+                bare("set", Some("low"), Some("low")),
+            ],
         );
         assert_eq!(merged[0].reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(merged[0].plan_reasoning_effort.as_deref(), Some("xhigh"));
         assert_eq!(merged[1].reasoning_effort.as_deref(), Some("max"));
+        assert_eq!(merged[1].plan_reasoning_effort.as_deref(), Some("high"));
     }
 }

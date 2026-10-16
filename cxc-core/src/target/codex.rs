@@ -282,6 +282,7 @@ impl CodexAdapter {
                 wire_api,
             },
             provider.reasoning_effort_level(),
+            provider.plan_reasoning_effort_level(),
         )
     }
 
@@ -289,6 +290,7 @@ impl CodexAdapter {
         &self,
         config: &TargetConfig,
         reasoning_effort: Option<&str>,
+        plan_reasoning_effort: Option<&str>,
     ) -> Result<(), TargetError> {
         if !self.codex_dir.exists() {
             fs::create_dir_all(&self.codex_dir).map_err(|err| TargetError::WriteError {
@@ -327,6 +329,8 @@ impl CodexAdapter {
         doc["model_provider"] = toml_edit::value("codex");
         if let Some(level) = reasoning_effort {
             doc["model_reasoning_effort"] = toml_edit::value(level);
+        }
+        if let Some(level) = plan_reasoning_effort {
             doc["plan_mode_reasoning_effort"] = toml_edit::value(level);
         }
 
@@ -432,7 +436,7 @@ impl TargetAdapter for CodexAdapter {
     }
 
     fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
-        self.write_with_reasoning(config, None)
+        self.write_with_reasoning(config, None, None)
     }
 }
 
@@ -635,14 +639,18 @@ trust_level = "trusted"
     }
 
     #[test]
-    fn test_write_provider_reasoning_effort_sets_both_keys() {
+    fn test_write_provider_reasoning_effort_sets_session_and_plan_separately() {
         use crate::config::Provider;
         let (_dir, adapter) = setup_codex_dir();
         let path = adapter.config_path();
         let mut existing = fs::read_to_string(&path).unwrap();
-        existing.push_str(
-            "\nmodel_reasoning_effort = \"low\"\nplan_mode_reasoning_effort = \"low\"\n\n[agents]\ndefault_subagent_reasoning_effort = \"medium\"\n",
+        // 样例文件以 [projects] 表结尾，追加的键会落进该表。档位必须是顶层键。
+        existing = existing.replacen(
+            "model_provider = \"codex\"\n",
+            "model_provider = \"codex\"\nmodel_reasoning_effort = \"low\"\nplan_mode_reasoning_effort = \"low\"\n",
+            1,
         );
+        existing.push_str("\n[agents]\ndefault_subagent_reasoning_effort = \"medium\"\n");
         fs::write(&path, existing).unwrap();
 
         let mut provider = Provider {
@@ -658,6 +666,7 @@ trust_level = "trusted"
             claude_models: None,
             grok_web_search: None,
             reasoning_effort: Some("max".to_string()),
+            plan_reasoning_effort: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -666,21 +675,31 @@ trust_level = "trusted"
             .parse()
             .unwrap();
         assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
-        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("max"));
+        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("low"));
         assert_eq!(
             doc["agents"]["default_subagent_reasoning_effort"].as_str(),
             Some("medium")
         );
         assert!(doc["features"]["guardian_approval"].as_bool().unwrap());
 
-        provider.reasoning_effort = Some("  ".to_string());
+        provider.reasoning_effort = None;
+        provider.plan_reasoning_effort = Some("xhigh".to_string());
         adapter.write_provider(&provider).unwrap();
         let doc: DocumentMut = fs::read_to_string(adapter.config_path())
             .unwrap()
             .parse()
             .unwrap();
         assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
-        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("max"));
+        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("xhigh"));
+
+        provider.plan_reasoning_effort = Some("  ".to_string());
+        adapter.write_provider(&provider).unwrap();
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
+        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("xhigh"));
     }
 
     #[test]
