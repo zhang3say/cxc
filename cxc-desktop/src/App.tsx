@@ -15,6 +15,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -104,6 +111,56 @@ function storedEffort(value?: string): string {
   const trimmed = value?.trim() ?? "";
   if (!trimmed || trimmed.toLowerCase() === "none") return "";
   return trimmed;
+}
+
+/** Radix Select 不允许空字符串作为选项值。 */
+const EFFORT_UNSET = "__unset__";
+
+function effortChoices(options: readonly string[], current: string): string[] {
+  if (current && !options.includes(current)) return [...options, current];
+  return [...options];
+}
+
+function ReasoningEffortField({
+  id,
+  value,
+  options,
+  unsetLabel,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  options: readonly string[];
+  unsetLabel: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select
+      value={value || EFFORT_UNSET}
+      onValueChange={(next) => onChange(next === EFFORT_UNSET ? "" : next)}
+    >
+      <SelectTrigger
+        id={id}
+        className="h-9 w-full cursor-pointer rounded-md border-border/30 bg-muted/10 px-2.5 text-sm font-normal shadow-inner transition-all duration-200 focus-visible:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary/40 data-[size=default]:h-9 data-[state=open]:bg-background/80"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
+        position="popper"
+        align="start"
+        className="z-[80] rounded-xl border border-border/50 bg-card/95 text-sm shadow-2xl backdrop-blur-xl"
+      >
+        <SelectItem value={EFFORT_UNSET} className="text-sm">
+          {unsetLabel}
+        </SelectItem>
+        {effortChoices(options, value).map((level) => (
+          <SelectItem key={level} value={level} className="text-sm">
+            {level}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 interface Config {
@@ -3045,23 +3102,13 @@ function App() {
                 <Label htmlFor="form-reasoning-effort" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                   {t.reasoningEffortLabel}
                 </Label>
-                <select
+                <ReasoningEffortField
                   id="form-reasoning-effort"
                   value={formValues.reasoning_effort || ""}
-                  onChange={(e) => setFormValues({ ...formValues, reasoning_effort: e.target.value })}
-                  className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                >
-                  <option value="">{t.reasoningEffortKeep}</option>
-                  {(formValues.reasoning_effort &&
-                  !REASONING_EFFORT_OPTIONS[targetTool].includes(formValues.reasoning_effort)
-                    ? [...REASONING_EFFORT_OPTIONS[targetTool], formValues.reasoning_effort]
-                    : REASONING_EFFORT_OPTIONS[targetTool]
-                  ).map((level) => (
-                    <option key={level} value={level}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
+                  options={REASONING_EFFORT_OPTIONS[targetTool]}
+                  unsetLabel={t.reasoningEffortKeep}
+                  onChange={(reasoning_effort) => setFormValues({ ...formValues, reasoning_effort })}
+                />
                 {targetTool !== "codex" ? (
                   <span className="text-[10px] text-muted-foreground/80 block">
                     {targetTool === "claude" ? t.reasoningEffortHintClaude : t.reasoningEffortHint}
@@ -3074,23 +3121,13 @@ function App() {
                   <Label htmlFor="form-plan-reasoning-effort" className="text-[11px] font-extrabold tracking-wider normal-case text-muted-foreground/80 block">
                     {t.planReasoningEffortLabel}
                   </Label>
-                  <select
+                  <ReasoningEffortField
                     id="form-plan-reasoning-effort"
                     value={formValues.plan_reasoning_effort || ""}
-                    onChange={(e) => setFormValues({ ...formValues, plan_reasoning_effort: e.target.value })}
-                    className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                  >
-                    <option value="">{t.reasoningEffortKeep}</option>
-                    {(formValues.plan_reasoning_effort &&
-                    !REASONING_EFFORT_OPTIONS.codex.includes(formValues.plan_reasoning_effort)
-                      ? [...REASONING_EFFORT_OPTIONS.codex, formValues.plan_reasoning_effort]
-                      : REASONING_EFFORT_OPTIONS.codex
-                    ).map((level) => (
-                      <option key={level} value={level}>
-                        {level}
-                      </option>
-                    ))}
-                  </select>
+                    options={REASONING_EFFORT_OPTIONS.codex}
+                    unsetLabel={t.reasoningEffortKeep}
+                    onChange={(plan_reasoning_effort) => setFormValues({ ...formValues, plan_reasoning_effort })}
+                  />
                 </div>
               ) : null}
 
