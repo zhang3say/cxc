@@ -14,13 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CxcSelect } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -113,14 +107,6 @@ function storedEffort(value?: string): string {
   return trimmed;
 }
 
-/** Radix Select 不允许空字符串作为选项值。 */
-const EFFORT_UNSET = "__unset__";
-
-function effortChoices(options: readonly string[], current: string): string[] {
-  if (current && !options.includes(current)) return [...options, current];
-  return [...options];
-}
-
 function ReasoningEffortField({
   id,
   value,
@@ -134,32 +120,19 @@ function ReasoningEffortField({
   unsetLabel: string;
   onChange: (value: string) => void;
 }) {
+  const selectOptions = [
+    { value: "", label: unsetLabel },
+    ...options.map((level) => ({ value: level, label: level })),
+  ];
+
   return (
-    <Select
-      value={value || EFFORT_UNSET}
-      onValueChange={(next) => onChange(next === EFFORT_UNSET ? "" : next)}
-    >
-      <SelectTrigger
-        id={id}
-        className="h-9 w-full cursor-pointer rounded-md border-border/30 bg-muted/10 px-2.5 text-sm font-normal shadow-inner transition-all duration-200 focus-visible:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary/40 data-[size=default]:h-9 data-[state=open]:bg-background/80"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent
-        position="popper"
-        align="start"
-        className="z-[80] rounded-xl border border-border/50 bg-card/95 text-sm shadow-2xl backdrop-blur-xl"
-      >
-        <SelectItem value={EFFORT_UNSET} className="text-sm">
-          {unsetLabel}
-        </SelectItem>
-        {effortChoices(options, value).map((level) => (
-          <SelectItem key={level} value={level} className="text-sm">
-            {level}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <CxcSelect
+      id={id}
+      value={value || ""}
+      options={selectOptions}
+      onValueChange={onChange}
+      size="default"
+    />
   );
 }
 
@@ -3071,19 +3044,16 @@ function App() {
                 </div>
 
                 {fetchedModels.length > 0 ? (
-                  <select
+                  <CxcSelect
                     id="form-model-select"
                     value={formValues.model}
-                    onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                    className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                  >
-                    <option value="">{t.selectModelDefault}</option>
-                    {fetchedModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={(val) => setFormValues({ ...formValues, model: val })}
+                    options={[
+                      { value: "", label: t.selectModelDefault },
+                      ...fetchedModels.map((m) => ({ value: m, label: m })),
+                    ]}
+                    size="default"
+                  />
                 ) : (
                   <Input
                     id="form-model"
@@ -3170,18 +3140,15 @@ function App() {
                         <div className="space-y-1">
                           <Label className="text-[10px] font-extrabold text-muted-foreground/75">Opus</Label>
                           {fetchedModels.length > 0 ? (
-                            <select
+                            <CxcSelect
                               value={formValues.claude_models?.opus || ""}
-                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: e.target.value } })}
-                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                            >
-                              <option value="">{t.defaultModelPlaceholder}</option>
-                              {fetchedModels.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
+                              onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: val } })}
+                              options={[
+                                { value: "", label: t.defaultModelPlaceholder },
+                                ...fetchedModels.map((m) => ({ value: m, label: m })),
+                              ]}
+                              size="xs"
+                            />
                           ) : (
                             <Input
                               type="text"
@@ -3195,18 +3162,15 @@ function App() {
                         <div className="space-y-1">
                           <Label className="text-[10px] font-extrabold text-muted-foreground/75">Sonnet</Label>
                           {fetchedModels.length > 0 ? (
-                            <select
+                            <CxcSelect
                               value={formValues.claude_models?.sonnet || ""}
-                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: e.target.value } })}
-                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                            >
-                              <option value="">{t.defaultModelPlaceholder}</option>
-                              {fetchedModels.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
+                              onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: val } })}
+                              options={[
+                                { value: "", label: t.defaultModelPlaceholder },
+                                ...fetchedModels.map((m) => ({ value: m, label: m })),
+                              ]}
+                              size="xs"
+                            />
                           ) : (
                             <Input
                               type="text"
@@ -3220,18 +3184,15 @@ function App() {
                         <div className="space-y-1">
                           <Label className="text-[10px] font-extrabold text-muted-foreground/75">Haiku</Label>
                           {fetchedModels.length > 0 ? (
-                            <select
+                            <CxcSelect
                               value={formValues.claude_models?.haiku || ""}
-                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: e.target.value } })}
-                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                            >
-                              <option value="">{t.defaultModelPlaceholder}</option>
-                              {fetchedModels.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
+                              onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: val } })}
+                              options={[
+                                { value: "", label: t.defaultModelPlaceholder },
+                                ...fetchedModels.map((m) => ({ value: m, label: m })),
+                              ]}
+                              size="xs"
+                            />
                           ) : (
                             <Input
                               type="text"
@@ -3245,18 +3206,15 @@ function App() {
                         <div className="space-y-1">
                           <Label className="text-[10px] font-extrabold text-muted-foreground/75">Fable</Label>
                           {fetchedModels.length > 0 ? (
-                            <select
+                            <CxcSelect
                               value={formValues.claude_models?.fable || ""}
-                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
-                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                            >
-                              <option value="">{t.defaultModelPlaceholder}</option>
-                              {fetchedModels.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
+                              onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: val } })}
+                              options={[
+                                { value: "", label: t.defaultModelPlaceholder },
+                                ...fetchedModels.map((m) => ({ value: m, label: m })),
+                              ]}
+                              size="xs"
+                            />
                           ) : (
                             <Input
                               type="text"
@@ -3273,18 +3231,15 @@ function App() {
                             <span className="font-normal opacity-70">{lang === "zh" ? "(不填则继承主模型)" : "(Leave empty to inherit)"}</span>
                           </Label>
                           {fetchedModels.length > 0 ? (
-                            <select
+                            <CxcSelect
                               value={formValues.claude_models?.subagent || ""}
-                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: e.target.value } })}
-                              className="flex h-7.5 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                            >
-                              <option value="">{t.defaultModelPlaceholder}</option>
-                              {fetchedModels.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
+                              onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: val } })}
+                              options={[
+                                { value: "", label: t.defaultModelPlaceholder },
+                                ...fetchedModels.map((m) => ({ value: m, label: m })),
+                              ]}
+                              size="xs"
+                            />
                           ) : (
                             <Input
                               type="text"
@@ -3304,43 +3259,41 @@ function App() {
                       <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                         {t.grokWebSearchLabel}
                       </Label>
-                      <select
+                      <CxcSelect
                         value={formValues.grok_web_search?.mode || "follow"}
-                        onChange={(e) => setGrokWebSearchMode(e.target.value as "keep" | "follow" | "model" | "unset")}
-                        className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                      >
-                          <option value="keep">{t.grokWebSearchKeep}</option>
-                          <option value="follow">{t.grokWebSearchFollow}</option>
-                          <option value="model">{t.grokWebSearchCustom}</option>
-                          <option value="unset">{t.grokWebSearchUnset}</option>
-                        </select>
-                        {formValues.grok_web_search?.mode === "model" && (
-                          fetchedModels.length > 0 ? (
-                            <select
-                              value={formValues.grok_web_search.model || ""}
-                              onChange={(e) => setFormValues({ ...formValues, grok_web_search: { mode: "model", model: e.target.value } })}
-                              className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                            >
-                              <option value="">{t.selectModelDefault}</option>
-                              {fetchedModels.map((m) => (
-                                <option key={m} value={m}>
-                                  {m}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <Input
-                              type="text"
-                              value={formValues.grok_web_search.model || ""}
-                              onChange={(e) => setFormValues({ ...formValues, grok_web_search: { mode: "model", model: e.target.value } })}
-                              placeholder={formValues.model || "grok-4.5"}
-                              className="h-8 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
-                            />
-                          )
-                        )}
-                        <p className="text-[10px] text-muted-foreground/70 leading-normal">
-                          {t.grokWebSearchHint} {t.grokWebSearchOfflineHint}
-                        </p>
+                        onValueChange={(val) => setGrokWebSearchMode(val as "keep" | "follow" | "model" | "unset")}
+                        options={[
+                          { value: "keep", label: t.grokWebSearchKeep },
+                          { value: "follow", label: t.grokWebSearchFollow },
+                          { value: "model", label: t.grokWebSearchCustom },
+                          { value: "unset", label: t.grokWebSearchUnset },
+                        ]}
+                        size="sm"
+                      />
+                      {formValues.grok_web_search?.mode === "model" && (
+                        fetchedModels.length > 0 ? (
+                          <CxcSelect
+                            value={formValues.grok_web_search.model || ""}
+                            onValueChange={(val) => setFormValues({ ...formValues, grok_web_search: { mode: "model", model: val } })}
+                            options={[
+                              { value: "", label: t.selectModelDefault },
+                              ...fetchedModels.map((m) => ({ value: m, label: m })),
+                            ]}
+                            size="sm"
+                          />
+                        ) : (
+                          <Input
+                            type="text"
+                            value={formValues.grok_web_search.model || ""}
+                            onChange={(e) => setFormValues({ ...formValues, grok_web_search: { mode: "model", model: e.target.value } })}
+                            placeholder={formValues.model || "grok-4.5"}
+                            className="h-8 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
+                          />
+                        )
+                      )}
+                      <p className="text-[10px] text-muted-foreground/70 leading-normal">
+                        {t.grokWebSearchHint} {t.grokWebSearchOfflineHint}
+                      </p>
                     </div>
                   )}
 
@@ -3350,16 +3303,17 @@ function App() {
                       {t.wireApiLabel}
                     </Label>
                     {targetTool === "grok" ? (
-                      <select
+                      <CxcSelect
                         id="form-wire"
                         value={formValues.wire_api || "chat_completions"}
-                        onChange={(e) => setFormValues({ ...formValues, wire_api: e.target.value })}
-                        className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                      >
-                        <option value="chat_completions">chat_completions</option>
-                        <option value="responses">responses</option>
-                        <option value="messages">messages</option>
-                      </select>
+                        onValueChange={(val) => setFormValues({ ...formValues, wire_api: val })}
+                        options={[
+                          { value: "chat_completions", label: "chat_completions" },
+                          { value: "responses", label: "responses" },
+                          { value: "messages", label: "messages" },
+                        ]}
+                        size="default"
+                      />
                     ) : (
                       <Input
                         id="form-wire"
