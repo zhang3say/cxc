@@ -3064,7 +3064,7 @@ function App() {
 
               {targetTool === "codex" ? (
                 <div className="space-y-1.5">
-                  <Label htmlFor="form-plan-reasoning-effort" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                  <Label htmlFor="form-plan-reasoning-effort" className="text-[11px] font-extrabold tracking-wider normal-case text-muted-foreground/80 block">
                     {t.planReasoningEffortLabel}
                   </Label>
                   <select
