@@ -1925,7 +1925,7 @@ function App() {
         </div>
 
         {/* Center search box (Dynamic wake-up layout with shortcut helper kbd) */}
-        <div className="relative w-40 sm:w-48 focus-within:w-60 transition-all duration-300 mx-4 group">
+        <div className="relative min-w-0 flex-1 max-w-40 sm:max-w-48 focus-within:max-w-60 transition-all duration-300 mx-4 group">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/35 group-focus-within:text-primary transition-colors pointer-events-none" />
           <Input
             ref={searchInputRef}
@@ -2021,7 +2021,7 @@ function App() {
 
       {/* Scroll Wrapper */}
       <div 
-        className="flex-1 w-full overflow-y-auto custom-scrollbar"
+        className="flex-1 w-full min-w-0 overflow-x-hidden overflow-y-auto custom-scrollbar"
         onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}
       >
         {/* Main Container */}
@@ -2057,14 +2057,15 @@ function App() {
             {filteredProviders.length > 0 ? (
               viewMode === "list" ? (
                 /* Table Database Layout */
-                <div className="overflow-x-auto">
-                  <div className="w-full min-w-[800px] flex flex-col gap-2.5 pb-2.5 px-3.5 sm:grid sm:min-w-[64rem] sm:grid-cols-[1rem_1.5rem_9rem_minmax(8rem,1fr)_minmax(14rem,max-content)_8rem_6rem_7rem_1rem] sm:gap-x-4 sm:gap-y-2.5">
+                <div className="min-w-0">
+                  {/* 端点列先被压到 0，再省略过长的模型名；档位不换行。 */}
+                  <div className="w-full min-w-0 flex flex-col gap-2.5 pb-2.5 px-3.5 sm:grid sm:grid-cols-[0.5rem_1.25rem_8.5rem_minmax(0,1fr)_minmax(0,max-content)_7rem_6rem_6.25rem_0.5rem] sm:gap-x-3 sm:gap-y-2.5">
                     {/* Table Header。模型列与各行共用轨道，按最长的模型名加档位变宽。 */}
                     <div className="hidden sm:grid sm:col-span-full sm:grid-cols-subgrid items-center py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider opacity-70">
                       <div />
                       <div />
                       <div className="pr-4">{t.providerNameCol}</div>
-                      <div className="min-w-0 pr-4">{t.endpointCol}</div>
+                      <div className="min-w-0 overflow-hidden truncate">{t.endpointCol}</div>
                       <div className="pr-4">{t.modelCol}</div>
                       <div className="pr-4">{t.statusLatencyCol}</div>
                       <div className="text-center pr-4">{t.actionsCol}</div>
@@ -2082,7 +2083,7 @@ function App() {
                       return (
                         <div
                           key={p.name}
-                          className={`col-span-full flex flex-col sm:grid sm:grid-cols-subgrid sm:items-center px-4 py-3 gap-3 sm:px-0 sm:gap-x-4 sm:gap-y-0 rounded-xl border transition-all duration-200 group relative ${
+                          className={`col-span-full flex flex-col sm:grid sm:grid-cols-subgrid sm:items-center px-4 py-3 gap-3 sm:px-0 sm:gap-x-3 sm:gap-y-0 rounded-xl border transition-all duration-200 group relative ${
                             vibeMode === "standard"
                               ? isActive
                                 ? "bg-primary/[0.04] border-primary/55 ring-1 ring-primary/5 shadow-[0_2px_10px_rgba(59,130,246,0.05)]"
@@ -2115,7 +2116,7 @@ function App() {
                           </div>
 
                           {/* Base URL column */}
-                          <div className="flex w-full min-w-0 pr-4 text-xs font-mono text-foreground/70 items-center gap-1.5">
+                          <div className="flex w-full min-w-0 overflow-hidden text-xs font-mono text-foreground/70 items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
                             <span
                               onClick={(e) => handleEndpointClick(e, p.base_url)}
@@ -2126,8 +2127,8 @@ function App() {
                             </span>
                           </div>
 
-                          {/* Model column. 与档位并排；列宽随内容增长，档位不压缩模型名。 */}
-                          <div className="w-full min-w-0 sm:max-w-[24rem] pr-4 text-xs flex items-center gap-1.5">
+                          {/* 与档位并排。宽窗口列随内容长到 24rem；窄窗口先省略模型名，档位不压缩。 */}
+                          <div className="w-full min-w-0 sm:max-w-[24rem] overflow-hidden pr-4 text-xs flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
                             <span
                               onClick={() => handleQuickFetchModels(p)}
@@ -3785,6 +3786,7 @@ function App() {
         /* 10. 主区域在窗口固定高度下的自适应弹性滚动 */
         .vibe-integrated main {
           flex: 1 !important;
+          overflow-x: hidden !important;
           overflow-y: auto !important;
           min-height: 0 !important;
         }
