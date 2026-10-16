@@ -2142,9 +2142,6 @@ function App() {
                             {p.reasoning_effort ? (
                               <span className="text-[10px] text-muted-foreground/80 shrink-0">{p.reasoning_effort}</span>
                             ) : null}
-                            {p.plan_reasoning_effort ? (
-                              <span className="text-[10px] text-muted-foreground/80 shrink-0">plan {p.plan_reasoning_effort}</span>
-                            ) : null}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
