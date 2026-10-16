@@ -2125,22 +2125,27 @@ function App() {
                             </span>
                           </div>
 
-                          {/* Model column */}
-                          <div className="w-full sm:w-28 shrink-0 pr-4 text-xs flex items-center gap-1.5">
+                          {/* Model column. 档位单独一行，避免长档位把模型名挤短。 */}
+                          <div className="w-full sm:w-28 shrink-0 pr-4 text-xs flex flex-col items-start justify-center gap-0.5 min-w-0 overflow-hidden">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
                             <span
                               onClick={() => handleQuickFetchModels(p)}
-                              className={`font-semibold text-foreground/80 border px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition-all truncate ${
+                              className={`inline-block min-w-0 max-w-full truncate font-semibold text-foreground/80 border px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition-all ${
                                 vibeMode === "standard"
                                   ? "bg-background border-border hover:bg-muted/85 hover:border-primary/30"
                                   : "bg-white/30 dark:bg-white/5 border-black/5 dark:border-white/5 hover:bg-white/50 dark:hover:bg-white/10 hover:border-primary/20 dark:hover:border-primary/30"
                               }`}
-                              title={t.quickSwitchTooltip}
+                              title={p.model ? `${p.model} — ${t.quickSwitchTooltip}` : t.quickSwitchTooltip}
                             >
                               {p.model}
                             </span>
                             {p.reasoning_effort ? (
-                              <span className="text-[10px] text-muted-foreground/80 shrink-0">{p.reasoning_effort}</span>
+                              <span
+                                className="max-w-full truncate text-[10px] leading-none text-muted-foreground/80"
+                                title={p.reasoning_effort}
+                              >
+                                {p.reasoning_effort}
+                              </span>
                             ) : null}
                           </div>
 
