@@ -277,8 +277,7 @@ const locales = {
     reasoningEffortKeep: "不改文件",
     reasoningEffortHint: "启用这张卡片时写入当前档位。没选则不改目标配置里已有的值。",
     reasoningEffortHintClaude: "写入 Claude 的全局档位，不按模型分开。没选则不改文件。",
-    planReasoningEffortLabel: "计划模式",
-    planReasoningEffortHint: "只写入 Codex 的计划模式。没选则不改文件里的计划模式档位。",
+    planReasoningEffortLabel: "Plan推理档位",
     grokMigrateBtn: "按中转站整理配置",
     grokMigrateTitle: "把 Grok 配置整理成中转站结构",
     grokMigrateDesc: "扫描 config.toml 里的 [model.*]，把重复的 base_url / api_key / api_backend 收拢到 [model_providers.*]，并让模型通过 model_provider 引用它。写入前会自动备份。",
@@ -434,8 +433,7 @@ const locales = {
     reasoningEffortKeep: "Leave file unchanged",
     reasoningEffortHint: "Written when this card is activated. Leave it unset to keep the level already in the tool config.",
     reasoningEffortHintClaude: "Writes Claude's global effort level, not a per-model level. Leave it unset to keep the file as it is.",
-    planReasoningEffortLabel: "Plan mode",
-    planReasoningEffortHint: "Writes only Codex plan mode. Leave it unset to keep the plan-mode level already in the file.",
+    planReasoningEffortLabel: "Plan reasoning effort",
     grokMigrateBtn: "Reorganize by relay",
     grokMigrateTitle: "Reorganize Grok config around relays",
     grokMigrateDesc: "Scans [model.*] in config.toml, gathers duplicated base_url / api_key / api_backend into [model_providers.*], and points each model at its relay with model_provider. A backup is written first.",
@@ -3057,9 +3055,11 @@ function App() {
                     </option>
                   ))}
                 </select>
-                <span className="text-[10px] text-muted-foreground/80 block">
-                  {targetTool === "claude" ? t.reasoningEffortHintClaude : t.reasoningEffortHint}
-                </span>
+                {targetTool !== "codex" ? (
+                  <span className="text-[10px] text-muted-foreground/80 block">
+                    {targetTool === "claude" ? t.reasoningEffortHintClaude : t.reasoningEffortHint}
+                  </span>
+                ) : null}
               </div>
 
               {targetTool === "codex" ? (
@@ -3084,7 +3084,6 @@ function App() {
                       </option>
                     ))}
                   </select>
-                  <span className="text-[10px] text-muted-foreground/80 block">{t.planReasoningEffortHint}</span>
                 </div>
               ) : null}
 
