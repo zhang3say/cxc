@@ -468,7 +468,6 @@ impl TargetAdapter for ClaudeAdapter {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         self.write_with_provider(config, &provider)
@@ -569,7 +568,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         adapter.write_provider(&provider).unwrap();
@@ -603,7 +601,6 @@ mod tests {
                 fable: Some("deepseek-v4-pro[1m]".to_string()),
                 subagent: None,
             }),
-            grok_models: None,
             grok_web_search: None,
         };
         adapter.write_provider(&provider).unwrap();
@@ -651,7 +648,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         adapter.write_provider(&provider).unwrap();
@@ -694,7 +690,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         adapter.write_provider(&provider).unwrap();
@@ -726,7 +721,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
 
@@ -755,7 +749,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         adapter.write_provider(&provider).unwrap();

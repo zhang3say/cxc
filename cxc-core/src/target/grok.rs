@@ -298,15 +298,10 @@ impl GrokAdapter {
         }
     }
 
-    /// 该中转站要写入的模型：默认模型在前，附加模型去重追加。
+    /// 该中转站要写入的默认模型。web_search 指定的模型由调用方追加。
     pub fn managed_models(provider: &Provider) -> Vec<String> {
         let mut models: Vec<String> = Vec::new();
         push_unique(&mut models, &provider.model);
-        if let Some(extra) = &provider.grok_models {
-            for model in extra {
-                push_unique(&mut models, model);
-            }
-        }
         models
     }
 
@@ -644,7 +639,8 @@ impl TargetAdapter for GrokAdapter {
     }
 
     fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
-        // 兼容路径：没有 Provider 上下文时，用 base_url 的主机名作为中转站块键
+        // 兼容路径：没有 Provider 上下文时，用 base_url 的主机名作为中转站块键。
+        // web_search 留空，写入时按缺省跟随默认模型。
         let provider = Provider {
             name: host_key(&config.base_url),
             base_url: config.base_url.clone(),
@@ -656,7 +652,6 @@ impl TargetAdapter for GrokAdapter {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         self.write_provider(&provider)
@@ -809,14 +804,17 @@ fn clear_model_endpoint_fields(block: &mut Item) {
     }
 }
 
-/// 按 Provider 的策略处置 `[models].web_search`
+/// 按 Provider 的策略处置 `[models].web_search`。未设置时跟随默认模型。
 fn apply_web_search(doc: &mut DocumentMut, provider: &Provider) -> Result<(), TargetError> {
-    let Some(policy) = &provider.grok_web_search else {
-        // 未设置策略：保持配置文件现状
+    let policy = provider
+        .grok_web_search
+        .clone()
+        .unwrap_or(GrokWebSearch::Follow);
+    if matches!(policy, GrokWebSearch::Keep) {
         return Ok(());
-    };
+    }
     ensure_table(doc, MODELS_SECTION);
-    match policy {
+    match &policy {
         GrokWebSearch::Keep => {}
         GrokWebSearch::Unset => {
             if let Some(table) = doc[MODELS_SECTION].as_table_mut() {
@@ -996,7 +994,6 @@ yolo = false
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }
     }
@@ -1200,28 +1197,23 @@ model_provider = "nope"
     }
 
     #[test]
-    fn test_write_provider_writes_multiple_models() {
+    fn test_write_provider_leaves_other_model_blocks() {
         let (_dir, adapter) = setup_grok_dir();
-        let mut p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
-        p.grok_models = Some(vec!["grok-4.5".to_string(), "grok-4.6-high".to_string()]);
+        let p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
 
         adapter.write_provider(&p).unwrap();
 
-        for model in ["grok-4.6", "grok-4.5", "grok-4.6-high"] {
-            assert_eq!(
-                model_field(&adapter, model, "model_provider").unwrap(),
-                "g2a",
-                "model {} should reference the relay",
-                model
-            );
-        }
+        assert_eq!(
+            model_field(&adapter, "grok-4.6", "model_provider").unwrap(),
+            "g2a"
+        );
         assert_eq!(default_model(&adapter).unwrap(), "grok-4.6");
-
-        // 其它中转站的模型块不受影响（未受 CXC 管理的块保持原样）
-        let p2 = provider("x666", "https://x666.example.com/v1", "x666-key", "grok-4.7");
-        adapter.write_provider(&p2).unwrap();
-        assert_eq!(model_field(&adapter, "grok-4.6", "model_provider").unwrap(), "g2a");
-        assert_eq!(model_field(&adapter, "grok-4.7", "model_provider").unwrap(), "x666");
+        // 只写默认模型，不改动文件里已有的其它模型块
+        assert!(model_field(&adapter, "grok-4.5", "model_provider").is_none());
+        assert_eq!(
+            model_field(&adapter, "grok-4.5", "base_url").unwrap(),
+            "https://old.example.com/v1"
+        );
     }
 
     #[test]
@@ -1245,6 +1237,21 @@ model_provider = "nope"
                 content
             );
         }
+    }
+
+    #[test]
+    fn test_write_provider_web_search_defaults_to_follow() {
+        let (_dir, adapter) = setup_grok_dir();
+        let p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
+        assert!(p.grok_web_search.is_none());
+
+        adapter.write_provider(&p).unwrap();
+
+        let doc = parse_adapter(&adapter);
+        assert_eq!(
+            doc[MODELS_SECTION].get("web_search").and_then(|v| v.as_str()),
+            Some("grok-4.6")
+        );
     }
 
     #[test]

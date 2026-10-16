@@ -67,15 +67,15 @@ pub struct ClaudeModels {
 
 /// Grok 的 `[models].web_search` 处置策略。
 ///
-/// web_search 不跟随 `[models].default`，它是独立的一份 pin：不设置时走官方端点，
-/// 指向中转站模型时才经由中转站。因此切换中转站时必须显式决定它的去向。
+/// 缺省为跟随本中转站的默认模型。`keep` 保持配置文件现状，`model` 指定模型，
+/// `unset` 删除字段，让搜索回到官方端点。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum GrokWebSearch {
     /// 保持配置文件现状（CXC 不写也不删该字段）
-    #[default]
     Keep,
     /// 跟随本中转站的默认模型
+    #[default]
     Follow,
     /// 指定模型（通常是本中转站下的某个模型）
     Model { model: String },
@@ -101,10 +101,7 @@ pub struct Provider {
     pub last_ok: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_models: Option<ClaudeModels>,
-    /// Grok：该中转站下要一并写入的附加模型（不含默认模型）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grok_models: Option<Vec<String>>,
-    /// Grok：`[models].web_search` 的处置策略
+    /// Grok：`[models].web_search` 的处置策略。未设置时按跟随默认模型写入。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grok_web_search: Option<GrokWebSearch>,
 }
@@ -150,6 +147,9 @@ pub struct Config {
     pub grok_source: Option<String>,
     #[serde(default)]
     pub grok_custom_dir: String,
+    /// 已把 Grok web_search 的旧缺省（未设置 / keep）迁成 follow。只存在本机配置里。
+    #[serde(default)]
+    pub grok_web_search_default_migrated: bool,
 
     // 同步配置
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -192,6 +192,23 @@ pub fn set_global_source(cfg: &mut Config, source: &str) {
     cfg.codex_source = Some(source.to_string());
     cfg.claude_source = Some(source.to_string());
     cfg.grok_source = Some(source.to_string());
+}
+
+/// 0.0.8 把缺省策略存成了 keep。只迁一次：未设置和 keep 改成 follow，之后用户再选 keep 会保留。
+fn migrate_grok_web_search_default(cfg: &mut Config) -> bool {
+    if cfg.grok_web_search_default_migrated {
+        return false;
+    }
+    for provider in &mut cfg.grok_providers {
+        if matches!(
+            provider.grok_web_search,
+            None | Some(GrokWebSearch::Keep)
+        ) {
+            provider.grok_web_search = Some(GrokWebSearch::Follow);
+        }
+    }
+    cfg.grok_web_search_default_migrated = true;
+    true
 }
 
 fn sync_global_source_fields(cfg: &mut Config) -> bool {
@@ -273,7 +290,10 @@ pub fn config_path() -> Result<PathBuf, ConfigError> {
 pub fn load() -> Result<Config, ConfigError> {
     let path = config_path()?;
     if !path.exists() {
-        return Ok(Config::default());
+        // 没有旧配置可迁，缺省策略从这一版起就是 follow。
+        let mut cfg = Config::default();
+        cfg.grok_web_search_default_migrated = true;
+        return Ok(cfg);
     }
 
     let data = fs::read(&path).map_err(|err| ConfigError::ReadError {
@@ -314,6 +334,10 @@ pub fn load() -> Result<Config, ConfigError> {
     }
 
     if sync_global_source_fields(&mut cfg) {
+        changed = true;
+    }
+
+    if migrate_grok_web_search_default(&mut cfg) {
         changed = true;
     }
 
@@ -553,7 +577,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         add_provider(&mut cfg, "codex", p).unwrap();
@@ -578,7 +601,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         add_provider(&mut cfg, "codex", p.clone()).unwrap();
@@ -601,7 +623,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
@@ -615,7 +636,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -637,7 +657,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
@@ -651,7 +670,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "b").unwrap();
@@ -675,7 +693,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
@@ -706,7 +723,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "claude", "app", "shared").unwrap();
@@ -738,7 +754,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -761,7 +776,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
@@ -775,7 +789,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -798,7 +811,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -822,7 +834,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
@@ -836,7 +847,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -889,7 +899,6 @@ mod tests {
                 latency_ms: None,
                 last_ok: None,
                 claude_models: None,
-                grok_models: None,
                 grok_web_search: None,
             },
         )
@@ -921,7 +930,6 @@ mod tests {
                 latency_ms: None,
                 last_ok: None,
                 claude_models: None,
-                grok_models: None,
                 grok_web_search: None,
             },
         );
@@ -944,7 +952,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -968,7 +975,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -994,7 +1000,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -1018,7 +1023,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -1033,7 +1037,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
@@ -1060,7 +1063,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
@@ -1074,7 +1076,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
@@ -1090,7 +1091,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
@@ -1115,7 +1115,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
@@ -1129,7 +1128,6 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         }).unwrap();
 
@@ -1144,10 +1142,55 @@ mod tests {
             latency_ms: None,
             last_ok: None,
             claude_models: None,
-            grok_models: None,
             grok_web_search: None,
         };
         let err = edit_provider(&mut cfg, "codex", "a", updated);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_grok_web_search_default_migrates_keep_once() {
+        let (_dir, path) = setup_test();
+        let yaml = r#"
+grok_providers:
+- name: mustore
+  base_url: https://example.com/v1
+  api_key: sk
+  model: grok-4.6
+  wire_api: responses
+  grok_models:
+  - grok-4.5
+  grok_web_search:
+    mode: keep
+- name: lab
+  base_url: https://example.com/v1
+  api_key: sk
+  model: grok-4.5
+  wire_api: responses
+  grok_web_search:
+    mode: unset
+"#;
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, yaml).unwrap();
+
+        let cfg = load().unwrap();
+        assert_eq!(
+            cfg.grok_providers[0].grok_web_search,
+            Some(GrokWebSearch::Follow)
+        );
+        assert_eq!(
+            cfg.grok_providers[1].grok_web_search,
+            Some(GrokWebSearch::Unset)
+        );
+        assert!(cfg.grok_web_search_default_migrated);
+
+        let mut cfg = load().unwrap();
+        cfg.grok_providers[0].grok_web_search = Some(GrokWebSearch::Keep);
+        save(&cfg).unwrap();
+        let cfg = load().unwrap();
+        assert_eq!(
+            cfg.grok_providers[0].grok_web_search,
+            Some(GrokWebSearch::Keep)
+        );
     }
 }

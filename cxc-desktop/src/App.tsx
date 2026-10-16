@@ -46,7 +46,6 @@ import {
   CloudDownload,
   Lock,
   ExternalLink,
-  X,
   Layers,
 } from "lucide-react";
 
@@ -69,9 +68,7 @@ interface Provider {
   latency_ms?: number;
   last_ok?: boolean;
   claude_models?: ClaudeModels;
-  // Grok：该中转站下一并维护的附加模型（不含默认模型）
-  grok_models?: string[];
-  // Grok：[models].web_search 的处置策略（未设置 = 保持配置文件现状）
+  // Grok：[models].web_search 的处置策略（未设置 = 跟随本中转站默认模型）
   grok_web_search?: GrokWebSearchPolicy;
 }
 
@@ -259,14 +256,8 @@ const locales = {
     syncSuccessPull: "已从云端拉取最新配置并保存备份！",
     syncTestSuccess: (user: string) => `GitHub 连接成功！认证用户：${user}`,
     syncTestFailed: "连接失败，请检查 Token 权限或网络",
-    grokModelsLabel: "中转站模型列表",
-    grokModelsHint: "除默认模型外，切换时一并写入并为这些模型指向本中转站（可选）。",
-    grokModelsPlaceholder: "输入模型标识符",
-    grokModelsAdd: "添加",
-    grokModelsEmpty: "暂无附加模型",
-    grokModelsPickFromFetched: "从拉取结果选择",
     grokWebSearchLabel: "web_search 模型",
-    grokWebSearchHint: "web_search 不跟随默认模型：不设置时搜索走官方端点，指向本中转站时经由本中转站。",
+    grokWebSearchHint: "缺省跟随本中转站的默认模型。也可以指定别的模型，或清空后走官方端点。",
     grokWebSearchFollow: "跟随本中转站默认模型",
     grokWebSearchCustom: "指定模型",
     grokWebSearchUnset: "不设置（走官方端点）",
@@ -416,14 +407,8 @@ const locales = {
     syncSuccessPull: "Pulled latest config from cloud (backup created)!",
     syncTestSuccess: (user: string) => `GitHub connected! User: ${user}`,
     syncTestFailed: "Connection failed. Please verify Token permissions or network.",
-    grokModelsLabel: "Relay Model List",
-    grokModelsHint: "Extra models written alongside the default one, all pointing at this relay (optional).",
-    grokModelsPlaceholder: "Model id",
-    grokModelsAdd: "Add",
-    grokModelsEmpty: "No extra models yet",
-    grokModelsPickFromFetched: "Pick from fetched models",
     grokWebSearchLabel: "web_search model",
-    grokWebSearchHint: "web_search does not follow the default model: unset sends searches to the official endpoint, pointing it here routes them through this relay.",
+    grokWebSearchHint: "Defaults to this relay's default model. You can pin another model, or clear it so searches use the official endpoint.",
     grokWebSearchFollow: "Follow this relay's default model",
     grokWebSearchCustom: "Specific model",
     grokWebSearchUnset: "Unset (use official endpoint)",
@@ -458,7 +443,6 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
     fable: "",
     subagent: "",
   },
-  grok_models: [],
   grok_web_search: { mode: "follow" },
 };
 
@@ -566,7 +550,6 @@ claude_active_wsl: "ClaudeAPI",
       latency_ms: 80,
       last_ok: true,
       last_test: new Date().toISOString(),
-      grok_models: ["grok-4.5-mini"],
       grok_web_search: { mode: "follow" },
     }
   ],
@@ -702,9 +685,6 @@ function App() {
   const [fetchingModels, setFetchingModels] = useState<boolean>(false);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
-
-  // Grok 中转站附加模型输入
-  const [grokModelInput, setGrokModelInput] = useState<string>("");
 
   // Grok 配置整理（一次性迁移）
   const [showGrokMigrate, setShowGrokMigrate] = useState<boolean>(false);
@@ -1087,7 +1067,6 @@ function App() {
     });
     setFetchedModels([]);
     setFetchError(null);
-    setGrokModelInput("");
     setShowForm("add");
     setEditingName(null);
     setShowApiKey(false);
@@ -1109,34 +1088,14 @@ function App() {
         fable: "",
         subagent: "",
       },
-      grok_models: p.grok_models || [],
-      grok_web_search: p.grok_web_search || { mode: "keep" },
+      grok_web_search: p.grok_web_search || { mode: "follow" },
     });
     setFetchedModels([]);
     setFetchError(null);
-    setGrokModelInput("");
     setShowForm("edit");
     setEditingName(p.name);
     setShowApiKey(false);
     setShowAdvanced(false);
-  }
-
-  /** 把模型加入 Grok 中转站的附加模型列表 */
-  function addGrokModelValue(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    setFormValues((prev) => {
-      const models = prev.grok_models || [];
-      if (models.includes(trimmed) || trimmed === prev.model.trim()) return prev;
-      return { ...prev, grok_models: [...models, trimmed] };
-    });
-  }
-
-  function removeGrokModel(model: string) {
-    setFormValues((prev) => ({
-      ...prev,
-      grok_models: (prev.grok_models || []).filter((m) => m !== model),
-    }));
   }
 
   function setGrokWebSearchMode(mode: "keep" | "follow" | "model" | "unset") {
@@ -1145,7 +1104,7 @@ function App() {
         const current =
           prev.grok_web_search?.mode === "model"
             ? prev.grok_web_search.model
-            : (prev.grok_models || [])[0] || "";
+            : prev.model.trim();
         return { ...prev, grok_web_search: { mode: "model", model: current } };
       }
       return { ...prev, grok_web_search: { mode } as GrokWebSearchPolicy };
@@ -1178,10 +1137,8 @@ function App() {
             grok_providers: (prev.grok_providers || []).map((p) => {
               const group = report.groups.find(([key]) => key === p.name);
               if (!group) return p;
-              const extras = group[1].filter((m) => m !== p.model);
               return {
                 ...p,
-                grok_models: extras.length > 0 ? extras : undefined,
                 grok_web_search:
                   report.web_search === null
                     ? { mode: "unset" }
@@ -1297,14 +1254,44 @@ function App() {
 
   async function handleSelectQuickModel(model: string) {
     if (!quickSwitchProvider) return;
+    const name = quickSwitchProvider.name;
     try {
       const updatedProvider = { ...quickSwitchProvider, model };
-      const newConfig = await invoke<Config>("edit_provider", {
-        oldName: quickSwitchProvider.name,
-        updated: updatedProvider,
-        targetTool,
-      });
-      setConfig(newConfig);
+      const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
+      if (!isTauri && config) {
+        const currentSource = getGlobalSource(config);
+        setConfig((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev };
+          const applyList = (list: Provider[] | undefined) =>
+            (list || []).map((p) => (p.name === name ? updatedProvider : p));
+          if (targetTool === "codex") {
+            next.codex_providers = applyList(prev.codex_providers);
+            if (currentSource === "wsl") next.codex_active_wsl = name;
+            else next.codex_active_app = name;
+          } else if (targetTool === "claude") {
+            next.claude_providers = applyList(prev.claude_providers);
+            if (currentSource === "app") next.claude_active_app = name;
+            else next.claude_active_wsl = name;
+          } else {
+            next.grok_providers = applyList(prev.grok_providers);
+            if (currentSource === "app") next.grok_active_app = name;
+            else next.grok_active_wsl = name;
+          }
+          return next;
+        });
+      } else {
+        await invoke<Config>("edit_provider", {
+          oldName: name,
+          updated: updatedProvider,
+          targetTool,
+        });
+        const switched = await invoke<Config>("switch_provider", {
+          name,
+          targetTool,
+        });
+        setConfig(switched);
+      }
       handleCloseQuickSwitch();
     } catch (e: any) {
       setQuickSwitchError(e.toString());
@@ -1368,14 +1355,7 @@ function App() {
     try {
       setError(null);
       const providerPayload: Provider = { ...formValues };
-      if (targetTool === "grok") {
-        // 附加模型里去掉默认模型与重复项
-        const extras = (formValues.grok_models || [])
-          .map((m) => m.trim())
-          .filter((m) => m && m !== formValues.model.trim());
-        providerPayload.grok_models = extras.length > 0 ? Array.from(new Set(extras)) : undefined;
-      } else {
-        providerPayload.grok_models = undefined;
+      if (targetTool !== "grok") {
         providerPayload.grok_web_search = undefined;
       }
 
@@ -2126,14 +2106,6 @@ function App() {
                             >
                               {p.model}
                             </span>
-                            {targetTool === "grok" && (p.grok_models?.length || 0) > 0 && (
-                              <span
-                                className="shrink-0 rounded-md border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary"
-                                title={(p.grok_models || []).join(", ")}
-                              >
-                                +{p.grok_models?.length}
-                              </span>
-                            )}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
@@ -2308,14 +2280,6 @@ function App() {
                               >
                                 {p.model}
                               </span>
-                              {targetTool === "grok" && (p.grok_models?.length || 0) > 0 && (
-                                <span
-                                  className="shrink-0 rounded-md border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] font-bold text-primary"
-                                  title={(p.grok_models || []).join(", ")}
-                                >
-                                  +{p.grok_models?.length}
-                                </span>
-                              )}
                             </div>
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Key:</span>
@@ -3187,88 +3151,15 @@ function App() {
                   )}
 
                   {targetTool === "grok" && (
-                    <div className="space-y-3 border border-border/30 rounded-xl p-4 bg-muted/5">
-                      <Label className="text-[11px] font-extrabold text-muted-foreground/80 flex items-center gap-1.5 uppercase tracking-wider">
-                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-md text-[9px] font-bold">Optional</span>
-                        {t.grokModelsLabel}
+                    <div className="space-y-1.5 border border-border/30 rounded-xl p-4 bg-muted/5">
+                      <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                        {t.grokWebSearchLabel}
                       </Label>
-                      <p className="text-[10px] text-muted-foreground/75 leading-normal">{t.grokModelsHint}</p>
-
-                      <div className="flex flex-wrap gap-1.5">
-                        {(formValues.grok_models || []).length === 0 && (
-                          <span className="text-[10px] text-muted-foreground/60">{t.grokModelsEmpty}</span>
-                        )}
-                        {(formValues.grok_models || []).map((m) => (
-                          <span
-                            key={m}
-                            className="inline-flex items-center gap-1 rounded-md border border-border/40 bg-background px-2 py-0.5 text-[10px] font-medium text-foreground/80"
-                          >
-                            {m}
-                            <button
-                              type="button"
-                              onClick={() => removeGrokModel(m)}
-                              className="text-muted-foreground/60 hover:text-red-500 transition-colors cursor-pointer"
-                              title={t.deleteConnTitle}
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Input
-                          type="text"
-                          value={grokModelInput}
-                          onChange={(e) => setGrokModelInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              addGrokModelValue(grokModelInput);
-                              setGrokModelInput("");
-                            }
-                          }}
-                          placeholder={t.grokModelsPlaceholder}
-                          className="h-8 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          onClick={() => {
-                            addGrokModelValue(grokModelInput);
-                            setGrokModelInput("");
-                          }}
-                          className="h-8 text-[10px] border border-border/40 bg-muted/5 text-muted-foreground hover:bg-muted/15 font-extrabold px-2.5 rounded-md shadow-sm transition-all active:scale-[0.96] shrink-0"
-                        >
-                          {t.grokModelsAdd}
-                        </Button>
-                      </div>
-
-                      {fetchedModels.length > 0 && (
-                        <select
-                          value=""
-                          onChange={(e) => addGrokModelValue(e.target.value)}
-                          className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                        >
-                          <option value="">{t.grokModelsPickFromFetched}</option>
-                          {fetchedModels.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      <div className="space-y-1.5 pt-2 border-t border-border/30">
-                        <Label className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
-                          {t.grokWebSearchLabel}
-                        </Label>
-                        <select
-                          value={formValues.grok_web_search?.mode || "keep"}
-                          onChange={(e) => setGrokWebSearchMode(e.target.value as "keep" | "follow" | "model" | "unset")}
-                          className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
-                        >
+                      <select
+                        value={formValues.grok_web_search?.mode || "follow"}
+                        onChange={(e) => setGrokWebSearchMode(e.target.value as "keep" | "follow" | "model" | "unset")}
+                        className="flex h-8 w-full rounded-md border border-border/30 bg-muted/10 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
+                      >
                           <option value="keep">{t.grokWebSearchKeep}</option>
                           <option value="follow">{t.grokWebSearchFollow}</option>
                           <option value="model">{t.grokWebSearchCustom}</option>
@@ -3301,7 +3192,6 @@ function App() {
                         <p className="text-[10px] text-muted-foreground/70 leading-normal">
                           {t.grokWebSearchHint} {t.grokWebSearchOfflineHint}
                         </p>
-                      </div>
                     </div>
                   )}
 

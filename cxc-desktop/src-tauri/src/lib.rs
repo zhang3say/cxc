@@ -243,7 +243,7 @@ struct GrokMigrationResponse {
     config: Config,
 }
 
-/// 把迁移结果回填到 CXC 的 Grok 中转站：附加模型列表与 web_search 处置策略。
+/// 把迁移结果回填到 CXC 的 Grok 中转站：web_search 处置策略。
 ///
 /// 只有中转站块键与 CXC 里的中转站名称一致时才回填，其余块由用户自行处理。
 fn apply_grok_reorg_to_config(cfg: &mut Config, report: &GrokReorgReport) {
@@ -253,21 +253,14 @@ fn apply_grok_reorg_to_config(cfg: &mut Config, report: &GrokReorgReport) {
         };
 
         let default_model = provider.model.clone();
-        let extras: Vec<String> = models
-            .iter()
-            .filter(|model| **model != default_model)
-            .cloned()
-            .collect();
-        provider.grok_models = if extras.is_empty() { None } else { Some(extras) };
-
         provider.grok_web_search = match report.web_search.as_deref() {
             None => Some(GrokWebSearch::Unset),
             Some(model) if model == default_model => Some(GrokWebSearch::Follow),
             Some(model) if models.iter().any(|m| m == model) => Some(GrokWebSearch::Model {
                 model: model.to_string(),
             }),
-            // 指向别处的模型：保持配置文件现状，交给用户决定
-            Some(_) => None,
+            // 指向别处的模型：保持配置文件现状。None 现在表示跟随，所以这里要显式 keep。
+            Some(_) => Some(GrokWebSearch::Keep),
         };
     }
 }
