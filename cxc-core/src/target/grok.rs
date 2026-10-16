@@ -378,6 +378,7 @@ impl GrokAdapter {
         }
 
         apply_web_search(&mut doc, provider)?;
+        apply_reasoning_effort(&mut doc, provider);
 
         let out = doc.to_string();
         let _ = out
@@ -653,6 +654,7 @@ impl TargetAdapter for GrokAdapter {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
         self.write_provider(&provider)
     }
@@ -831,6 +833,22 @@ fn apply_web_search(doc: &mut DocumentMut, provider: &Provider) -> Result<(), Ta
     Ok(())
 }
 
+/// 有推理档位时写入默认档位和当前模型块。没填则两个字段都保持原样。
+fn apply_reasoning_effort(doc: &mut DocumentMut, provider: &Provider) {
+    let Some(level) = provider.reasoning_effort_level() else {
+        return;
+    };
+    ensure_table(doc, MODELS_SECTION);
+    doc[MODELS_SECTION]["default_reasoning_effort"] = toml_edit::value(level);
+    let model = provider.model.trim();
+    if model.is_empty() {
+        return;
+    }
+    ensure_table(doc, MODEL_SECTION);
+    ensure_standard_table(doc, MODEL_SECTION, model);
+    doc[MODEL_SECTION][model]["reasoning_effort"] = toml_edit::value(level);
+}
+
 fn collect_providers(doc: &DocumentMut) -> BTreeMap<String, Endpoint> {
     let mut providers = BTreeMap::new();
     if let Some(table) = doc.get(MODEL_PROVIDERS_SECTION).and_then(|v| v.as_table()) {
@@ -995,6 +1013,7 @@ yolo = false
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         }
     }
 
@@ -1214,6 +1233,52 @@ model_provider = "nope"
             model_field(&adapter, "grok-4.5", "base_url").unwrap(),
             "https://old.example.com/v1"
         );
+    }
+
+    #[test]
+    fn test_write_provider_reasoning_effort_updates_default_and_current_model() {
+        let (_dir, adapter) = setup_grok_dir();
+        let mut p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
+        p.reasoning_effort = Some("max".to_string());
+
+        adapter.write_provider(&p).unwrap();
+
+        let doc = parse_adapter(&adapter);
+        assert_eq!(
+            doc[MODELS_SECTION]
+                .get("default_reasoning_effort")
+                .and_then(|v| v.as_str()),
+            Some("max")
+        );
+        assert_eq!(
+            model_field(&adapter, "grok-4.6", "reasoning_effort").unwrap(),
+            "max"
+        );
+        assert_eq!(
+            model_field(&adapter, "grok-4.5", "reasoning_effort").unwrap(),
+            "high"
+        );
+    }
+
+    #[test]
+    fn test_write_provider_reasoning_effort_unset_leaves_file() {
+        let (_dir, adapter) = setup_grok_dir();
+        let p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.6");
+
+        adapter.write_provider(&p).unwrap();
+
+        let doc = parse_adapter(&adapter);
+        assert_eq!(
+            doc[MODELS_SECTION]
+                .get("default_reasoning_effort")
+                .and_then(|v| v.as_str()),
+            Some("high")
+        );
+        assert_eq!(
+            model_field(&adapter, "grok-4.5", "reasoning_effort").unwrap(),
+            "high"
+        );
+        assert!(model_field(&adapter, "grok-4.6", "reasoning_effort").is_none());
     }
 
     #[test]

@@ -89,6 +89,8 @@ providers:
 - `env` 中的其他字段（如 `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`）
 - 所有非 `env` 的顶层字段（如 `permissions`, `statusLine`, `enabledPlugins`）
 
+推理档位不写进 `CLAUDE_CODE_EFFORT_LEVEL`。卡片上设了档位时，只写 `modelSettings.<当前模型>.effortLevel`，该模型对象里的其他键（包括 `maxEffortLevel`）保留。见 ADR-0016。
+
 认证字段处理：
 - 保持用户已有的认证字段名（`API_KEY` 或 `AUTH_TOKEN`）
 - 如果都不存在，默认使用 `ANTHROPIC_AUTH_TOKEN`

@@ -318,6 +318,7 @@ mod tests {
                 last_ok: None,
                 claude_models: None,
                 grok_web_search: None,
+                reasoning_effort: None,
             }],
             claude_providers: vec![],
             grok_providers: vec![],

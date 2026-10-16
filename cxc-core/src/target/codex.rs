@@ -267,6 +267,109 @@ impl CodexAdapter {
     fn auth_path(&self) -> PathBuf {
         self.codex_dir.join("auth.json")
     }
+
+    pub fn write_provider(&self, provider: &crate::config::Provider) -> Result<(), TargetError> {
+        let wire_api = if provider.wire_api.is_empty() {
+            "responses".to_string()
+        } else {
+            provider.wire_api.clone()
+        };
+        self.write_with_reasoning(
+            &TargetConfig {
+                base_url: provider.base_url.clone(),
+                api_key: provider.api_key.clone(),
+                model: provider.model.clone(),
+                wire_api,
+            },
+            provider.reasoning_effort_level(),
+        )
+    }
+
+    fn write_with_reasoning(
+        &self,
+        config: &TargetConfig,
+        reasoning_effort: Option<&str>,
+    ) -> Result<(), TargetError> {
+        if !self.codex_dir.exists() {
+            fs::create_dir_all(&self.codex_dir).map_err(|err| TargetError::WriteError {
+                path: self.codex_dir.clone(),
+                source: err,
+            })?;
+        }
+
+        backup(&self.config_path())?;
+        backup(&self.auth_path())?;
+
+        let config_path = self.config_path();
+        let toml_data = if config_path.exists() {
+            fs::read_to_string(&config_path).map_err(|err| TargetError::ReadError {
+                path: config_path.clone(),
+                source: err,
+            })?
+        } else {
+            String::from(concat!(
+                "model_provider = \"codex\"\n",
+                "model = \"\"\n",
+                "\n",
+                "[model_providers.codex]\n",
+                "base_url = \"\"\n",
+                "name = \"codex\"\n",
+                "requires_openai_auth = true\n",
+                "wire_api = \"responses\"\n",
+            ))
+        };
+
+        let mut doc = toml_data
+            .parse::<DocumentMut>()
+            .map_err(|e| TargetError::ParseError(e.to_string()))?;
+
+        doc["model"] = toml_edit::value(&config.model);
+        doc["model_provider"] = toml_edit::value("codex");
+        if let Some(level) = reasoning_effort {
+            doc["model_reasoning_effort"] = toml_edit::value(level);
+            doc["plan_mode_reasoning_effort"] = toml_edit::value(level);
+        }
+
+        promote_model_providers_to_tables(&mut doc);
+
+        doc["model_providers"]["codex"]["base_url"] = toml_edit::value(&config.base_url);
+        doc["model_providers"]["codex"]["wire_api"] = toml_edit::value(&config.wire_api);
+        doc["model_providers"]["codex"]["name"] = toml_edit::value("codex");
+        doc["model_providers"]["codex"]["requires_openai_auth"] = toml_edit::value(true);
+
+        let out = doc.to_string();
+        let _ = out
+            .parse::<DocumentMut>()
+            .map_err(|e| TargetError::SerializeError(format!("Written TOML is invalid: {}", e)))?;
+
+        write_secure_file(&config_path, out.as_bytes()).map_err(|err| TargetError::WriteError {
+            path: config_path.clone(),
+            source: err,
+        })?;
+
+        let auth_path = self.auth_path();
+        let auth_data = if auth_path.exists() {
+            fs::read_to_string(&auth_path).map_err(|err| TargetError::ReadError {
+                path: auth_path.clone(),
+                source: err,
+            })?
+        } else {
+            String::from("{\"auth_mode\": \"apikey\", \"OPENAI_API_KEY\": \"\"}")
+        };
+
+        let mut auth: serde_json::Value =
+            serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
+        auth["OPENAI_API_KEY"] = serde_json::Value::String(config.api_key.clone());
+
+        let out_json = serde_json::to_string_pretty(&auth)
+            .map_err(|e| TargetError::SerializeError(e.to_string()))?;
+        write_secure_file(&auth_path, out_json.as_bytes()).map_err(|err| TargetError::WriteError {
+            path: auth_path.clone(),
+            source: err,
+        })?;
+
+        Ok(())
+    }
 }
 
 impl TargetAdapter for CodexAdapter {
@@ -329,95 +432,7 @@ impl TargetAdapter for CodexAdapter {
     }
 
     fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
-        // Ensure the codex directory exists
-        if !self.codex_dir.exists() {
-            fs::create_dir_all(&self.codex_dir).map_err(|err| TargetError::WriteError {
-                path: self.codex_dir.clone(),
-                source: err,
-            })?;
-        }
-
-        // Backup files first
-        backup(&self.config_path())?;
-        backup(&self.auth_path())?;
-
-        // Update config.toml (read existing or use minimal scaffold)
-        let config_path = self.config_path();
-        let toml_data = if config_path.exists() {
-            fs::read_to_string(&config_path).map_err(|err| TargetError::ReadError {
-                path: config_path.clone(),
-                source: err,
-            })?
-        } else {
-            // Minimal Codex config scaffold for first-time write
-            String::from(concat!(
-                "model_provider = \"codex\"\n",
-                "model = \"\"\n",
-                "\n",
-                "[model_providers.codex]\n",
-                "base_url = \"\"\n",
-                "name = \"codex\"\n",
-                "requires_openai_auth = true\n",
-                "wire_api = \"responses\"\n",
-            ))
-        };
-
-        let mut doc = toml_data
-            .parse::<DocumentMut>()
-            .map_err(|e| TargetError::ParseError(e.to_string()))?;
-
-        doc["model"] = toml_edit::value(&config.model);
-        // Point Codex at our fixed "codex" provider entry
-        doc["model_provider"] = toml_edit::value("codex");
-
-        // Promote any inline tables inside [model_providers] to standard TOML sections,
-        // so the output uses `[model_providers.codex]` format instead of `codex = { ... }`.
-        promote_model_providers_to_tables(&mut doc);
-
-        // Ensure model_providers.codex path exists and update fields
-        doc["model_providers"]["codex"]["base_url"] = toml_edit::value(&config.base_url);
-        doc["model_providers"]["codex"]["wire_api"] = toml_edit::value(&config.wire_api);
-        doc["model_providers"]["codex"]["name"] = toml_edit::value("codex");
-        // true = enable OpenAI-compatible auth (uses OPENAI_API_KEY from auth.json as Bearer token)
-        doc["model_providers"]["codex"]["requires_openai_auth"] = toml_edit::value(true);
-
-        // Validate by re-parsing
-        let out = doc.to_string();
-        let _ = out
-            .parse::<DocumentMut>()
-            .map_err(|e| TargetError::SerializeError(format!("Written TOML is invalid: {}", e)))?;
-
-        write_secure_file(&config_path, out.as_bytes()).map_err(|err| TargetError::WriteError {
-            path: config_path.clone(),
-            source: err,
-        })?;
-
-        // Update auth.json (read existing or use minimal scaffold)
-        let auth_path = self.auth_path();
-        let auth_data = if auth_path.exists() {
-            fs::read_to_string(&auth_path).map_err(|err| TargetError::ReadError {
-                path: auth_path.clone(),
-                source: err,
-            })?
-        } else {
-            // Minimal auth scaffold
-            String::from("{\"auth_mode\": \"apikey\", \"OPENAI_API_KEY\": \"\"}")
-        };
-
-        let mut auth: serde_json::Value =
-            serde_json::from_str(&auth_data).map_err(|e| TargetError::ParseError(e.to_string()))?;
-        auth["OPENAI_API_KEY"] = serde_json::Value::String(config.api_key.clone());
-
-        let out_json = serde_json::to_string_pretty(&auth)
-            .map_err(|e| TargetError::SerializeError(e.to_string()))?;
-        write_secure_file(&auth_path, out_json.as_bytes()).map_err(|err| {
-            TargetError::WriteError {
-                path: auth_path.clone(),
-                source: err,
-            }
-        })?;
-
-        Ok(())
+        self.write_with_reasoning(config, None)
     }
 }
 
@@ -617,6 +632,55 @@ trust_level = "trusted"
                 check
             );
         }
+    }
+
+    #[test]
+    fn test_write_provider_reasoning_effort_sets_both_keys() {
+        use crate::config::Provider;
+        let (_dir, adapter) = setup_codex_dir();
+        let path = adapter.config_path();
+        let mut existing = fs::read_to_string(&path).unwrap();
+        existing.push_str(
+            "\nmodel_reasoning_effort = \"low\"\nplan_mode_reasoning_effort = \"low\"\n\n[agents]\ndefault_subagent_reasoning_effort = \"medium\"\n",
+        );
+        fs::write(&path, existing).unwrap();
+
+        let mut provider = Provider {
+            name: "relay".to_string(),
+            base_url: "https://new.example.com/v1".to_string(),
+            api_key: "sk-new".to_string(),
+            model: "glm-5.3".to_string(),
+            wire_api: "responses".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: Some("max".to_string()),
+        };
+        adapter.write_provider(&provider).unwrap();
+
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
+        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("max"));
+        assert_eq!(
+            doc["agents"]["default_subagent_reasoning_effort"].as_str(),
+            Some("medium")
+        );
+        assert!(doc["features"]["guardian_approval"].as_bool().unwrap());
+
+        provider.reasoning_effort = Some("  ".to_string());
+        adapter.write_provider(&provider).unwrap();
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
+        assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("max"));
     }
 
     #[test]

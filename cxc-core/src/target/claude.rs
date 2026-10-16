@@ -386,6 +386,8 @@ impl ClaudeAdapter {
             env.remove("CLAUDE_CODE_SUBAGENT_MODEL");
         }
 
+        apply_reasoning_effort(&mut settings, provider);
+
         // Write settings
         let out = serde_json::to_string_pretty(&settings)
             .map_err(|e| TargetError::SerializeError(e.to_string()))?;
@@ -469,8 +471,45 @@ impl TargetAdapter for ClaudeAdapter {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
         self.write_with_provider(config, &provider)
+    }
+}
+
+/// 有推理档位时只写 `modelSettings.<当前模型>.effortLevel`。没填则不碰这份设置。
+fn apply_reasoning_effort(settings: &mut serde_json::Value, provider: &Provider) {
+    let Some(level) = provider.reasoning_effort_level() else {
+        return;
+    };
+    let model = provider.model.trim();
+    if model.is_empty() {
+        return;
+    }
+    if settings.get("modelSettings").is_some()
+        && !settings.get("modelSettings").map(|v| v.is_object()).unwrap_or(false)
+    {
+        return;
+    }
+    if !settings
+        .get("modelSettings")
+        .map(|v| v.is_object())
+        .unwrap_or(false)
+    {
+        settings["modelSettings"] = json!({});
+    }
+    let Some(models) = settings["modelSettings"].as_object_mut() else {
+        return;
+    };
+    match models.get(model) {
+        Some(value) if !value.is_object() => return,
+        None => {
+            models.insert(model.to_string(), json!({}));
+        }
+        _ => {}
+    }
+    if let Some(entry) = models.get_mut(model).and_then(|v| v.as_object_mut()) {
+        entry.insert("effortLevel".to_string(), json!(level));
     }
 }
 
@@ -569,6 +608,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -602,6 +642,7 @@ mod tests {
                 subagent: None,
             }),
             grok_web_search: None,
+            reasoning_effort: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -649,6 +690,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -691,6 +733,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -722,6 +765,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
 
         let result = adapter.write_provider(&provider);
@@ -750,6 +794,7 @@ mod tests {
             last_ok: None,
             claude_models: None,
             grok_web_search: None,
+            reasoning_effort: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -760,5 +805,57 @@ mod tests {
 
         // No backup should exist
         assert!(!dir.path().join("settings.json.bak").exists());
+    }
+
+    #[test]
+    fn test_write_reasoning_effort_sets_only_current_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = json!({
+            "theme": "light",
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://old.example.com",
+                "ANTHROPIC_AUTH_TOKEN": "sk-old",
+                "CLAUDE_CODE_EFFORT_LEVEL": "max"
+            },
+            "modelSettings": {
+                "claude-fable-5.1": { "maxEffortLevel": "max", "effortLevel": "low" },
+                "claude-haiku-5.5": { "effortLevel": "medium" }
+            }
+        });
+        fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        let adapter = ClaudeAdapter::new_with_dir(dir.path());
+        let mut provider = Provider {
+            name: "relay".to_string(),
+            base_url: "https://new.example.com".to_string(),
+            api_key: "sk-new".to_string(),
+            model: "claude-fable-5.1".to_string(),
+            wire_api: String::new(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: Some("high".to_string()),
+        };
+        adapter.write_provider(&provider).unwrap();
+
+        let data = fs::read_to_string(adapter.settings_path()).unwrap();
+        let got: serde_json::Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(got["theme"], "light");
+        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["effortLevel"], "high");
+        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
+        assert_eq!(got["modelSettings"]["claude-haiku-5.5"]["effortLevel"], "medium");
+
+        provider.reasoning_effort = None;
+        adapter.write_provider(&provider).unwrap();
+        let data = fs::read_to_string(adapter.settings_path()).unwrap();
+        let got: serde_json::Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["effortLevel"], "high");
     }
 }

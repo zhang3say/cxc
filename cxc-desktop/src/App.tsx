@@ -70,6 +70,8 @@ interface Provider {
   claude_models?: ClaudeModels;
   // Grok：[models].web_search 的处置策略（未设置 = 跟随本中转站默认模型）
   grok_web_search?: GrokWebSearchPolicy;
+  // 推理档位。空着表示启用时不改目标文件。
+  reasoning_effort?: string;
 }
 
 type GrokWebSearchPolicy =
@@ -89,6 +91,12 @@ interface GrokMigrationReport {
 }
 
 type TargetTool = "codex" | "claude" | "grok";
+
+const REASONING_EFFORT_OPTIONS: Record<TargetTool, string[]> = {
+  codex: ["low", "medium", "high", "xhigh", "max", "ultra"],
+  claude: ["low", "medium", "high", "xhigh", "max"],
+  grok: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+};
 
 interface Config {
   // 旧字段（向后兼容，已废弃）
@@ -263,6 +271,9 @@ const locales = {
     grokWebSearchUnset: "不设置（走官方端点）",
     grokWebSearchKeep: "保持配置文件现状",
     grokWebSearchOfflineHint: "被指定的模型需支持 Responses 的 web_search 工具，否则搜索会报错。",
+    reasoningEffortLabel: "推理档位",
+    reasoningEffortKeep: "不改文件",
+    reasoningEffortHint: "启用这张卡片时写入当前档位。没选则不改目标配置里已有的值。",
     grokMigrateBtn: "按中转站整理配置",
     grokMigrateTitle: "把 Grok 配置整理成中转站结构",
     grokMigrateDesc: "扫描 config.toml 里的 [model.*]，把重复的 base_url / api_key / api_backend 收拢到 [model_providers.*]，并让模型通过 model_provider 引用它。写入前会自动备份。",
@@ -414,6 +425,9 @@ const locales = {
     grokWebSearchUnset: "Unset (use official endpoint)",
     grokWebSearchKeep: "Keep config file as is",
     grokWebSearchOfflineHint: "The chosen model must support the Responses API web_search tool, otherwise searches fail.",
+    reasoningEffortLabel: "Reasoning effort",
+    reasoningEffortKeep: "Leave file unchanged",
+    reasoningEffortHint: "Written when this card is activated. Leave it unset to keep the level already in the tool config.",
     grokMigrateBtn: "Reorganize by relay",
     grokMigrateTitle: "Reorganize Grok config around relays",
     grokMigrateDesc: "Scans [model.*] in config.toml, gathers duplicated base_url / api_key / api_backend into [model_providers.*], and points each model at its relay with model_provider. A backup is written first.",
@@ -444,6 +458,7 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
     subagent: "",
   },
   grok_web_search: { mode: "follow" },
+  reasoning_effort: "",
 };
 
 const mockConfig: Config = {
@@ -1089,6 +1104,7 @@ function App() {
         subagent: "",
       },
       grok_web_search: p.grok_web_search || { mode: "follow" },
+      reasoning_effort: p.reasoning_effort || "",
     });
     setFetchedModels([]);
     setFetchError(null);
@@ -1358,6 +1374,8 @@ function App() {
       if (targetTool !== "grok") {
         providerPayload.grok_web_search = undefined;
       }
+      const effort = providerPayload.reasoning_effort?.trim();
+      providerPayload.reasoning_effort = effort ? effort : undefined;
 
       let updatedCfg: Config;
       if (showForm === "add") {
@@ -2106,6 +2124,9 @@ function App() {
                             >
                               {p.model}
                             </span>
+                            {p.reasoning_effort ? (
+                              <span className="text-[10px] text-muted-foreground/80 shrink-0">{p.reasoning_effort}</span>
+                            ) : null}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
@@ -2281,6 +2302,12 @@ function App() {
                                 {p.model}
                               </span>
                             </div>
+                            {p.reasoning_effort ? (
+                              <div className="flex justify-between items-center text-[10.5px] gap-2">
+                                <span className="text-muted-foreground/80 font-medium">{t.reasoningEffortLabel}:</span>
+                                <span className="font-semibold text-foreground/80">{p.reasoning_effort}</span>
+                              </div>
+                            ) : null}
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
                               <span className="text-muted-foreground/80 font-medium">Key:</span>
                               <span className="font-mono text-muted-foreground/80">
@@ -2980,6 +3007,30 @@ function App() {
                   />
                 )}
                 {fetchError && <span className="text-[10px] text-red-500 font-medium block mt-1">{fetchError}</span>}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="form-reasoning-effort" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                  {t.reasoningEffortLabel}
+                </Label>
+                <select
+                  id="form-reasoning-effort"
+                  value={formValues.reasoning_effort || ""}
+                  onChange={(e) => setFormValues({ ...formValues, reasoning_effort: e.target.value })}
+                  className="flex h-9 w-full rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground transition-all duration-200 focus:bg-background/80"
+                >
+                  <option value="">{t.reasoningEffortKeep}</option>
+                  {(formValues.reasoning_effort &&
+                  !REASONING_EFFORT_OPTIONS[targetTool].includes(formValues.reasoning_effort)
+                    ? [...REASONING_EFFORT_OPTIONS[targetTool], formValues.reasoning_effort]
+                    : REASONING_EFFORT_OPTIONS[targetTool]
+                  ).map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-muted-foreground/80 block">{t.reasoningEffortHint}</span>
               </div>
 
               <div className="space-y-1.5">

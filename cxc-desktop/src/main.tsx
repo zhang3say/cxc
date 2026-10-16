@@ -79,7 +79,8 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
         last_test: "2026-06-12T15:08:00.000Z",
         latency_ms: 80,
         last_ok: true,
-        grok_web_search: { mode: "follow" }
+        grok_web_search: { mode: "follow" },
+        reasoning_effort: "high"
       }
     ],
     codex_source: "app",

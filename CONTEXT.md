@@ -8,6 +8,11 @@ The project name. A meta-configuration tool that manages API relay endpoint conf
 
 A named API relay endpoint configuration. Each Provider consists of a `name`, `base_url`, `api_key`, and `model`. Represents one API proxy or relay service that an AI coding tool (Codex, Claude, Grok) can be pointed at.
 
+## Reasoning Effort（推理档位）
+
+The selected reasoning level on a Provider. One Provider has one level, and every model on that card uses it. When the level is absent, CXC leaves the target tool's current level as it is.
+_Avoid_: 推理强度, reasoning menu, effort cap
+
 ## Target Tool（目标工具）
 
 An AI coding tool whose configuration CXC manages. Each Target Tool has a known config file path and format. Currently supported targets: Codex, Claude CLI, and Grok. CXC writes Provider details into the Target Tool's config file when the user switches providers.

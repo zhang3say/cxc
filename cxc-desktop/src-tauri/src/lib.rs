@@ -1,7 +1,6 @@
 use cxc_core::config::{self, Config, GrokWebSearch, Provider};
 use cxc_core::target::{
     claude::ClaudeAdapter, codex::CodexAdapter, grok::GrokAdapter, grok::GrokReorgReport,
-    TargetAdapter, TargetConfig,
 };
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -163,27 +162,6 @@ fn apply_source_settings(
     Ok(())
 }
 
-fn default_wire_api_for_tool(target_tool: &str) -> &'static str {
-    if target_tool == "grok" {
-        "chat_completions"
-    } else {
-        "responses"
-    }
-}
-
-fn provider_to_target_config(p: &Provider, target_tool: &str) -> TargetConfig {
-    TargetConfig {
-        base_url: p.base_url.clone(),
-        api_key: p.api_key.clone(),
-        model: p.model.clone(),
-        wire_api: if p.wire_api.is_empty() {
-            default_wire_api_for_tool(target_tool).to_string()
-        } else {
-            p.wire_api.clone()
-        },
-    }
-}
-
 fn write_provider_to_target(
     cfg: &Config,
     target_tool: &str,
@@ -193,7 +171,7 @@ fn write_provider_to_target(
         "codex" => {
             let adapter = CodexAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
             adapter
-                .write(&provider_to_target_config(provider, target_tool))
+                .write_provider(provider)
                 .map_err(|e| e.to_string())
         }
         "claude" => {
