@@ -2060,16 +2060,18 @@ function App() {
               viewMode === "list" ? (
                 /* Table Database Layout */
                 <div className="overflow-x-auto">
-                  <div className="w-full min-w-[800px] flex flex-col gap-2.5 pb-2.5 px-3.5">
-                    {/* Table Header */}
-                    <div className="hidden sm:flex items-center px-4 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider gap-4 opacity-70">
-                      <div className="w-6 shrink-0" />
-                      <div className="w-32 sm:w-36 shrink-0 pr-4">{t.providerNameCol}</div>
-                      <div className="flex-1 min-w-0 pr-4">{t.endpointCol}</div>
-                      <div className="w-24 sm:w-28 shrink-0 pr-4">{t.modelCol}</div>
-                      <div className="w-28 sm:w-32 shrink-0 pr-4">{t.statusLatencyCol}</div>
-                      <div className="w-24 shrink-0 text-center pr-4">{t.actionsCol}</div>
-                      <div className="w-24 shrink-0 text-left">{t.activeCol}</div>
+                  <div className="w-full min-w-[800px] flex flex-col gap-2.5 pb-2.5 px-3.5 sm:grid sm:min-w-[64rem] sm:grid-cols-[1rem_1.5rem_9rem_minmax(8rem,1fr)_minmax(14rem,max-content)_8rem_6rem_7rem_1rem] sm:gap-x-4 sm:gap-y-2.5">
+                    {/* Table Header。模型列与各行共用轨道，按最长的模型名加档位变宽。 */}
+                    <div className="hidden sm:grid sm:col-span-full sm:grid-cols-subgrid items-center py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider opacity-70">
+                      <div />
+                      <div />
+                      <div className="pr-4">{t.providerNameCol}</div>
+                      <div className="min-w-0 pr-4">{t.endpointCol}</div>
+                      <div className="pr-4">{t.modelCol}</div>
+                      <div className="pr-4">{t.statusLatencyCol}</div>
+                      <div className="text-center pr-4">{t.actionsCol}</div>
+                      <div>{t.activeCol}</div>
+                      <div />
                     </div>
 
                     {filteredProviders.map((p) => {
@@ -2082,7 +2084,7 @@ function App() {
                       return (
                         <div
                           key={p.name}
-                          className={`flex flex-col sm:flex-row sm:items-center px-4 py-3 gap-3 sm:gap-4 rounded-xl border transition-all duration-200 group relative ${
+                          className={`col-span-full flex flex-col sm:grid sm:grid-cols-subgrid sm:items-center px-4 py-3 gap-3 sm:px-0 sm:gap-x-4 sm:gap-y-0 rounded-xl border transition-all duration-200 group relative ${
                             vibeMode === "standard"
                               ? isActive
                                 ? "bg-primary/[0.04] border-primary/55 ring-1 ring-primary/5 shadow-[0_2px_10px_rgba(59,130,246,0.05)]"
@@ -2092,8 +2094,9 @@ function App() {
                                 : "bg-card/25 backdrop-blur-md border-border/40 hover:border-border/70 hover:bg-card/35 dark:border-white/5 dark:hover:border-white/10"
                           } ${isTesting ? "opacity-80" : ""}`}
                         >
+                          <div className="hidden sm:block" />
                           {/* Active dot column */}
-                          <div className="hidden sm:flex items-center justify-center w-6 size-5 shrink-0">
+                          <div className="hidden sm:flex items-center justify-center">
                             {isActive ? (
                               <span className="size-1.5 rounded-full bg-primary animate-pulse" />
                             ) : (
@@ -2102,7 +2105,7 @@ function App() {
                           </div>
 
                           {/* Name & remark column */}
-                          <div className="w-full sm:w-36 shrink-0 truncate pr-4">
+                          <div className="w-full min-w-0 truncate pr-4">
                             <span className="text-sm font-bold text-foreground/90 tracking-tight block truncate" title={p.name}>
                               {p.name}
                             </span>
@@ -2114,7 +2117,7 @@ function App() {
                           </div>
 
                           {/* Base URL column */}
-                          <div className="flex flex-1 min-w-0 pr-4 text-xs font-mono text-foreground/70 items-center gap-1.5">
+                          <div className="flex w-full min-w-0 pr-4 text-xs font-mono text-foreground/70 items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Endpoint:</span>
                             <span
                               onClick={(e) => handleEndpointClick(e, p.base_url)}
@@ -2125,12 +2128,12 @@ function App() {
                             </span>
                           </div>
 
-                          {/* Model column. 档位单独一行，避免长档位把模型名挤短。 */}
-                          <div className="w-full sm:w-28 shrink-0 pr-4 text-xs flex flex-col items-start justify-center gap-0.5 min-w-0 overflow-hidden">
+                          {/* Model column. 与档位并排；列宽随内容增长，档位不压缩模型名。 */}
+                          <div className="w-full min-w-0 sm:max-w-[24rem] pr-4 text-xs flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Model:</span>
                             <span
                               onClick={() => handleQuickFetchModels(p)}
-                              className={`inline-block min-w-0 max-w-full truncate font-semibold text-foreground/80 border px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition-all ${
+                              className={`min-w-0 shrink truncate font-semibold text-foreground/80 border px-1.5 py-0.5 rounded text-[11px] cursor-pointer transition-all ${
                                 vibeMode === "standard"
                                   ? "bg-background border-border hover:bg-muted/85 hover:border-primary/30"
                                   : "bg-white/30 dark:bg-white/5 border-black/5 dark:border-white/5 hover:bg-white/50 dark:hover:bg-white/10 hover:border-primary/20 dark:hover:border-primary/30"
@@ -2140,23 +2143,20 @@ function App() {
                               {p.model}
                             </span>
                             {p.reasoning_effort ? (
-                              <span
-                                className="max-w-full truncate text-[10px] leading-none text-muted-foreground/80"
-                                title={p.reasoning_effort}
-                              >
+                              <span className="shrink-0 text-[10px] text-muted-foreground/80" title={p.reasoning_effort}>
                                 {p.reasoning_effort}
                               </span>
                             ) : null}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
-                          <div className="w-full sm:w-32 shrink-0 pr-4 text-xs flex items-center gap-1.5">
+                          <div className="w-full min-w-0 pr-4 text-xs flex items-center gap-1.5">
                             <span className="text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider sm:hidden">Status:</span>
                             {renderStatus(p, isTesting)}
                           </div>
 
                           {/* Quiet action buttons column */}
-                          <div className="w-full sm:w-24 shrink-0 pr-4 flex items-center justify-end sm:justify-center gap-1">
+                          <div className="w-full min-w-0 pr-4 flex items-center justify-end sm:justify-center gap-1">
                             <Button
                               variant="ghost"
                               size="icon-sm"
@@ -2193,7 +2193,7 @@ function App() {
                           </div>
 
                           {/* Switch Active Trigger column */}
-                          <div className="w-full sm:w-28 shrink-0 flex items-center justify-start gap-1.5 pl-1.5 relative min-h-[28px]">
+                          <div className="w-full min-w-0 flex items-center justify-start gap-1.5 relative min-h-[28px]">
                             {isActive ? (
                               <div className="flex items-center gap-1.5">
                                 <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wide select-none animate-in fade-in duration-300">
@@ -2235,6 +2235,7 @@ function App() {
                               </>
                             )}
                           </div>
+                          <div className="hidden sm:block" />
                         </div>
                       );
                     })}
