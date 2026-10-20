@@ -10,6 +10,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
+import { applyQuickModelChange } from "@/lib/quick-model";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1317,40 +1318,20 @@ function App() {
     const name = quickSwitchProvider.name;
     try {
       const updatedProvider = { ...quickSwitchProvider, model };
+      // 换模型只为测连通性或改这张卡片的默认模型，不启用它。
+      // 已经启用的卡片由 edit_provider 把新模型写回目标工具。
       const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI_INTERNALS__?.invoke?.toString().includes("Mock");
-      if (!isTauri && config) {
-        const currentSource = getGlobalSource(config);
-        setConfig((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev };
-          const applyList = (list: Provider[] | undefined) =>
-            (list || []).map((p) => (p.name === name ? updatedProvider : p));
-          if (targetTool === "codex") {
-            next.codex_providers = applyList(prev.codex_providers);
-            if (currentSource === "wsl") next.codex_active_wsl = name;
-            else next.codex_active_app = name;
-          } else if (targetTool === "claude") {
-            next.claude_providers = applyList(prev.claude_providers);
-            if (currentSource === "app") next.claude_active_app = name;
-            else next.claude_active_wsl = name;
-          } else {
-            next.grok_providers = applyList(prev.grok_providers);
-            if (currentSource === "app") next.grok_active_app = name;
-            else next.grok_active_wsl = name;
-          }
-          return next;
-        });
+      if (!isTauri) {
+        setConfig((prev) =>
+          prev ? applyQuickModelChange(prev, targetTool, name, model) : prev,
+        );
       } else {
-        await invoke<Config>("edit_provider", {
+        const updatedCfg = await invoke<Config>("edit_provider", {
           oldName: name,
           updated: updatedProvider,
           targetTool,
         });
-        const switched = await invoke<Config>("switch_provider", {
-          name,
-          targetTool,
-        });
-        setConfig(switched);
+        setConfig(updatedCfg);
       }
       handleCloseQuickSwitch();
     } catch (e: any) {
