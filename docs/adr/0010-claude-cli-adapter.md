@@ -86,10 +86,10 @@ providers:
 - `env.ANTHROPIC_DEFAULT_FABLE_MODEL`
 
 保留的字段：
-- `env` 中的其他字段（如 `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`）
+- `env` 中与本次切换无关的字段（如 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`）
 - 所有非 `env` 的顶层字段（如 `permissions`, `statusLine`, `enabledPlugins`）
 
-推理档位不写进 `CLAUDE_CODE_EFFORT_LEVEL`。卡片上设了档位时，写全局 `effortLevel`，并去掉 `modelSettings` 里各模型的 `effortLevel`；`maxEffortLevel` 和其他键保留。选不设置时只删除全局 `effortLevel`。见 ADR-0016。
+推理档位写两处全局值：顶层 `effortLevel`，以及 `env.CLAUDE_CODE_EFFORT_LEVEL`。后者是 Claude Code 的全局覆盖，换模型仍然继承。卡片上设了档位时，同时去掉 `modelSettings` 里各模型的 `effortLevel`，避免按模型的旧值盖住全局档位；`maxEffortLevel` 和其他键保留。选不设置时删除这两个全局键，不改 `modelSettings`。见 ADR-0016。
 
 认证字段处理：
 - 保持用户已有的认证字段名（`API_KEY` 或 `AUTH_TOKEN`）

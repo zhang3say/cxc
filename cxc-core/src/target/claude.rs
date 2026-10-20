@@ -479,8 +479,10 @@ impl TargetAdapter for ClaudeAdapter {
     }
 }
 
-/// 有推理档位时写全局 `effortLevel`，并去掉各模型上的 `effortLevel`，避免按模型的值盖住全局档位。
-/// 启用卡片且没填时只删除全局 `effortLevel`。
+/// 有推理档位时写全局 `effortLevel` 和 `env.CLAUDE_CODE_EFFORT_LEVEL`。
+/// 环境变量是 Claude Code 的全局覆盖，换模型仍然继承这一档。
+/// 同时去掉各模型上的 `effortLevel`，避免按模型的值盖住全局档位；`maxEffortLevel` 和其他键保留。
+/// 启用卡片且没填时只删除这两个全局键，不改 `modelSettings`。
 fn apply_reasoning_effort(
     settings: &mut serde_json::Value,
     provider: &Provider,
@@ -491,10 +493,16 @@ fn apply_reasoning_effort(
             if let Some(obj) = settings.as_object_mut() {
                 obj.remove("effortLevel");
             }
+            if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+                env.remove("CLAUDE_CODE_EFFORT_LEVEL");
+            }
         }
         return;
     };
     settings["effortLevel"] = json!(level);
+    if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+        env.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), json!(level));
+    }
     let Some(models) = settings.get_mut("modelSettings").and_then(|v| v.as_object_mut()) else {
         return;
     };
@@ -693,8 +701,8 @@ mod tests {
         let settings: serde_json::Value = serde_json::from_str(&data).unwrap();
         let env = settings["env"].as_object().unwrap();
 
-        // Check preserved fields
-        assert_eq!(env["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        // 卡片没填档位时删掉全局覆盖；其余 env 保留
+        assert!(env.get("CLAUDE_CODE_EFFORT_LEVEL").is_none());
         assert_eq!(env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "75");
     }
 
@@ -846,7 +854,7 @@ mod tests {
         let data = fs::read_to_string(adapter.settings_path()).unwrap();
         let got: serde_json::Value = serde_json::from_str(&data).unwrap();
         assert_eq!(got["theme"], "light");
-        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "high");
         assert_eq!(got["effortLevel"], "high");
         assert!(got["modelSettings"]["claude-fable-5.1"]
             .get("effortLevel")
@@ -861,7 +869,7 @@ mod tests {
         let data = fs::read_to_string(adapter.settings_path()).unwrap();
         let got: serde_json::Value = serde_json::from_str(&data).unwrap();
         assert!(got.get("effortLevel").is_none());
-        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        assert!(got["env"].get("CLAUDE_CODE_EFFORT_LEVEL").is_none());
         assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
         assert!(got["modelSettings"]["claude-fable-5.1"]
             .get("effortLevel")
@@ -904,7 +912,7 @@ mod tests {
         let data = fs::read_to_string(adapter.settings_path()).unwrap();
         let got: serde_json::Value = serde_json::from_str(&data).unwrap();
         assert!(got.get("effortLevel").is_none());
-        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "max");
+        assert!(got["env"].get("CLAUDE_CODE_EFFORT_LEVEL").is_none());
         assert_eq!(got["modelSettings"]["claude-fable-5.1"]["effortLevel"], "low");
         assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
     }
