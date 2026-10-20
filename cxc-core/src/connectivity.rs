@@ -159,11 +159,10 @@ impl Tester {
             };
         }
 
-        let content = &choices[0].message.content;
         Result {
             ok: true,
             latency_ms,
-            response: truncate(content, 50),
+            response: truncate(&openai_probe_text(&choices[0].message), 50),
             error: String::new(),
         }
     }
@@ -297,14 +296,55 @@ impl Tester {
             };
         }
 
-        let content = &content_list[0].text;
         Result {
             ok: true,
             latency_ms,
-            response: truncate(content, 50),
+            response: truncate(&claude_probe_text(&content_list), 50),
             error: String::new(),
         }
     }
+}
+
+fn nonempty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 正文优先。只有思考内容时也算连通，`max_tokens: 1` 常把唯一 token 用在思考上。
+fn openai_probe_text(message: &ChoiceMessage) -> String {
+    let from_parts = match &message.content {
+        Some(MessageContent::Text(text)) => nonempty(text),
+        Some(MessageContent::Parts(parts)) => parts.iter().find_map(|part| nonempty(&part.text)),
+        None => None,
+    };
+    if let Some(text) = from_parts {
+        return text;
+    }
+    if let Some(MessageContent::Parts(parts)) = &message.content {
+        if let Some(text) = parts.iter().find_map(|part| {
+            nonempty(&part.reasoning).or_else(|| nonempty(&part.reasoning_content))
+        }) {
+            return text;
+        }
+    }
+    message
+        .reasoning_content
+        .as_deref()
+        .and_then(nonempty)
+        .or_else(|| message.reasoning.as_deref().and_then(nonempty))
+        .unwrap_or_default()
+}
+
+fn claude_probe_text(blocks: &[AnthropicContent]) -> String {
+    blocks
+        .iter()
+        .find_map(|block| nonempty(&block.text))
+        .or_else(|| blocks.iter().find_map(|block| nonempty(&block.thinking)))
+        .unwrap_or_default()
 }
 
 // ── Model Discovery ─────────────────────────────────────────────────────────
@@ -453,7 +493,29 @@ struct Choice {
 
 #[derive(Deserialize)]
 struct ChoiceMessage {
-    content: String,
+    #[serde(default)]
+    content: Option<MessageContent>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+#[derive(Deserialize)]
+struct ContentPart {
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    reasoning: String,
+    #[serde(default)]
+    reasoning_content: String,
 }
 
 #[derive(Deserialize)]
@@ -483,7 +545,10 @@ struct AnthropicMessagesResponse {
 
 #[derive(Deserialize)]
 struct AnthropicContent {
+    #[serde(default)]
     text: String,
+    #[serde(default)]
+    thinking: String,
 }
 
 #[derive(Deserialize)]
@@ -554,6 +619,62 @@ mod tests {
         assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
         assert_eq!(result.response, "Hi there!");
         assert!(result.latency_ms >= 0);
+    }
+
+    #[tokio::test]
+    async fn test_openai_reasoning_content_counts_as_success() {
+        let mock_server = MockServer::start().await;
+        let response_body = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": null,
+                    "reasoning_content": "thinking about hi"
+                }
+            }]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let tester = Tester::new();
+        let result = tester
+            .test(&mock_server.uri(), "sk-test", "gpt-test", false)
+            .await;
+
+        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
+        assert_eq!(result.response, "thinking about hi");
+    }
+
+    #[tokio::test]
+    async fn test_openai_reasoning_parts_prefer_text() {
+        let mock_server = MockServer::start().await;
+        let response_body = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": [
+                        {"type": "reasoning", "reasoning": "hidden thought"},
+                        {"type": "text", "text": "Hello"}
+                    ]
+                }
+            }]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let tester = Tester::new();
+        let result = tester
+            .test(&mock_server.uri(), "sk-test", "gpt-test", false)
+            .await;
+
+        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
+        assert_eq!(result.response, "Hello");
     }
 
     #[tokio::test]
@@ -753,5 +874,55 @@ mod tests {
         assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
         assert_eq!(result.response, "Hello, Human!");
         assert!(result.latency_ms >= 0);
+    }
+
+    #[tokio::test]
+    async fn test_claude_thinking_only_counts_as_success() {
+        let mock_server = MockServer::start().await;
+        let response_body = serde_json::json!({
+            "content": [{
+                "type": "thinking",
+                "thinking": ""
+            }]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let tester = Tester::new();
+        let result = tester
+            .test(&mock_server.uri(), "sk-relay", "deepseek-v4", true)
+            .await;
+
+        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
+        assert_eq!(result.response, "");
+    }
+
+    #[tokio::test]
+    async fn test_claude_thinking_then_text_prefers_text() {
+        let mock_server = MockServer::start().await;
+        let response_body = serde_json::json!({
+            "content": [
+                {"type": "thinking", "thinking": "draft"},
+                {"type": "text", "text": "Hi"}
+            ]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let tester = Tester::new();
+        let result = tester
+            .test(&mock_server.uri(), "sk-relay", "glm-5.3", true)
+            .await;
+
+        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
+        assert_eq!(result.response, "Hi");
     }
 }
