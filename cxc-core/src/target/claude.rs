@@ -479,10 +479,10 @@ impl TargetAdapter for ClaudeAdapter {
     }
 }
 
-/// 有推理档位时写全局 `effortLevel` 和 `env.CLAUDE_CODE_EFFORT_LEVEL`。
+/// 有推理档位时只写 `env.CLAUDE_CODE_EFFORT_LEVEL`，并删掉顶层 `effortLevel`。
 /// 环境变量是 Claude Code 的全局覆盖，换模型仍然继承这一档。
 /// 同时去掉各模型上的 `effortLevel`，避免按模型的值盖住全局档位；`maxEffortLevel` 和其他键保留。
-/// 启用卡片且没填时只删除这两个全局键，不改 `modelSettings`。
+/// 启用卡片且没填时删除顶层 `effortLevel` 和该环境变量，不改 `modelSettings`。
 fn apply_reasoning_effort(
     settings: &mut serde_json::Value,
     provider: &Provider,
@@ -499,7 +499,9 @@ fn apply_reasoning_effort(
         }
         return;
     };
-    settings["effortLevel"] = json!(level);
+    if let Some(obj) = settings.as_object_mut() {
+        obj.remove("effortLevel");
+    }
     if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
         env.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), json!(level));
     }
@@ -818,6 +820,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let settings = json!({
             "theme": "light",
+            "effortLevel": "low",
             "env": {
                 "ANTHROPIC_BASE_URL": "https://old.example.com",
                 "ANTHROPIC_AUTH_TOKEN": "sk-old",
@@ -855,7 +858,7 @@ mod tests {
         let got: serde_json::Value = serde_json::from_str(&data).unwrap();
         assert_eq!(got["theme"], "light");
         assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "high");
-        assert_eq!(got["effortLevel"], "high");
+        assert!(got.get("effortLevel").is_none());
         assert!(got["modelSettings"]["claude-fable-5.1"]
             .get("effortLevel")
             .is_none());
