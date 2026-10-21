@@ -15,7 +15,7 @@ _Avoid_: 推理强度, reasoning menu, effort cap
 
 ## Context Length（上下文长度）
 
-Optional size stored on a Provider, such as `1m`, `200k`, or `500k`. `1m` is 1,000,000 tokens. Blank or `none` means unset. Activating a Claude card appends `[1m]` to the model names only when the length is exactly 1,000,000; any other length strips that suffix. Codex writes `model_context_window`. Grok writes `context_window` on the model blocks this activation manages. A connectivity test never sends the `[1m]` suffix.
+Optional size stored on a Provider. Claude's form only offers unset and `1m`. Codex and Grok also accept `200k`, `500k`, and custom sizes. `1m` is 1,000,000 tokens. Blank or `none` means unset. Activating a Claude card appends `[1m]` to the model names when the length is `1m`. Codex writes `model_context_window`. Grok writes `context_window` on the model blocks this activation manages. A connectivity test never sends the `[1m]` suffix.
 _Avoid_: 上下文窗口菜单, 1MiB, 1048576
 
 ## Compact Ratio（压缩比例）

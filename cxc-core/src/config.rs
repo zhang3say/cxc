@@ -140,6 +140,14 @@ impl Provider {
         self.compact_ratio = self.compact_ratio_percent();
     }
 
+    /// Claude 只认 1M。其它长度（包括旧数据）按不设置处理。
+    pub fn normalize_claude_context(&mut self) {
+        self.context_length = self
+            .context_length
+            .take()
+            .filter(|length| length == "1m");
+    }
+
     /// 解析后的上下文 token。空着或无法解析时为 `None`。
     pub fn context_tokens(&self) -> Option<u64> {
         self.context_length.as_deref().and_then(parse_context_tokens)
@@ -556,6 +564,9 @@ pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Res
     }
     p.normalize_reasoning_effort();
     p.normalize_context_settings();
+    if target_tool == "claude" {
+        p.normalize_claude_context();
+    }
     if p.wire_api.is_empty() {
         // Grok 默认 chat_completions，其余工具默认 responses
         p.wire_api = if target_tool == "grok" {
@@ -583,6 +594,9 @@ pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut up
 
         updated.normalize_reasoning_effort();
         updated.normalize_context_settings();
+        if target_tool == "claude" {
+            updated.normalize_claude_context();
+        }
         if updated.wire_api.is_empty() {
             updated.wire_api = if target_tool == "grok" {
                 "chat_completions".to_string()
@@ -1595,6 +1609,23 @@ grok_providers:
         edit_provider(&mut cfg, "codex", "relay", updated).unwrap();
         assert_eq!(cfg.codex_providers[0].context_length.as_deref(), Some("500k"));
         assert_eq!(cfg.codex_providers[0].compact_ratio, Some(100));
+    }
+
+    #[test]
+    fn test_claude_context_only_keeps_1m() {
+        let (_dir, _path) = setup_test();
+        let mut cfg = Config::default();
+        let mut provider = bare_provider("relay");
+        provider.context_length = Some("200k".to_string());
+        provider.compact_ratio = Some(75);
+        add_provider(&mut cfg, "claude", provider).unwrap();
+        assert_eq!(cfg.claude_providers[0].context_length, None);
+        assert_eq!(cfg.claude_providers[0].compact_ratio, Some(75));
+
+        let mut updated = bare_provider("relay");
+        updated.context_length = Some("1000k".to_string());
+        edit_provider(&mut cfg, "claude", "relay", updated).unwrap();
+        assert_eq!(cfg.claude_providers[0].context_length.as_deref(), Some("1m"));
     }
 
     #[test]

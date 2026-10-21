@@ -123,6 +123,11 @@ function storedContextLength(value?: string): string {
   return trimmed;
 }
 
+function isClaude1mContext(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1m" || normalized === "1000k" || normalized === "1000000";
+}
+
 function storedCompactRatio(value?: number): number | undefined {
   if (value == null || !Number.isInteger(value) || value < 70 || value > 100) return undefined;
   return value;
@@ -163,6 +168,7 @@ function ContextLengthField({
   unsetLabel,
   customLabel,
   placeholder,
+  allowCustom,
   onChange,
 }: {
   id: string;
@@ -170,24 +176,38 @@ function ContextLengthField({
   unsetLabel: string;
   customLabel: string;
   placeholder: string;
+  allowCustom: boolean;
   onChange: (value: string) => void;
 }) {
   const [forceCustom, setForceCustom] = useState(false);
   const isPreset = CONTEXT_LENGTH_PRESETS.includes(value);
-  const showCustom = forceCustom || !isPreset;
+  const showCustom = allowCustom && (forceCustom || !isPreset);
+  const selectValue = allowCustom
+    ? showCustom
+      ? "__custom__"
+      : value
+    : value === "1m"
+      ? "1m"
+      : "";
+  const options = allowCustom
+    ? [
+        { value: "", label: unsetLabel },
+        { value: "200k", label: "200k" },
+        { value: "500k", label: "500k" },
+        { value: "1m", label: "1m" },
+        { value: "__custom__", label: customLabel },
+      ]
+    : [
+        { value: "", label: unsetLabel },
+        { value: "1m", label: "1m" },
+      ];
 
   return (
     <div className="space-y-1.5">
       <CxcSelect
         id={id}
-        value={showCustom ? "__custom__" : value}
-        options={[
-          { value: "", label: unsetLabel },
-          { value: "200k", label: "200k" },
-          { value: "500k", label: "500k" },
-          { value: "1m", label: "1m" },
-          { value: "__custom__", label: customLabel },
-        ]}
+        value={selectValue}
+        options={options}
         onValueChange={(next) => {
           if (next === "__custom__") {
             setForceCustom(true);
@@ -395,7 +415,7 @@ const locales = {
     contextLengthUnset: "不设置",
     contextLengthCustom: "自定义",
     contextLengthPlaceholder: "例如 200k、500k、1m",
-    contextLengthHintClaude: "只有 1m 会在模型名后加 [1m]，其它长度不加后缀。连通性测试不会加 [1m]。",
+    contextLengthHintClaude: "选 1m 会在模型名后加 [1m]。连通性测试不会加 [1m]。",
     contextLengthHintCodex: "写入 model_context_window。1m 为 1000000，不改模型名。",
     contextLengthHintGrok: "写入当前模型的 context_window。1m 为 1000000，不改模型名。",
     compactRatioLabel: "压缩比例",
@@ -563,7 +583,7 @@ const locales = {
     contextLengthUnset: "Unset",
     contextLengthCustom: "Custom",
     contextLengthPlaceholder: "e.g. 200k, 500k, 1m",
-    contextLengthHintClaude: "Only 1m appends [1m] to the model name. Other lengths add no suffix. Connectivity tests do not append [1m].",
+    contextLengthHintClaude: "Choosing 1m appends [1m] to the model name. Connectivity tests do not append [1m].",
     contextLengthHintCodex: "Writes model_context_window. 1m is 1000000 and does not change the model name.",
     contextLengthHintGrok: "Writes context_window on the current model. 1m is 1000000 and does not change the model name.",
     compactRatioLabel: "Compact ratio",
@@ -1253,6 +1273,9 @@ function App() {
       claudeModels.subagent = stripTier(claudeModels.subagent || "");
       contextLength = "1m";
     }
+    if (targetTool === "claude") {
+      contextLength = isClaude1mContext(contextLength) ? "1m" : "";
+    }
     setFormValues({
       name: p.name,
       base_url: p.base_url,
@@ -1522,7 +1545,10 @@ function App() {
       if (targetTool !== "codex") {
         providerPayload.plan_reasoning_effort = undefined;
       }
-      const contextLength = storedContextLength(providerPayload.context_length);
+      let contextLength = storedContextLength(providerPayload.context_length);
+      if (targetTool === "claude") {
+        contextLength = isClaude1mContext(contextLength) ? "1m" : "";
+      }
       providerPayload.context_length = contextLength || undefined;
       providerPayload.compact_ratio = storedCompactRatio(providerPayload.compact_ratio);
 
@@ -3224,6 +3250,7 @@ function App() {
                   unsetLabel={t.contextLengthUnset}
                   customLabel={t.contextLengthCustom}
                   placeholder={t.contextLengthPlaceholder}
+                  allowCustom={targetTool !== "claude"}
                   onChange={(context_length) => setFormValues({ ...formValues, context_length })}
                 />
                 <span className="text-[10px] text-muted-foreground/80 block">
