@@ -1,4 +1,4 @@
-use crate::config::Provider;
+use crate::config::{claude_model_for_context, Provider};
 use crate::target::{TargetAdapter, TargetConfig, TargetError};
 use serde_json::{self, json};
 use std::fs;
@@ -347,47 +347,25 @@ impl ClaudeAdapter {
         env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), json!(config.api_key));
         env.remove("ANTHROPIC_API_KEY");
 
-        // Update model fields
-        // Use claude_models if configured, otherwise fall back to model field
-        let opus = provider
-            .claude_models
-            .as_ref()
-            .and_then(|m| m.opus.as_ref())
-            .unwrap_or(&provider.model);
-        let sonnet = provider
-            .claude_models
-            .as_ref()
-            .and_then(|m| m.sonnet.as_ref())
-            .unwrap_or(&provider.model);
-        let haiku = provider
-            .claude_models
-            .as_ref()
-            .and_then(|m| m.haiku.as_ref())
-            .unwrap_or(&provider.model);
-        let fable = provider
-            .claude_models
-            .as_ref()
-            .and_then(|m| m.fable.as_ref())
-            .unwrap_or(&provider.model);
+        // 各档留空则写入主模型。Fable 不再单独配置，始终跟主模型。
+        let context = provider.context_tokens();
+        let main_raw = &provider.model;
+        let opus = claude_tier_model(provider, |m| m.opus.as_ref(), main_raw, context);
+        let sonnet = claude_tier_model(provider, |m| m.sonnet.as_ref(), main_raw, context);
+        let haiku = claude_tier_model(provider, |m| m.haiku.as_ref(), main_raw, context);
+        let subagent = claude_tier_model(provider, |m| m.subagent.as_ref(), main_raw, context);
+        let model = claude_model_for_context(&config.model, context);
+        let fable = claude_model_for_context(main_raw, context);
 
-        env.insert("ANTHROPIC_MODEL".to_string(), json!(config.model));
+        env.insert("ANTHROPIC_MODEL".to_string(), json!(model));
         env.insert("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), json!(opus));
         env.insert("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), json!(sonnet));
         env.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
         env.insert("ANTHROPIC_DEFAULT_FABLE_MODEL".to_string(), json!(fable));
-
-        if let Some(sub) = provider
-            .claude_models
-            .as_ref()
-            .and_then(|m| m.subagent.as_ref())
-            .filter(|s| !s.is_empty())
-        {
-            env.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(sub));
-        } else {
-            env.remove("CLAUDE_CODE_SUBAGENT_MODEL");
-        }
+        env.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(subagent));
 
         apply_reasoning_effort(&mut settings, provider, manage_effort);
+        apply_compact_window(&mut settings, provider, manage_effort);
 
         // Write settings
         let out = serde_json::to_string_pretty(&settings)
@@ -474,8 +452,43 @@ impl TargetAdapter for ClaudeAdapter {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         self.write_with_provider(config, &provider, false)
+    }
+}
+
+fn claude_tier_model(
+    provider: &Provider,
+    pick: impl Fn(&crate::config::ClaudeModels) -> Option<&String>,
+    main: &str,
+    context: Option<u64>,
+) -> String {
+    let explicit = provider
+        .claude_models
+        .as_ref()
+        .and_then(pick)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty());
+    claude_model_for_context(explicit.unwrap_or(main), context)
+}
+
+/// 有上下文和压缩比例时写 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`。
+/// 两者缺一，或比例不设置，启用卡片时删掉该环境变量。
+fn apply_compact_window(settings: &mut serde_json::Value, provider: &Provider, manage: bool) {
+    let Some(env) = settings.get_mut("env").and_then(|value| value.as_object_mut()) else {
+        return;
+    };
+    if let Some(tokens) = provider.compact_token_limit() {
+        env.insert(
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
+            json!(tokens.to_string()),
+        );
+        return;
+    }
+    if manage {
+        env.remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
     }
 }
 
@@ -612,6 +625,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -641,12 +656,13 @@ mod tests {
                 opus: Some("deepseek-v4-pro[1m]".to_string()),
                 sonnet: Some("deepseek-v4-pro[1m]".to_string()),
                 haiku: Some("deepseek-v4-flash".to_string()),
-                fable: Some("deepseek-v4-pro[1m]".to_string()),
                 subagent: None,
             }),
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -660,7 +676,141 @@ mod tests {
         assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "deepseek-v4-pro[1m]");
         assert_eq!(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "deepseek-v4-pro[1m]");
         assert_eq!(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "deepseek-v4-flash");
-        assert_eq!(env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "deepseek-v4-pro[1m]");
+        // 上下文未设置时保留手写的 [1m]。Fable 跟主模型，空的 Subagent 也写入主模型。
+        assert_eq!(env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "deepseek-v4-pro");
+        assert_eq!(env["CLAUDE_CODE_SUBAGENT_MODEL"], "deepseek-v4-pro");
+        assert_eq!(settings["model"], "opus");
+    }
+
+    fn sample_provider(model: &str) -> Provider {
+        Provider {
+            name: "relay".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            api_key: "sk".to_string(),
+            model: model.to_string(),
+            wire_api: String::new(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: None,
+            plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
+        }
+    }
+
+    fn read_settings(adapter: &ClaudeAdapter) -> serde_json::Value {
+        let data = fs::read_to_string(adapter.settings_path()).unwrap();
+        serde_json::from_str(&data).unwrap()
+    }
+
+    #[test]
+    fn test_context_1m_appends_suffix_and_writes_compact_tokens() {
+        let (_dir, adapter) = setup_claude_dir();
+        let mut provider = sample_provider("deepseek-v4.1-flash[1M]");
+        provider.context_length = Some("1m".to_string());
+        provider.compact_ratio = Some(75);
+        provider.claude_models = Some(crate::config::ClaudeModels {
+            opus: Some("  ".to_string()),
+            sonnet: None,
+            haiku: Some("deepseek-v4-flash".to_string()),
+            subagent: Some(String::new()),
+        });
+        adapter.write_provider(&provider).unwrap();
+
+        let settings = read_settings(&adapter);
+        let env = settings["env"].as_object().unwrap();
+        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek-v4.1-flash[1m]");
+        assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "deepseek-v4.1-flash[1m]");
+        assert_eq!(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "deepseek-v4.1-flash[1m]");
+        assert_eq!(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "deepseek-v4-flash[1m]");
+        assert_eq!(env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "deepseek-v4.1-flash[1m]");
+        assert_eq!(env["CLAUDE_CODE_SUBAGENT_MODEL"], "deepseek-v4.1-flash[1m]");
+        assert_eq!(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "750000");
+        assert_eq!(settings["model"], "opus");
+    }
+
+    #[test]
+    fn test_other_context_length_strips_1m_suffix() {
+        let (_dir, adapter) = setup_claude_dir();
+        let mut provider = sample_provider("deepseek-v4-pro[1m][1M]");
+        provider.context_length = Some("200k".to_string());
+        provider.compact_ratio = Some(70);
+        provider.claude_models = Some(crate::config::ClaudeModels {
+            opus: Some("opus[1m]".to_string()),
+            sonnet: None,
+            haiku: None,
+            subagent: None,
+        });
+        adapter.write_provider(&provider).unwrap();
+
+        let settings = read_settings(&adapter);
+        let env = settings["env"].as_object().unwrap();
+        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek-v4-pro");
+        assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "opus");
+        assert_eq!(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "140000");
+    }
+
+    #[test]
+    fn test_unset_context_keeps_handwritten_suffix_and_drops_compact_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://old.example.com",
+                "ANTHROPIC_AUTH_TOKEN": "sk-old",
+                "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432",
+                "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
+            },
+            "model": "glm-5.3[1m]"
+        });
+        fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        let adapter = ClaudeAdapter::new_with_dir(dir.path());
+        let mut provider = sample_provider("deepseek[1m]");
+        provider.compact_ratio = Some(80);
+        adapter.write_provider(&provider).unwrap();
+
+        let settings = read_settings(&adapter);
+        let env = settings["env"].as_object().unwrap();
+        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek[1m]");
+        assert!(env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW").is_none());
+        assert_eq!(env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "75");
+        assert_eq!(settings["model"], "glm-5.3[1m]");
+    }
+
+    #[test]
+    fn test_generic_write_does_not_delete_compact_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = json!({
+            "env": {
+                "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432"
+            }
+        });
+        fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        let adapter = ClaudeAdapter::new_with_dir(dir.path());
+        adapter
+            .write(&TargetConfig {
+                base_url: "https://api.example.com".to_string(),
+                api_key: "sk".to_string(),
+                model: "gpt-4o[1m]".to_string(),
+                wire_api: String::new(),
+            })
+            .unwrap();
+
+        let settings = read_settings(&adapter);
+        let env = settings["env"].as_object().unwrap();
+        assert_eq!(env["ANTHROPIC_MODEL"], "gpt-4o[1m]");
+        assert_eq!(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "786432");
     }
 
     #[test]
@@ -696,6 +846,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -740,6 +892,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -773,6 +927,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
 
         let result = adapter.write_provider(&provider);
@@ -803,6 +959,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -851,6 +1009,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: Some("high".to_string()),
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -909,6 +1069,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: Some("none".to_string()),
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 

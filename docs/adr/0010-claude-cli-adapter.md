@@ -37,15 +37,14 @@ providers:
   - name: my-deepseek
     model: deepseek-v4-pro  # 主模型（用于 Codex，必填）
     claude_models:           # Claude 专用配置（可选）
-      opus: deepseek-v4-pro[1m]
-      sonnet: deepseek-v4-pro[1m]
+      opus: deepseek-v4-pro
+      sonnet: deepseek-v4-pro
       haiku: deepseek-v4-flash
-      fable: deepseek-v4-pro[1m]
 ```
 
 写入逻辑：
-- 如果配置了 `claude_models`，使用其中的值
-- 否则回退到 `model` 字段（所有四个模型字段使用同一值）
+- 如果某一档填了模型，使用其中的值
+- 留空则把主模型写进该档。Fable 不再单独配置，始终跟主模型（见 ADR-0017）
 - 这样支持 DeepSeek 官方推荐的配置方式（pro 对应高级模型，flash 对应快速模型）
 
 理由：

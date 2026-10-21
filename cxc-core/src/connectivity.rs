@@ -36,7 +36,8 @@ impl Tester {
 
     pub async fn test(&self, base_url: &str, api_key: &str, model: &str, is_claude: bool) -> Result {
         if is_claude {
-            self.test_claude(base_url, api_key, model).await
+            let model = crate::config::connectivity_model(model, true);
+            self.test_claude(base_url, api_key, &model).await
         } else {
             self.test_openai(base_url, api_key, model).await
         }

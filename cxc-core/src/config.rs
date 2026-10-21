@@ -60,8 +60,6 @@ pub struct ClaudeModels {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub haiku: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fable: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent: Option<String>,
 }
 
@@ -110,6 +108,12 @@ pub struct Provider {
     /// Codex 计划模式推理档位。空着或 `none` 表示启用时删掉 `plan_mode_reasoning_effort`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan_reasoning_effort: Option<String>,
+    /// 上下文长度，如 `1m`、`200k`、`500k`。空着表示启用时不改模型名上的 `[1m]`，并删掉各工具的上下文键。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<String>,
+    /// 压缩比例，70–100 的整数百分比。空着或超出范围表示不设置。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compact_ratio: Option<u8>,
 }
 
 impl Provider {
@@ -126,6 +130,110 @@ impl Provider {
     pub fn normalize_reasoning_effort(&mut self) {
         self.reasoning_effort = self.reasoning_effort_level().map(str::to_string);
         self.plan_reasoning_effort = self.plan_reasoning_effort_level().map(str::to_string);
+    }
+
+    pub fn normalize_context_settings(&mut self) {
+        self.context_length = self
+            .context_length
+            .as_deref()
+            .and_then(canonical_context_length);
+        self.compact_ratio = self.compact_ratio_percent();
+    }
+
+    /// 解析后的上下文 token。空着或无法解析时为 `None`。
+    pub fn context_tokens(&self) -> Option<u64> {
+        self.context_length.as_deref().and_then(parse_context_tokens)
+    }
+
+    /// 70–100 的压缩比例。超出范围视为不设置。
+    pub fn compact_ratio_percent(&self) -> Option<u8> {
+        self.compact_ratio.filter(|ratio| (70..=100).contains(ratio))
+    }
+
+    /// Claude / Codex 的压缩 token。上下文或比例缺一则算不出来。
+    pub fn compact_token_limit(&self) -> Option<u64> {
+        let tokens = self.context_tokens()?;
+        let ratio = self.compact_ratio_percent()?;
+        Some(clamp_compact_tokens(tokens, ratio))
+    }
+}
+
+/// Claude 1M 上下文对应的 token 数。`1m`、`1000k`、`1000000` 都是这个值。
+pub const CLAUDE_1M_TOKENS: u64 = 1_000_000;
+const COMPACT_TOKEN_MIN: u64 = 100_000;
+const COMPACT_TOKEN_MAX: u64 = 1_000_000;
+
+/// `200k` = 200_000，`1m` = 1_000_000，纯数字照单接受。系数必须是正整数。
+pub fn parse_context_tokens(raw: &str) -> Option<u64> {
+    let text = raw.trim().to_ascii_lowercase();
+    if text.is_empty() || text == "none" {
+        return None;
+    }
+    let (coeff, multiplier) = if let Some(rest) = text.strip_suffix('k') {
+        (rest, 1_000u64)
+    } else if let Some(rest) = text.strip_suffix('m') {
+        (rest, 1_000_000u64)
+    } else {
+        (text.as_str(), 1u64)
+    };
+    if coeff.is_empty() || !coeff.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let number: u64 = coeff.parse().ok()?;
+    if number == 0 {
+        return None;
+    }
+    number.checked_mul(multiplier)
+}
+
+/// 能被 1_000_000 整除存 `1m`，否则能被 1_000 整除存 `200k`，其余存十进制。
+pub fn canonical_context_length(raw: &str) -> Option<String> {
+    parse_context_tokens(raw).map(format_context_length)
+}
+
+pub fn format_context_length(tokens: u64) -> String {
+    if tokens % 1_000_000 == 0 {
+        format!("{}m", tokens / 1_000_000)
+    } else if tokens % 1_000 == 0 {
+        format!("{}k", tokens / 1_000)
+    } else {
+        tokens.to_string()
+    }
+}
+
+pub fn clamp_compact_tokens(context_tokens: u64, ratio: u8) -> u64 {
+    let raw = context_tokens.saturating_mul(u64::from(ratio)) / 100;
+    raw.clamp(COMPACT_TOKEN_MIN, COMPACT_TOKEN_MAX)
+}
+
+/// 去掉模型名末尾重复的 `[1m]`，大小写不敏感。
+pub fn strip_trailing_1m(model: &str) -> String {
+    let mut name = model.to_string();
+    while name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case("[1m]") {
+        name.truncate(name.len() - 4);
+    }
+    name
+}
+
+/// 上下文未设置时原样保留模型名。设成 1M 时保证末尾有一个 `[1m]`，其他长度则去掉该后缀。
+pub fn claude_model_for_context(model: &str, context_tokens: Option<u64>) -> String {
+    let Some(tokens) = context_tokens else {
+        return model.to_string();
+    };
+    let base = strip_trailing_1m(model);
+    if tokens == CLAUDE_1M_TOKENS && !base.is_empty() {
+        format!("{base}[1m]")
+    } else {
+        base
+    }
+}
+
+/// 连通性测试用的模型名。只有 Claude 去掉末尾 `[1m]`。
+pub fn connectivity_model(model: &str, is_claude: bool) -> String {
+    if is_claude {
+        strip_trailing_1m(model)
+    } else {
+        model.to_string()
     }
 }
 
@@ -447,6 +555,7 @@ pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Res
         return Err(ConfigError::ProviderExists(p.name));
     }
     p.normalize_reasoning_effort();
+    p.normalize_context_settings();
     if p.wire_api.is_empty() {
         // Grok 默认 chat_completions，其余工具默认 responses
         p.wire_api = if target_tool == "grok" {
@@ -473,6 +582,7 @@ pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut up
         }
 
         updated.normalize_reasoning_effort();
+        updated.normalize_context_settings();
         if updated.wire_api.is_empty() {
             updated.wire_api = if target_tool == "grok" {
                 "chat_completions".to_string()
@@ -612,6 +722,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         add_provider(&mut cfg, "codex", p).unwrap();
 
@@ -638,6 +750,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: Some("  ".to_string()),
             plan_reasoning_effort: Some("  ".to_string()),
+            context_length: None,
+            compact_ratio: None,
         };
         add_provider(&mut cfg, "codex", p).unwrap();
         let loaded = load().unwrap();
@@ -658,6 +772,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: Some("none".to_string()),
             plan_reasoning_effort: Some(" None ".to_string()),
+            context_length: None,
+            compact_ratio: None,
         };
         add_provider(&mut cfg, "codex", none_level).unwrap();
         let loaded = load().unwrap();
@@ -688,6 +804,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         add_provider(&mut cfg, "codex", p.clone()).unwrap();
         let err = add_provider(&mut cfg, "codex", p);
@@ -712,6 +830,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -727,6 +847,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         assert_eq!(cfg.codex_active_app, "");
@@ -750,6 +872,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -765,6 +889,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "b").unwrap();
         remove_provider(&mut cfg, "codex", "a").unwrap();
@@ -790,6 +916,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
@@ -822,6 +950,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         set_active(&mut cfg, "claude", "app", "shared").unwrap();
         set_active(&mut cfg, "claude", "wsl", "shared").unwrap();
@@ -855,6 +985,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         let err = remove_provider(&mut cfg, "codex", "nonexistent");
@@ -879,6 +1011,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -894,6 +1028,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         set_active(&mut cfg, "codex", "app", "b").unwrap();
@@ -918,6 +1054,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -943,6 +1081,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "node-b".to_string(),
@@ -958,6 +1098,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         set_active(&mut cfg, "codex", "app", "node-a").unwrap();
@@ -1012,6 +1154,8 @@ mod tests {
                 grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
             },
         )
         .unwrap();
@@ -1045,6 +1189,8 @@ mod tests {
                 grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
             },
         );
         assert!(matches!(err, Err(ConfigError::UnknownTargetTool(_))));
@@ -1069,6 +1215,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         use std::os::unix::fs::PermissionsExt;
@@ -1094,6 +1242,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         update_test_result(&mut cfg, "codex", "a", 123, true).unwrap();
@@ -1121,6 +1271,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         let loaded = load().unwrap();
@@ -1146,6 +1298,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         let updated = Provider {
@@ -1162,6 +1316,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
@@ -1190,6 +1346,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -1205,6 +1363,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         set_active(&mut cfg, "codex", "app", "a").unwrap();
 
@@ -1222,6 +1382,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         edit_provider(&mut cfg, "codex", "a", updated).unwrap();
 
@@ -1248,6 +1410,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
         add_provider(&mut cfg, "codex", Provider {
             name: "b".to_string(),
@@ -1263,6 +1427,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }).unwrap();
 
         let updated = Provider {
@@ -1279,6 +1445,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         let err = edit_provider(&mut cfg, "codex", "a", updated);
         assert!(err.is_err());
@@ -1328,5 +1496,112 @@ grok_providers:
             cfg.grok_providers[0].grok_web_search,
             Some(GrokWebSearch::Keep)
         );
+    }
+
+    fn bare_provider(name: &str) -> Provider {
+        Provider {
+            name: name.to_string(),
+            base_url: "https://api.example.com".to_string(),
+            api_key: "sk".to_string(),
+            model: "m".to_string(),
+            wire_api: "responses".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: None,
+            plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
+        }
+    }
+
+    #[test]
+    fn test_parse_context_length() {
+        assert_eq!(parse_context_tokens("200k"), Some(200_000));
+        assert_eq!(parse_context_tokens("500K"), Some(500_000));
+        assert_eq!(parse_context_tokens("1m"), Some(1_000_000));
+        assert_eq!(parse_context_tokens("1000k"), Some(1_000_000));
+        assert_eq!(parse_context_tokens("1000000"), Some(1_000_000));
+        assert_eq!(parse_context_tokens(" 200000 "), Some(200_000));
+        assert_eq!(canonical_context_length("1000k").as_deref(), Some("1m"));
+        assert_eq!(canonical_context_length("1000000").as_deref(), Some("1m"));
+        assert_eq!(canonical_context_length("200000").as_deref(), Some("200k"));
+        assert_eq!(canonical_context_length("123456").as_deref(), Some("123456"));
+        assert_eq!(parse_context_tokens("1.5k"), None);
+        assert_eq!(parse_context_tokens(""), None);
+        assert_eq!(parse_context_tokens("none"), None);
+        assert_eq!(parse_context_tokens("0k"), None);
+    }
+
+    #[test]
+    fn test_compact_ratio_and_token_limit() {
+        let mut provider = bare_provider("a");
+        provider.compact_ratio = Some(69);
+        assert_eq!(provider.compact_ratio_percent(), None);
+        provider.compact_ratio = Some(101);
+        assert_eq!(provider.compact_ratio_percent(), None);
+        provider.context_length = Some("1m".to_string());
+        provider.compact_ratio = Some(75);
+        assert_eq!(provider.compact_token_limit(), Some(750_000));
+        provider.context_length = Some("200k".to_string());
+        provider.compact_ratio = Some(70);
+        assert_eq!(provider.compact_token_limit(), Some(140_000));
+        provider.context_length = Some("1m".to_string());
+        provider.compact_ratio = Some(100);
+        assert_eq!(provider.compact_token_limit(), Some(1_000_000));
+        provider.context_length = Some("50k".to_string());
+        provider.compact_ratio = Some(70);
+        assert_eq!(provider.compact_token_limit(), Some(100_000));
+        provider.context_length = None;
+        assert_eq!(provider.compact_token_limit(), None);
+    }
+
+    #[test]
+    fn test_claude_model_suffix_and_connectivity_model() {
+        assert_eq!(
+            claude_model_for_context("deepseek-v4.1-flash[1M][1m]", Some(CLAUDE_1M_TOKENS)),
+            "deepseek-v4.1-flash[1m]"
+        );
+        assert_eq!(
+            claude_model_for_context("deepseek[1m]", Some(200_000)),
+            "deepseek"
+        );
+        assert_eq!(
+            claude_model_for_context("deepseek[1m]", None),
+            "deepseek[1m]"
+        );
+        assert_eq!(connectivity_model("deepseek[1m]", true), "deepseek");
+        assert_eq!(connectivity_model("deepseek[1m]", false), "deepseek[1m]");
+        assert_eq!(claude_model_for_context("", Some(CLAUDE_1M_TOKENS)), "");
+    }
+
+    #[test]
+    fn test_add_and_edit_normalize_context_settings() {
+        let (_dir, _path) = setup_test();
+        let mut cfg = Config::default();
+        let mut provider = bare_provider("relay");
+        provider.context_length = Some(" 1000k ".to_string());
+        provider.compact_ratio = Some(69);
+        add_provider(&mut cfg, "codex", provider).unwrap();
+        assert_eq!(cfg.codex_providers[0].context_length.as_deref(), Some("1m"));
+        assert_eq!(cfg.codex_providers[0].compact_ratio, None);
+
+        let mut updated = bare_provider("relay");
+        updated.context_length = Some("500K".to_string());
+        updated.compact_ratio = Some(100);
+        edit_provider(&mut cfg, "codex", "relay", updated).unwrap();
+        assert_eq!(cfg.codex_providers[0].context_length.as_deref(), Some("500k"));
+        assert_eq!(cfg.codex_providers[0].compact_ratio, Some(100));
+    }
+
+    #[test]
+    fn test_claude_models_ignores_legacy_fable_field() {
+        let models: ClaudeModels =
+            serde_json::from_str(r#"{"opus":"a","fable":"legacy","subagent":"c"}"#).unwrap();
+        assert_eq!(models.opus.as_deref(), Some("a"));
+        assert_eq!(models.subagent.as_deref(), Some("c"));
     }
 }

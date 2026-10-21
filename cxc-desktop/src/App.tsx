@@ -55,7 +55,6 @@ interface ClaudeModels {
   opus?: string;
   sonnet?: string;
   haiku?: string;
-  fable?: string;
   subagent?: string;
 }
 
@@ -76,6 +75,10 @@ interface Provider {
   reasoning_effort?: string;
   // Codex 计划模式推理档位。空着表示启用时删掉计划模式档位。
   plan_reasoning_effort?: string;
+  // 上下文长度，如 1m、200k、500k。空着表示不设置。
+  context_length?: string;
+  // 压缩比例，70–100 的整数百分比。空着表示不设置。
+  compact_ratio?: number;
 }
 
 type GrokWebSearchPolicy =
@@ -108,6 +111,23 @@ function storedEffort(value?: string): string {
   return trimmed;
 }
 
+const CONTEXT_LENGTH_PRESETS = ["", "200k", "500k", "1m"];
+
+function stripTrailing1m(model: string): string {
+  return model.replace(/(?:\[1m\])+$/i, "");
+}
+
+function storedContextLength(value?: string): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed.toLowerCase() === "none") return "";
+  return trimmed;
+}
+
+function storedCompactRatio(value?: number): number | undefined {
+  if (value == null || !Number.isInteger(value) || value < 70 || value > 100) return undefined;
+  return value;
+}
+
 function ReasoningEffortField({
   id,
   value,
@@ -134,6 +154,62 @@ function ReasoningEffortField({
       onValueChange={onChange}
       size="default"
     />
+  );
+}
+
+function ContextLengthField({
+  id,
+  value,
+  unsetLabel,
+  customLabel,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  unsetLabel: string;
+  customLabel: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  const [forceCustom, setForceCustom] = useState(false);
+  const isPreset = CONTEXT_LENGTH_PRESETS.includes(value);
+  const showCustom = forceCustom || !isPreset;
+
+  return (
+    <div className="space-y-1.5">
+      <CxcSelect
+        id={id}
+        value={showCustom ? "__custom__" : value}
+        options={[
+          { value: "", label: unsetLabel },
+          { value: "200k", label: "200k" },
+          { value: "500k", label: "500k" },
+          { value: "1m", label: "1m" },
+          { value: "__custom__", label: customLabel },
+        ]}
+        onValueChange={(next) => {
+          if (next === "__custom__") {
+            setForceCustom(true);
+            if (isPreset) onChange("");
+            return;
+          }
+          setForceCustom(false);
+          onChange(next);
+        }}
+        size="default"
+      />
+      {showCustom ? (
+        <Input
+          id={`${id}-custom`}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80"
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -315,6 +391,18 @@ const locales = {
     reasoningEffortHint: "启用时写入当前模型的档位。选不设置则去掉该模型的 reasoning_effort。",
     reasoningEffortHintClaude: "只写 CLAUDE_CODE_EFFORT_LEVEL，之后换任何模型都继承。选不设置则去掉该环境变量。",
     planReasoningEffortLabel: "Plan推理档位",
+    contextLengthLabel: "上下文长度",
+    contextLengthUnset: "不设置",
+    contextLengthCustom: "自定义",
+    contextLengthPlaceholder: "例如 200k、500k、1m",
+    contextLengthHintClaude: "只有 1m 会在模型名后加 [1m]，其它长度不加后缀。连通性测试不会加 [1m]。",
+    contextLengthHintCodex: "写入 model_context_window。1m 为 1000000，不改模型名。",
+    contextLengthHintGrok: "写入当前模型的 context_window。1m 为 1000000，不改模型名。",
+    compactRatioLabel: "压缩比例",
+    compactRatioPlaceholder: "70–100",
+    compactRatioHint: "按上下文长度换算成 token。留空表示不设置。",
+    compactRatioHintGrok: "直接写入会话的压缩百分比，不换算 token。留空表示不设置。",
+    claudeTierInherit: "不填则写入主模型",
     grokMigrateBtn: "按中转站整理配置",
     grokMigrateTitle: "把 Grok 配置整理成中转站结构",
     grokMigrateDesc: "扫描 config.toml 里的 [model.*]，把重复的 base_url / api_key / api_backend 收拢到 [model_providers.*]，并让模型通过 model_provider 引用它。写入前会自动备份。",
@@ -471,6 +559,18 @@ const locales = {
     reasoningEffortHint: "Written to the current model's reasoning_effort when this card is activated. Unset removes that key.",
     reasoningEffortHintClaude: "Writes only CLAUDE_CODE_EFFORT_LEVEL, which later models inherit. Unset removes that variable.",
     planReasoningEffortLabel: "Plan reasoning effort",
+    contextLengthLabel: "Context length",
+    contextLengthUnset: "Unset",
+    contextLengthCustom: "Custom",
+    contextLengthPlaceholder: "e.g. 200k, 500k, 1m",
+    contextLengthHintClaude: "Only 1m appends [1m] to the model name. Other lengths add no suffix. Connectivity tests do not append [1m].",
+    contextLengthHintCodex: "Writes model_context_window. 1m is 1000000 and does not change the model name.",
+    contextLengthHintGrok: "Writes context_window on the current model. 1m is 1000000 and does not change the model name.",
+    compactRatioLabel: "Compact ratio",
+    compactRatioPlaceholder: "70–100",
+    compactRatioHint: "Converted to tokens from the context length. Leave empty to unset.",
+    compactRatioHintGrok: "Writes the session compact percent directly, without converting to tokens. Leave empty to unset.",
+    claudeTierInherit: "Empty fields are written as the main model",
     grokMigrateBtn: "Reorganize by relay",
     grokMigrateTitle: "Reorganize Grok config around relays",
     grokMigrateDesc: "Scans [model.*] in config.toml, gathers duplicated base_url / api_key / api_backend into [model_providers.*], and points each model at its relay with model_provider. A backup is written first.",
@@ -497,12 +597,13 @@ const initialFormValues: Omit<Provider, "last_test" | "latency_ms" | "last_ok"> 
     opus: "",
     sonnet: "",
     haiku: "",
-    fable: "",
     subagent: "",
   },
   grok_web_search: { mode: "follow" },
   reasoning_effort: "",
   plan_reasoning_effort: "",
+  context_length: "",
+  compact_ratio: undefined,
 };
 
 const mockConfig: Config = {
@@ -1133,23 +1234,38 @@ function App() {
   }
 
   function openEditForm(p: Provider) {
+    let contextLength = storedContextLength(p.context_length);
+    let model = p.model;
+    const claudeModels: ClaudeModels = {
+      opus: p.claude_models?.opus || "",
+      sonnet: p.claude_models?.sonnet || "",
+      haiku: p.claude_models?.haiku || "",
+      subagent: p.claude_models?.subagent || "",
+    };
+    // 旧卡片把 [1m] 写在模型名上。编辑时拆到上下文长度，避免再存成 [1m][1m]。
+    if (targetTool === "claude" && !contextLength && /\[1m\]$/i.test(model.trim())) {
+      const stripTier = (value: string) =>
+        /\[1m\]$/i.test(value.trim()) ? stripTrailing1m(value.trim()) : value;
+      model = stripTrailing1m(model.trim());
+      claudeModels.opus = stripTier(claudeModels.opus || "");
+      claudeModels.sonnet = stripTier(claudeModels.sonnet || "");
+      claudeModels.haiku = stripTier(claudeModels.haiku || "");
+      claudeModels.subagent = stripTier(claudeModels.subagent || "");
+      contextLength = "1m";
+    }
     setFormValues({
       name: p.name,
       base_url: p.base_url,
       api_key: p.api_key,
-      model: p.model,
+      model,
       wire_api: p.wire_api,
       remark: p.remark || "",
-      claude_models: p.claude_models || {
-        opus: "",
-        sonnet: "",
-        haiku: "",
-        fable: "",
-        subagent: "",
-      },
+      claude_models: claudeModels,
       grok_web_search: p.grok_web_search || { mode: "follow" },
       reasoning_effort: storedEffort(p.reasoning_effort),
       plan_reasoning_effort: storedEffort(p.plan_reasoning_effort),
+      context_length: contextLength,
+      compact_ratio: p.compact_ratio,
     });
     setFetchedModels([]);
     setFetchError(null);
@@ -1406,6 +1522,9 @@ function App() {
       if (targetTool !== "codex") {
         providerPayload.plan_reasoning_effort = undefined;
       }
+      const contextLength = storedContextLength(providerPayload.context_length);
+      providerPayload.context_length = contextLength || undefined;
+      providerPayload.compact_ratio = storedCompactRatio(providerPayload.compact_ratio);
 
       let updatedCfg: Config;
       if (showForm === "add") {
@@ -2163,6 +2282,16 @@ function App() {
                                 {p.reasoning_effort}
                               </span>
                             ) : null}
+                            {p.context_length ? (
+                              <span className="shrink-0 text-[10px] text-muted-foreground/80" title={p.context_length}>
+                                {p.context_length}
+                              </span>
+                            ) : null}
+                            {p.compact_ratio != null ? (
+                              <span className="shrink-0 text-[10px] text-muted-foreground/80" title={`${p.compact_ratio}%`}>
+                                {p.compact_ratio}%
+                              </span>
+                            ) : null}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
@@ -2349,6 +2478,18 @@ function App() {
                               <div className="flex justify-between items-center text-[10.5px] gap-2">
                                 <span className="text-muted-foreground/80 font-medium">{t.planReasoningEffortLabel}:</span>
                                 <span className="font-semibold text-foreground/80">{p.plan_reasoning_effort}</span>
+                              </div>
+                            ) : null}
+                            {p.context_length ? (
+                              <div className="flex justify-between items-center text-[10.5px] gap-2">
+                                <span className="text-muted-foreground/80 font-medium">{t.contextLengthLabel}:</span>
+                                <span className="font-semibold text-foreground/80">{p.context_length}</span>
+                              </div>
+                            ) : null}
+                            {p.compact_ratio != null ? (
+                              <div className="flex justify-between items-center text-[10.5px] gap-2">
+                                <span className="text-muted-foreground/80 font-medium">{t.compactRatioLabel}:</span>
+                                <span className="font-semibold text-foreground/80">{p.compact_ratio}%</span>
                               </div>
                             ) : null}
                             <div className="flex justify-between items-center text-[10.5px] gap-2">
@@ -3083,6 +3224,55 @@ function App() {
               ) : null}
 
               <div className="space-y-1.5">
+                <Label htmlFor="form-context-length" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                  {t.contextLengthLabel}
+                </Label>
+                <ContextLengthField
+                  key={`${showForm ?? "closed"}-${editingName ?? "new"}-${targetTool}`}
+                  id="form-context-length"
+                  value={formValues.context_length || ""}
+                  unsetLabel={t.contextLengthUnset}
+                  customLabel={t.contextLengthCustom}
+                  placeholder={t.contextLengthPlaceholder}
+                  onChange={(context_length) => setFormValues({ ...formValues, context_length })}
+                />
+                <span className="text-[10px] text-muted-foreground/80 block">
+                  {targetTool === "claude"
+                    ? t.contextLengthHintClaude
+                    : targetTool === "grok"
+                      ? t.contextLengthHintGrok
+                      : t.contextLengthHintCodex}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="form-compact-ratio" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
+                  {t.compactRatioLabel}
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="form-compact-ratio"
+                    type="number"
+                    inputMode="numeric"
+                    value={formValues.compact_ratio ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setFormValues({
+                        ...formValues,
+                        compact_ratio: raw === "" ? undefined : Number(raw),
+                      });
+                    }}
+                    placeholder={t.compactRatioPlaceholder}
+                    className="bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 h-9 rounded-md text-xs shadow-inner transition-all duration-200 focus:bg-background/80 pr-8"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">%</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground/80 block">
+                  {targetTool === "grok" ? t.compactRatioHintGrok : t.compactRatioHint}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="form-remark" className="text-[11px] font-extrabold tracking-wider uppercase text-muted-foreground/80 block">
                   {t.remarkLabel}
                 </Label>
@@ -3117,6 +3307,7 @@ function App() {
                         <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-md text-[9px] font-bold">Optional</span>
                         Claude Models Override
                       </Label>
+                      <p className="text-[10px] text-muted-foreground/70">{t.claudeTierInherit}</p>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <Label className="text-[10px] font-extrabold text-muted-foreground/75">Opus</Label>
@@ -3125,7 +3316,7 @@ function App() {
                               value={formValues.claude_models?.opus || ""}
                               onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, opus: val } })}
                               options={[
-                                { value: "", label: t.defaultModelPlaceholder },
+                                { value: "", label: t.claudeTierInherit },
                                 ...fetchedModels.map((m) => ({ value: m, label: m })),
                               ]}
                               size="xs"
@@ -3147,7 +3338,7 @@ function App() {
                               value={formValues.claude_models?.sonnet || ""}
                               onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, sonnet: val } })}
                               options={[
-                                { value: "", label: t.defaultModelPlaceholder },
+                                { value: "", label: t.claudeTierInherit },
                                 ...fetchedModels.map((m) => ({ value: m, label: m })),
                               ]}
                               size="xs"
@@ -3169,7 +3360,7 @@ function App() {
                               value={formValues.claude_models?.haiku || ""}
                               onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, haiku: val } })}
                               options={[
-                                { value: "", label: t.defaultModelPlaceholder },
+                                { value: "", label: t.claudeTierInherit },
                                 ...fetchedModels.map((m) => ({ value: m, label: m })),
                               ]}
                               size="xs"
@@ -3184,39 +3375,17 @@ function App() {
                             />
                           )}
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-extrabold text-muted-foreground/75">Fable</Label>
-                          {fetchedModels.length > 0 ? (
-                            <CxcSelect
-                              value={formValues.claude_models?.fable || ""}
-                              onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: val } })}
-                              options={[
-                                { value: "", label: t.defaultModelPlaceholder },
-                                ...fetchedModels.map((m) => ({ value: m, label: m })),
-                              ]}
-                              size="xs"
-                            />
-                          ) : (
-                            <Input
-                              type="text"
-                              value={formValues.claude_models?.fable || ""}
-                              onChange={(e) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, fable: e.target.value } })}
-                              placeholder="Custom mapping..."
-                              className="h-7.5 text-xs rounded-md bg-muted/10 border-border/30 focus-visible:ring-primary/40 focus-visible:border-primary/60 transition-all duration-200 focus:bg-background/80"
-                            />
-                          )}
-                        </div>
                         <div className="space-y-1 col-span-2 pt-1 border-t border-border/30 mt-1">
                           <Label className="text-[10px] font-extrabold text-muted-foreground/75 flex justify-between items-center">
                             <span>Subagent</span>
-                            <span className="font-normal opacity-70">{lang === "zh" ? "(不填则继承主模型)" : "(Leave empty to inherit)"}</span>
+                            <span className="font-normal opacity-70">{t.claudeTierInherit}</span>
                           </Label>
                           {fetchedModels.length > 0 ? (
                             <CxcSelect
                               value={formValues.claude_models?.subagent || ""}
                               onValueChange={(val) => setFormValues({ ...formValues, claude_models: { ...formValues.claude_models, subagent: val } })}
                               options={[
-                                { value: "", label: t.defaultModelPlaceholder },
+                                { value: "", label: t.claudeTierInherit },
                                 ...fetchedModels.map((m) => ({ value: m, label: m })),
                               ]}
                               size="xs"

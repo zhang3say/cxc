@@ -29,7 +29,7 @@ CXC 切换 Grok 中转站时：
 
 ### 2. 模型块端点字段的清理规则
 
-受 CXC 管理的模型块（默认模型、web_search 指定的模型）里的 `base_url` / `api_key` / `api_backend` 会被清掉。模型自身字段的优先级高于 provider 块，留着旧值会让本次切换不生效。其余字段（`context_window`、`extra_headers` 等）原样保留。卡片上设了推理档位时，只按 ADR-0016 写入当前模型块的 `reasoning_effort`；`[models].default_reasoning_effort` 不改。没设时启用会删掉当前模型块的 `reasoning_effort`。未受本次写入的模型块原样保留，不删除。
+受 CXC 管理的模型块（默认模型、web_search 指定的模型）里的 `base_url` / `api_key` / `api_backend` 会被清掉。模型自身字段的优先级高于 provider 块，留着旧值会让本次切换不生效。其余字段（`extra_headers` 等）原样保留。`context_window` 改由 ADR-0017 在启用卡片时写入或删除。卡片上设了推理档位时，只按 ADR-0016 写入当前模型块的 `reasoning_effort`；`[models].default_reasoning_effort` 不改。没设时启用会删掉当前模型块的 `reasoning_effort`。未受本次写入的模型块原样保留，不删除。
 
 ### 3. 一次只写当前模型
 

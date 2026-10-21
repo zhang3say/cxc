@@ -13,6 +13,16 @@ A named API relay endpoint configuration. Each Provider consists of a `name`, `b
 The selected reasoning level on a Provider. Every model on that card uses it. Codex also keeps a separate plan-mode level on the same card. When a level is absent, activating the card removes the corresponding key in the target tool. `none` is not a level.
 _Avoid_: 推理强度, reasoning menu, effort cap
 
+## Context Length（上下文长度）
+
+Optional size stored on a Provider, such as `1m`, `200k`, or `500k`. `1m` is 1,000,000 tokens. Blank or `none` means unset. Activating a Claude card appends `[1m]` to the model names only when the length is exactly 1,000,000; any other length strips that suffix. Codex writes `model_context_window`. Grok writes `context_window` on the model blocks this activation manages. A connectivity test never sends the `[1m]` suffix.
+_Avoid_: 上下文窗口菜单, 1MiB, 1048576
+
+## Compact Ratio（压缩比例）
+
+Optional integer percent from 70 to 100 on a Provider. Claude and Codex convert it with the context length into a token threshold (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `model_auto_compact_token_limit`), clamped to 100,000–1,000,000. Grok writes the percent itself to `[session].auto_compact_threshold_percent`. Outside 70–100 means unset, and activating the card removes the key CXC owns.
+_Avoid_: 压缩率小数, autocompact percent override
+
 ## Target Tool（目标工具）
 
 An AI coding tool whose configuration CXC manages. Each Target Tool has a known config file path and format. Currently supported targets: Codex, Claude CLI, and Grok. CXC writes Provider details into the Target Tool's config file when the user switches providers.
@@ -59,7 +69,7 @@ Mirrors the same global App / WSL source choice used by Codex. It determines whi
 
 ## Claude Models Configuration (Claude 模型配置)
 
-An optional multi-model configuration for Claude CLI providers. Allows mapping different model tiers (Opus, Sonnet, Haiku, Fable) to specific model IDs. When not configured, all tiers fall back to the Provider's primary `model` field. This enables providers like DeepSeek to map high-performance models (v4-pro) to Opus/Sonnet and fast models (v4-flash) to Haiku, matching the official provider recommendations.
+An optional multi-model configuration for Claude CLI providers. Maps Opus, Sonnet, Haiku, and Subagent to specific model IDs. An empty tier is written as the Provider's primary `model`. Fable is not a separate field; `ANTHROPIC_DEFAULT_FABLE_MODEL` always follows that primary model. See ADR-0017.
 
 ## Grok CLI Adapter (Grok CLI 适配器)
 

@@ -309,7 +309,8 @@ impl GrokAdapter {
     /// 模型自身字段并引用该中转站。
     ///
     /// 受 CXC 管理的模型块里，`base_url` / `api_key` / `api_backend` 会被清掉——模型自身字段
-    /// 优先级高于 provider 块，留着旧值会让本次切换不生效；其余字段原样保留。
+    /// 优先级高于 provider 块，留着旧值会让本次切换不生效。启用卡片时，这些块的 `context_window`
+    /// 也由卡片上的上下文长度写入或删除。其余字段原样保留。未纳入本次写入的模型块不动。
     pub fn write_provider(&self, provider: &Provider) -> Result<(), TargetError> {
         self.write_provider_with(provider, true)
     }
@@ -383,10 +384,12 @@ impl GrokAdapter {
             block["model"] = toml_edit::value(model.as_str());
             block["model_provider"] = toml_edit::value(key.as_str());
             clear_model_endpoint_fields(block);
+            apply_model_context_window(block, provider.context_tokens(), manage_effort);
         }
 
         apply_web_search(&mut doc, provider)?;
         apply_reasoning_effort(&mut doc, provider, manage_effort);
+        apply_session_compact(&mut doc, provider.compact_ratio_percent(), manage_effort);
 
         let out = doc.to_string();
         let _ = out
@@ -664,6 +667,8 @@ impl TargetAdapter for GrokAdapter {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         self.write_provider_with(&provider, false)
     }
@@ -800,6 +805,33 @@ fn write_provider_block(
     block["base_url"] = toml_edit::value(base_url);
     block["api_key"] = toml_edit::value(api_key);
     block["api_backend"] = toml_edit::value(api_backend);
+}
+
+/// 本次写入的模型块设置 `context_window`。不设置时只从这些块删掉该键。
+fn apply_model_context_window(block: &mut Item, tokens: Option<u64>, manage: bool) {
+    if let Some(tokens) = tokens {
+        block["context_window"] = toml_edit::value(tokens as i64);
+        return;
+    }
+    if manage {
+        if let Some(table) = block.as_table_mut() {
+            table.remove("context_window");
+        }
+    }
+}
+
+/// 压缩比例直接写 `[session].auto_compact_threshold_percent`。不设置时删掉该键，不换算 token。
+fn apply_session_compact(doc: &mut DocumentMut, ratio: Option<u8>, manage: bool) {
+    if let Some(ratio) = ratio {
+        ensure_table(doc, "session");
+        doc["session"]["auto_compact_threshold_percent"] = toml_edit::value(i64::from(ratio));
+        return;
+    }
+    if manage {
+        if let Some(table) = doc.get_mut("session").and_then(|value| value.as_table_mut()) {
+            table.remove("auto_compact_threshold_percent");
+        }
+    }
 }
 
 /// 清理模型块里的端点字段。
@@ -1033,6 +1065,8 @@ yolo = false
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }
     }
 
@@ -1184,14 +1218,80 @@ model_provider = "nope"
         assert!(model_field(&adapter, "grok-4.5", "base_url").is_none());
         assert!(model_field(&adapter, "grok-4.5", "api_key").is_none());
         assert!(model_field(&adapter, "grok-4.5", "api_backend").is_none());
-        // 其它模型自身字段不受影响
-        assert_eq!(model_field(&adapter, "grok-4.5", "context_window").unwrap(), "222000");
+        // 没设上下文时，这次写入的模型块去掉 context_window
+        assert!(model_field(&adapter, "grok-4.5", "context_window").is_none());
         assert!(model_field(&adapter, "grok-4.5", "reasoning_effort").is_none());
 
         let cfg = adapter.read().unwrap();
         assert_eq!(cfg.base_url, "https://g2a.example.com/v1");
         assert_eq!(cfg.api_key, "g2a-key");
         assert_eq!(cfg.wire_api, "responses");
+    }
+
+    #[test]
+    fn test_write_provider_sets_context_window_and_session_compact() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = r#"[models]
+default = "grok-4.5"
+
+[model."grok-4.5"]
+model = "grok-4.5"
+context_window = 222000
+
+[model."other-model"]
+model = "other-model"
+context_window = 500000
+
+[session]
+foo = "keep"
+auto_compact_threshold_percent = 85
+"#;
+        fs::write(dir.path().join(CONFIG_FILE_NAME), config).unwrap();
+        let adapter = GrokAdapter::new_with_dir(dir.path());
+        let mut p = provider("g2a", "https://g2a.example.com/v1", "g2a-key", "grok-4.5");
+        p.context_length = Some("1m".to_string());
+        p.compact_ratio = Some(75);
+        p.grok_web_search = Some(GrokWebSearch::Model {
+            model: "search-model".to_string(),
+        });
+        adapter.write_provider(&p).unwrap();
+
+        assert_eq!(model_field(&adapter, "grok-4.5", "context_window").unwrap(), "1000000");
+        assert_eq!(model_field(&adapter, "search-model", "context_window").unwrap(), "1000000");
+        assert_eq!(model_field(&adapter, "other-model", "context_window").unwrap(), "500000");
+        let doc = parse_adapter(&adapter);
+        assert_eq!(doc["session"]["auto_compact_threshold_percent"].as_integer(), Some(75));
+        assert_eq!(doc["session"]["foo"].as_str(), Some("keep"));
+
+        p.context_length = None;
+        p.compact_ratio = None;
+        adapter.write_provider(&p).unwrap();
+        assert!(model_field(&adapter, "grok-4.5", "context_window").is_none());
+        assert!(model_field(&adapter, "search-model", "context_window").is_none());
+        assert_eq!(model_field(&adapter, "other-model", "context_window").unwrap(), "500000");
+        let doc = parse_adapter(&adapter);
+        assert!(doc["session"].get("auto_compact_threshold_percent").is_none());
+        assert_eq!(doc["session"]["foo"].as_str(), Some("keep"));
+
+        p.compact_ratio = Some(80);
+        adapter.write_provider(&p).unwrap();
+        assert!(model_field(&adapter, "grok-4.5", "context_window").is_none());
+        let doc = parse_adapter(&adapter);
+        assert_eq!(doc["session"]["auto_compact_threshold_percent"].as_integer(), Some(80));
+    }
+
+    #[test]
+    fn test_generic_write_keeps_context_window() {
+        let (_dir, adapter) = setup_grok_dir();
+        adapter
+            .write(&TargetConfig {
+                base_url: "https://g2a.example.com/v1".to_string(),
+                api_key: "g2a-key".to_string(),
+                model: "grok-4.5".to_string(),
+                wire_api: "responses".to_string(),
+            })
+            .unwrap();
+        assert_eq!(model_field(&adapter, "grok-4.5", "context_window").unwrap(), "222000");
     }
 
     #[test]

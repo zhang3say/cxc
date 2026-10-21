@@ -4,8 +4,9 @@ use std::collections::HashMap;
 /// Merges local and remote provider lists based on the provider `name`.
 /// - Providers unique to either list are preserved.
 /// - When a provider exists in both lists:
-///   - Remarks, claude_models, grok_web_search, reasoning_effort and plan_reasoning_effort: if one side has None and
-///     the other has Some, the non-empty configuration is adopted.
+///   - Remarks, claude_models, grok_web_search, reasoning_effort, plan_reasoning_effort,
+///     context_length and compact_ratio: if one side has None and the other has Some, the non-empty
+///     configuration is adopted.
 ///   - Connection parameters (base_url, api_key, model, wire_api) and test metrics (last_test, latency_ms, last_ok)
 ///     are kept strictly coupled:
 ///     - If both sets of connection parameters are identical, the more recent test metrics are adopted.
@@ -86,6 +87,12 @@ pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider>
             if l.plan_reasoning_effort.is_none() && r.plan_reasoning_effort.is_some() {
                 l.plan_reasoning_effort = r.plan_reasoning_effort.clone();
             }
+            if l.context_length.is_none() && r.context_length.is_some() {
+                l.context_length = r.context_length.clone();
+            }
+            if l.compact_ratio.is_none() && r.compact_ratio.is_some() {
+                l.compact_ratio = r.compact_ratio;
+            }
         } else {
             // Provider is only present on remote, add it
             map.insert(r.name.clone(), r.clone());
@@ -136,6 +143,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }];
 
         let remote = vec![Provider {
@@ -152,6 +161,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -178,6 +189,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }];
 
         let remote = vec![Provider {
@@ -194,6 +207,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -219,6 +234,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }];
 
         let remote = vec![Provider {
@@ -235,6 +252,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: None,
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         }];
 
         let merged = merge_providers(&local, &remote);
@@ -261,6 +280,8 @@ mod tests {
             grok_web_search: None,
             reasoning_effort: effort.map(str::to_string),
             plan_reasoning_effort: plan.map(str::to_string),
+            context_length: None,
+            compact_ratio: None,
         };
         let merged = merge_providers(
             &[bare("empty", None, None), bare("set", Some("max"), Some("high"))],
@@ -273,5 +294,43 @@ mod tests {
         assert_eq!(merged[0].plan_reasoning_effort.as_deref(), Some("xhigh"));
         assert_eq!(merged[1].reasoning_effort.as_deref(), Some("max"));
         assert_eq!(merged[1].plan_reasoning_effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn test_merge_context_settings_keep_local_when_both_set() {
+        let local_empty = Provider {
+            name: "empty".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            api_key: "k".to_string(),
+            model: "m".to_string(),
+            wire_api: "responses".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: None,
+            plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
+        };
+        let mut local_set = local_empty.clone();
+        local_set.name = "set".to_string();
+        local_set.context_length = Some("200k".to_string());
+        local_set.compact_ratio = Some(80);
+
+        let mut remote_empty = local_empty.clone();
+        remote_empty.context_length = Some("1m".to_string());
+        remote_empty.compact_ratio = Some(75);
+        let mut remote_set = local_set.clone();
+        remote_set.context_length = Some("500k".to_string());
+        remote_set.compact_ratio = Some(90);
+
+        let merged = merge_providers(&[local_empty, local_set], &[remote_empty, remote_set]);
+        assert_eq!(merged[0].context_length.as_deref(), Some("1m"));
+        assert_eq!(merged[0].compact_ratio, Some(75));
+        assert_eq!(merged[1].context_length.as_deref(), Some("200k"));
+        assert_eq!(merged[1].compact_ratio, Some(80));
     }
 }

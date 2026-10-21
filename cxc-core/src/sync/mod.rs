@@ -320,6 +320,8 @@ mod tests {
                 grok_web_search: None,
                 reasoning_effort: None,
                 plan_reasoning_effort: None,
+                context_length: None,
+                compact_ratio: None,
             }],
             claude_providers: vec![],
             grok_providers: vec![],

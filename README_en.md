@@ -65,6 +65,8 @@ When switching providers, CXC updates:
 
 Each relay can store one reasoning effort. Activating the card writes that level; leaving it unset removes the corresponding key. Codex sets the normal session and plan mode separately. Claude writes only `CLAUDE_CODE_EFFORT_LEVEL`, so every later model inherits it.
 
+Each relay can also store a context length and a compact ratio. Lengths use forms such as `1m` and `200k`. Claude appends `[1m]` to the model name only for exactly 1M, and connectivity tests do not add that suffix. The compact ratio is an integer percent from 70 to 100.
+
 Before making any modifications, target config files are automatically backed up as `.bak` files.
 
 ## Architecture

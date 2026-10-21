@@ -284,6 +284,8 @@ impl CodexAdapter {
             provider.reasoning_effort_level(),
             provider.plan_reasoning_effort_level(),
             true,
+            provider.context_tokens(),
+            provider.compact_token_limit(),
         )
     }
 
@@ -293,6 +295,8 @@ impl CodexAdapter {
         reasoning_effort: Option<&str>,
         plan_reasoning_effort: Option<&str>,
         manage_effort: bool,
+        context_tokens: Option<u64>,
+        compact_tokens: Option<u64>,
     ) -> Result<(), TargetError> {
         if !self.codex_dir.exists() {
             fs::create_dir_all(&self.codex_dir).map_err(|err| TargetError::WriteError {
@@ -334,6 +338,18 @@ impl CodexAdapter {
             &mut doc,
             "plan_mode_reasoning_effort",
             plan_reasoning_effort,
+            manage_effort,
+        );
+        apply_token_key(
+            &mut doc,
+            "model_context_window",
+            context_tokens,
+            manage_effort,
+        );
+        apply_token_key(
+            &mut doc,
+            "model_auto_compact_token_limit",
+            compact_tokens,
             manage_effort,
         );
 
@@ -439,7 +455,18 @@ impl TargetAdapter for CodexAdapter {
     }
 
     fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
-        self.write_with_reasoning(config, None, None, false)
+        self.write_with_reasoning(config, None, None, false, None, None)
+    }
+}
+
+/// 有 token 就写入顶层整数。启用卡片时空着则删掉该键。`manage` 为假时保留原键。
+fn apply_token_key(doc: &mut DocumentMut, key: &str, tokens: Option<u64>, manage: bool) {
+    if let Some(tokens) = tokens {
+        doc[key] = toml_edit::value(tokens as i64);
+        return;
+    }
+    if manage {
+        doc.as_table_mut().remove(key);
     }
 }
 
@@ -681,6 +708,8 @@ trust_level = "trusted"
             grok_web_search: None,
             reasoning_effort: Some("max".to_string()),
             plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
         };
         adapter.write_provider(&provider).unwrap();
 
@@ -736,6 +765,84 @@ trust_level = "trusted"
             .unwrap();
         assert_eq!(doc["model_reasoning_effort"].as_str(), Some("max"));
         assert_eq!(doc["plan_mode_reasoning_effort"].as_str(), Some("xhigh"));
+    }
+
+    #[test]
+    fn test_write_provider_context_and_compact_tokens() {
+        use crate::config::Provider;
+        let (_dir, adapter) = setup_codex_dir();
+        let path = adapter.config_path();
+        let mut existing = fs::read_to_string(&path).unwrap();
+        existing = existing.replacen(
+            "model_provider = \"codex\"\n",
+            concat!(
+                "model_provider = \"codex\"\n",
+                "model_context_window = 111\n",
+                "model_auto_compact_token_limit = 222\n",
+                "model_post_turn_compact_threshold_percent = 90\n",
+            ),
+            1,
+        );
+        fs::write(&path, existing).unwrap();
+
+        let mut provider = Provider {
+            name: "relay".to_string(),
+            base_url: "https://new.example.com/v1".to_string(),
+            api_key: "sk-new".to_string(),
+            model: "glm-5.3[1m]".to_string(),
+            wire_api: "responses".to_string(),
+            remark: None,
+            last_test: None,
+            latency_ms: None,
+            last_ok: None,
+            claude_models: None,
+            grok_web_search: None,
+            reasoning_effort: None,
+            plan_reasoning_effort: None,
+            context_length: Some("500k".to_string()),
+            compact_ratio: Some(75),
+        };
+        adapter.write_provider(&provider).unwrap();
+
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(doc["model"].as_str(), Some("glm-5.3[1m]"));
+        assert_eq!(doc["model_context_window"].as_integer(), Some(500_000));
+        assert_eq!(doc["model_auto_compact_token_limit"].as_integer(), Some(375_000));
+        assert_eq!(doc["model_post_turn_compact_threshold_percent"].as_integer(), Some(90));
+        assert!(doc.get("model_async_compact_threshold_percent").is_none());
+
+        provider.context_length = None;
+        provider.compact_ratio = Some(80);
+        adapter.write_provider(&provider).unwrap();
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(doc.get("model_context_window").is_none());
+        assert!(doc.get("model_auto_compact_token_limit").is_none());
+        assert_eq!(doc["model_post_turn_compact_threshold_percent"].as_integer(), Some(90));
+
+        provider.context_length = Some("1m".to_string());
+        provider.compact_ratio = Some(100);
+        adapter.write_provider(&provider).unwrap();
+        adapter
+            .write(&TargetConfig {
+                base_url: provider.base_url.clone(),
+                api_key: provider.api_key.clone(),
+                model: "glm-5.3".to_string(),
+                wire_api: provider.wire_api.clone(),
+            })
+            .unwrap();
+        let doc: DocumentMut = fs::read_to_string(adapter.config_path())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(doc["model"].as_str(), Some("glm-5.3"));
+        assert_eq!(doc["model_context_window"].as_integer(), Some(1_000_000));
+        assert_eq!(doc["model_auto_compact_token_limit"].as_integer(), Some(1_000_000));
     }
 
     #[test]
