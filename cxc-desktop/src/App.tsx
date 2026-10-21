@@ -2282,16 +2282,6 @@ function App() {
                                 {p.reasoning_effort}
                               </span>
                             ) : null}
-                            {p.context_length ? (
-                              <span className="shrink-0 text-[10px] text-muted-foreground/80" title={p.context_length}>
-                                {p.context_length}
-                              </span>
-                            ) : null}
-                            {p.compact_ratio != null ? (
-                              <span className="shrink-0 text-[10px] text-muted-foreground/80" title={`${p.compact_ratio}%`}>
-                                {p.compact_ratio}%
-                              </span>
-                            ) : null}
                           </div>
 
                           {/* Latency & Status column using renderStatus */}
