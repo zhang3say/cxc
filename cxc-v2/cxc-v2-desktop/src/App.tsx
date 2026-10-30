@@ -220,6 +220,12 @@ export default function App() {
     }
   };
 
+  const refreshModels = async (supplierId: string) => {
+    const result = await api.fetchSupplierModels(supplierId);
+    setConfig(result.config);
+    showToast(`${t.modelsFetched}: ${result.models.length}`, "success");
+  };
+
   const testModel = async (
     supplierId: string,
     model: string,
@@ -387,6 +393,7 @@ export default function App() {
           onDelete={deleteBinding}
           onActivate={activateBinding}
           onTest={testModel}
+          onRefreshModels={refreshModels}
         />
       );
     }

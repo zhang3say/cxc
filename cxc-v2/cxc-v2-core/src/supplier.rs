@@ -214,6 +214,32 @@ pub fn merge_discovered_models(supplier: &mut Supplier, models: Vec<String>) {
     }
 }
 
+/// 用接口返回的模型列表替换现有目录：下架模型连同测试结果一起移除，
+/// 仍然存在的模型保留原有测试结果，新出现的模型结果为空。
+pub fn replace_discovered_models(supplier: &mut Supplier, models: Vec<String>) {
+    let previous = std::mem::take(&mut supplier.models);
+    let mut next: Vec<SupplierModel> = Vec::new();
+
+    for model in models {
+        let model = model.trim();
+        if model.is_empty() || next.iter().any(|entry| entry.model == model) {
+            continue;
+        }
+        let mut entry = previous
+            .iter()
+            .find(|entry| entry.model == model)
+            .cloned()
+            .unwrap_or_else(|| SupplierModel {
+                model: model.to_string(),
+                ..SupplierModel::default()
+            });
+        entry.model = model.to_string();
+        next.push(entry);
+    }
+
+    supplier.models = next;
+}
+
 pub fn record_model_test(
     cfg: &mut Config,
     supplier_id: &str,
@@ -380,5 +406,77 @@ mod tests {
         merge_discovered_models(&mut supplier, vec!["a".to_string(), "b".to_string()]);
         assert_eq!(supplier.models.len(), 2);
         assert_eq!(supplier.models[0].last_ok, Some(true));
+    }
+
+    fn supplier_with_models(models: Vec<SupplierModel>) -> Supplier {
+        Supplier {
+            id: "s1".to_string(),
+            name: "relay".to_string(),
+            base_url: "https://api.example.com/v1".to_string(),
+            api_key: "sk-1".to_string(),
+            protocols: vec![],
+            remark: None,
+            last_probe: None,
+            models,
+        }
+    }
+
+    #[test]
+    fn replace_drops_retired_models_and_keeps_surviving_results() {
+        let mut supplier = supplier_with_models(vec![
+            SupplierModel {
+                model: "keep".to_string(),
+                last_ok: Some(true),
+                latency_ms: Some(120),
+                ..SupplierModel::default()
+            },
+            SupplierModel {
+                model: "retired".to_string(),
+                last_ok: Some(false),
+                last_error: Some("gone".to_string()),
+                ..SupplierModel::default()
+            },
+        ]);
+
+        replace_discovered_models(&mut supplier, vec!["keep".to_string(), "fresh".to_string()]);
+
+        assert_eq!(supplier.models.len(), 2);
+        assert_eq!(supplier.models[0].model, "keep");
+        assert_eq!(supplier.models[0].last_ok, Some(true));
+        assert_eq!(supplier.models[0].latency_ms, Some(120));
+        assert_eq!(supplier.models[1].model, "fresh");
+        assert_eq!(supplier.models[1].last_ok, None);
+        assert!(!supplier.models.iter().any(|entry| entry.model == "retired"));
+    }
+
+    #[test]
+    fn replace_dedupes_and_ignores_blank_models() {
+        let mut supplier = supplier_with_models(vec![SupplierModel {
+            model: "a".to_string(),
+            ..SupplierModel::default()
+        }]);
+        replace_discovered_models(
+            &mut supplier,
+            vec![
+                "a".to_string(),
+                " a ".to_string(),
+                "  ".to_string(),
+                "b".to_string(),
+            ],
+        );
+        assert_eq!(supplier.models.len(), 2);
+        assert_eq!(supplier.models[0].model, "a");
+        assert_eq!(supplier.models[1].model, "b");
+    }
+
+    #[test]
+    fn replace_with_empty_list_clears_models() {
+        let mut supplier = supplier_with_models(vec![SupplierModel {
+            model: "a".to_string(),
+            last_ok: Some(true),
+            ..SupplierModel::default()
+        }]);
+        replace_discovered_models(&mut supplier, Vec::new());
+        assert!(supplier.models.is_empty());
     }
 }

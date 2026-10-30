@@ -54,6 +54,14 @@ function seed(): Config {
             latency_ms: 520,
             last_ok: true,
           },
+          {
+            model: "legacy/retired-model",
+            protocols: ["chat_completions"],
+            last_test: new Date().toISOString(),
+            latency_ms: 999,
+            last_ok: false,
+            last_error: "HTTP 404: model not found",
+          },
         ],
       },
       {
@@ -330,10 +338,38 @@ function buildConfig(
   };
 }
 
-function modelList(supplier: Supplier): string[] {
-  const base = supplier.models.map((model) => model.model);
-  const extras = ["gpt-5", "gpt-5-mini", "claude-sonnet-4-5", "claude-opus-4-5", "grok-4.5"];
-  return Array.from(new Set([...base, ...extras]));
+const VENDORS = ["openai", "anthropic", "google", "meta-llama", "mistralai", "x-ai", "qwen", "deepseek"];
+const FAMILIES = [
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "claude-sonnet-4-5",
+  "claude-opus-4-5",
+  "claude-haiku-4-5",
+  "gemini-3.8-flash",
+  "gemini-4-argon",
+  "llama-4-70b",
+  "mistral-large",
+  "grok-4.5",
+  "qwen-3-coder",
+  "deepseek-v4",
+];
+
+/** 演示用的模型目录：openrouter 这类中转站有上百个模型。 */
+function modelCatalog(supplier: Supplier): string[] {
+  if (supplier.name === "openrouter") {
+    const list: string[] = [];
+    for (const vendor of VENDORS) {
+      for (const family of FAMILIES) {
+        list.push(`${vendor}/${family}`);
+      }
+    }
+    list.push("anthropic/claude-sonnet-4.5", "openai/gpt-5", "x-ai/grok-4.5");
+    return Array.from(new Set(list)).sort();
+  }
+  return Array.from(
+    new Set(["gpt-5", "gpt-5-mini", "gpt-5-nano", "claude-sonnet-4-5", "grok-4.5"]),
+  ).sort();
 }
 
 export async function mockInvoke<T>(
@@ -435,12 +471,12 @@ export async function mockInvoke<T>(
     case "fetch_supplier_models": {
       await delay(700);
       const supplier = supplierOf(config, payload.id as string);
-      const models = modelList(supplier);
-      for (const model of models) {
-        if (!supplier.models.some((entry) => entry.model === model)) {
-          supplier.models.push({ model, protocols: [] });
-        }
-      }
+      const models = modelCatalog(supplier);
+      const previous = supplier.models;
+      supplier.models = models.map(
+        (model) =>
+          previous.find((entry) => entry.model === model) ?? { model, protocols: [] },
+      );
       save(config);
       return { config: clone(config), models } as T;
     }

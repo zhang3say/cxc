@@ -167,7 +167,7 @@ async fn fetch_supplier_models(id: String) -> Result<ModelsResponse, String> {
         .await
         .map_err(|error| error.to_string())?;
     if let Some(target) = cfg.supplier_mut(&id) {
-        supplier::merge_discovered_models(target, models.clone());
+        supplier::replace_discovered_models(target, models.clone());
     }
     save_config(&cfg)?;
     Ok(ModelsResponse {

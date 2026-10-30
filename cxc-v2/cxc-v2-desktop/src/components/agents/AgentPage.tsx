@@ -36,6 +36,7 @@ interface AgentPageProps {
     model: string,
     protocol: Protocol,
   ) => Promise<ModelTestResult>;
+  onRefreshModels: (supplierId: string) => Promise<void>;
 }
 
 const agentAccent: Record<AgentKind, string> = {
@@ -71,6 +72,7 @@ export function AgentPage({
   onDelete,
   onActivate,
   onTest,
+  onRefreshModels,
 }: AgentPageProps) {
   const [dialog, setDialog] = useState<{ open: boolean; binding: AgentConfig | null }>({
     open: false,
@@ -257,6 +259,7 @@ export function AgentPage({
         onClose={() => setDialog({ open: false, binding: null })}
         onSubmit={submit}
         onTest={onTest}
+        onRefreshModels={onRefreshModels}
       />
     </div>
   );

@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CxcSelect } from "@/components/ui/select";
+import { ModelPicker } from "@/components/ui/model-picker";
 import { errorText } from "@/lib/utils";
 import type { Messages } from "@/lib/i18n";
 import type {
@@ -48,6 +49,7 @@ interface BindingDialogProps {
     model: string,
     protocol: Protocol,
   ) => Promise<ModelTestResult>;
+  onRefreshModels: (supplierId: string) => Promise<void>;
 }
 
 export function BindingDialog({
@@ -62,6 +64,7 @@ export function BindingDialog({
   onClose,
   onSubmit,
   onTest,
+  onRefreshModels,
 }: BindingDialogProps) {
   const capabilities = CAPABILITIES[agent];
   const [protocol, setProtocol] = useState<Protocol>(capabilities.protocols[0]);
@@ -81,6 +84,9 @@ export function BindingDialog({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestResult | null>(null);
   const [initializedKey, setInitializedKey] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const compatibleSuppliers = useMemo(
     () => suppliers.filter((supplier) => supplier.protocols.includes(protocol)),
@@ -118,6 +124,7 @@ export function BindingDialog({
     );
     setError(null);
     setTestResult(null);
+    setRefreshError(null);
     setInitializedKey(key);
   }, [open, agent, env, binding, suppliers, capabilities.protocols, initializedKey]);
 
@@ -213,7 +220,12 @@ export function BindingDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-lg">
+      <DialogContent
+        onEscapeKeyDown={(event) => {
+          if (pickerOpen) event.preventDefault();
+        }}
+        className="flex max-h-[88vh] flex-col gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-lg"
+      >
         <DialogHeader className="mb-4 shrink-0 gap-1.5 border-b border-border/30 pb-4">
           <DialogTitle className="text-base font-bold tracking-tight">
             {binding ? t.editBinding : t.newBinding}
@@ -265,30 +277,29 @@ export function BindingDialog({
             <Label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
               {t.model}
             </Label>
-            <Input
+            <ModelPicker
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              models={supplier?.models ?? []}
               placeholder={t.manualModel}
-              className="h-9 rounded-md border-border/30 bg-muted/10 font-mono text-xs focus:border-primary/60 focus:bg-background/80 focus-visible:ring-primary/40"
+              disabled={saving || !supplierId}
+              refreshing={refreshing}
+              refreshError={refreshError}
+              onChange={setModel}
+              onOpenChange={setPickerOpen}
+              onRefresh={async () => {
+                if (!supplierId) return;
+                setRefreshing(true);
+                setRefreshError(null);
+                try {
+                  await onRefreshModels(supplierId);
+                } catch (refreshFailure) {
+                  setRefreshError(errorText(refreshFailure));
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+              t={t}
             />
-            {supplier?.models.length ? (
-              <div className="flex flex-wrap gap-1 pt-1">
-                {supplier.models.slice(0, 14).map((entry) => (
-                  <button
-                    key={entry.model}
-                    type="button"
-                    onClick={() => setModel(entry.model)}
-                    className={`rounded border px-1.5 py-0.5 font-mono text-[9px] transition-colors ${
-                      model === entry.model
-                        ? "border-primary/40 bg-primary/10 text-primary"
-                        : "border-border/40 bg-muted/20 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {entry.model}
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
