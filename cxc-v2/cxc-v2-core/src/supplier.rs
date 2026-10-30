@@ -178,9 +178,11 @@ pub fn remove_supplier(cfg: &mut Config, id: &str) -> Result<(), SupplierError> 
     for kind in AgentKind::ALL {
         let agent = cfg.agent(kind);
         if crate::config::Env::ALL.iter().any(|env| {
-            agent
-                .get(*env)
-                .is_some_and(|config| config.supplier_id == id)
+            agent.get(*env).is_some_and(|slot| {
+                slot.bindings
+                    .iter()
+                    .any(|binding| binding.supplier_id == id)
+            })
         }) {
             references.push(kind.display_name().to_string());
         }
@@ -337,16 +339,20 @@ mod tests {
         .unwrap();
         cfg.agent_mut(AgentKind::Codex).set(
             crate::config::Env::Wsl,
-            Some(crate::agent::AgentConfig {
-                supplier_id: supplier.id.clone(),
-                protocol: Protocol::Responses,
-                model: "gpt-5".to_string(),
-                reasoning_effort: None,
-                plan_reasoning_effort: None,
-                context_length: None,
-                compact_ratio: None,
-                claude_models: None,
-                grok_web_search: None,
+            Some(crate::agent::AgentSlot {
+                active: Some("b1".to_string()),
+                bindings: vec![crate::agent::AgentConfig {
+                    id: "b1".to_string(),
+                    supplier_id: supplier.id.clone(),
+                    protocol: Protocol::Responses,
+                    model: "gpt-5".to_string(),
+                    reasoning_effort: None,
+                    plan_reasoning_effort: None,
+                    context_length: None,
+                    compact_ratio: None,
+                    claude_models: None,
+                    grok_web_search: None,
+                }],
             }),
         );
         assert!(matches!(

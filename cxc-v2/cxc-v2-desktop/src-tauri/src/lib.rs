@@ -235,17 +235,41 @@ async fn test_supplier_models(id: String) -> Result<BulkTestResponse, String> {
 }
 
 #[tauri::command]
-fn save_agent_config(
+fn add_binding(
     app: tauri::AppHandle,
     agent: String,
     env: String,
+    input: AgentConfigInput,
+    activate: bool,
+) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::add_binding(&mut cfg, kind, env, input, activate, adapter.as_ref())
+        .map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    if activate {
+        notify_written(kind, env, &cfg);
+    }
+    let _ = app.emit("config-updated", &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+fn edit_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    id: String,
     input: AgentConfigInput,
 ) -> Result<Config, String> {
     let mut cfg = load_config()?;
     let kind = parse_agent(&agent)?;
     let env = Env::parse(&env);
     let adapter = target::adapter_for(kind);
-    agent::save_and_apply(&mut cfg, kind, env, input, adapter.as_ref())
+    agent::edit_binding(&mut cfg, kind, env, &id, input, adapter.as_ref())
         .map_err(|error| error.to_string())?;
     save_config(&cfg)?;
     let _ = update_tray_menu_with_config(&app, &cfg);
@@ -255,12 +279,38 @@ fn save_agent_config(
 }
 
 #[tauri::command]
-fn clear_agent_config(agent: String, env: String) -> Result<Config, String> {
+fn delete_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    id: String,
+) -> Result<Config, String> {
     let mut cfg = load_config()?;
     let kind = parse_agent(&agent)?;
     let env = Env::parse(&env);
-    agent::clear_config(&mut cfg, kind, env);
+    agent::delete_binding(&mut cfg, kind, env, &id).map_err(|error| error.to_string())?;
     save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+fn activate_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    id: String,
+) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::activate_binding(&mut cfg, kind, env, &id, adapter.as_ref())
+        .map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    notify_written(kind, env, &cfg);
+    let _ = app.emit("config-updated", &cfg);
     Ok(cfg)
 }
 
@@ -576,8 +626,10 @@ pub fn run() {
             fetch_supplier_models,
             test_supplier_model,
             test_supplier_models,
-            save_agent_config,
-            clear_agent_config,
+            add_binding,
+            edit_binding,
+            delete_binding,
+            activate_binding,
             rewrite_agent,
             save_settings,
             get_sync_config,

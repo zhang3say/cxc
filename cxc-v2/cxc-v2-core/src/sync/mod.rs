@@ -13,7 +13,7 @@ use crate::supplier::{Supplier, SupplierModel};
 use crypto::{decrypt_aes_gcm, encrypt_aes_gcm};
 pub use gist::{GistClient, GistError};
 
-pub const CURRENT_SYNC_VERSION: u32 = 3;
+pub const CURRENT_SYNC_VERSION: u32 = 4;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -67,6 +67,16 @@ struct SyncEnvelope {
     pub ciphertext: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct LegacySyncPayloadV3 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    suppliers: Vec<Supplier>,
+    #[serde(default)]
+    agents: config::LegacyAgentsV3,
 }
 
 #[derive(Deserialize)]
@@ -181,11 +191,23 @@ fn parse_payload_value(value: Value) -> Result<SyncPayload, SyncError> {
         return Ok(serde_json::from_value(value)?);
     }
 
+    if version == 3 {
+        let legacy: LegacySyncPayloadV3 = serde_json::from_value(value)?;
+        let cfg = Config {
+            suppliers: legacy.suppliers,
+            agents: config::agents_from_v3(&legacy.agents),
+            ..Config::default()
+        };
+        let mut payload = build_payload(&cfg);
+        payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
+        return Ok(payload);
+    }
+
     if version == 2 {
         let legacy: LegacySyncPayloadV2 = serde_json::from_value(value)?;
         let cfg = Config {
             suppliers: legacy.suppliers,
-            agents: config::agents_from_legacy(&legacy.agents),
+            agents: config::agents_from_v2(&legacy.agents, None),
             ..Config::default()
         };
         let mut payload = build_payload(&cfg);
@@ -283,10 +305,25 @@ pub async fn pull_from_gist(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{AgentConfig, AgentKind};
+    use crate::agent::{AgentConfig, AgentKind, AgentSlot};
     use crate::config::Env;
     use crate::protocol::Protocol;
     use crate::supplier::{SupplierInput, add_supplier};
+
+    fn binding(id: &str, model: &str) -> AgentConfig {
+        AgentConfig {
+            id: id.to_string(),
+            supplier_id: "s1".to_string(),
+            protocol: Protocol::Responses,
+            model: model.to_string(),
+            reasoning_effort: None,
+            plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
+            claude_models: None,
+            grok_web_search: None,
+        }
+    }
 
     fn sample_config() -> Config {
         let mut cfg = Config::default();
@@ -301,18 +338,15 @@ mod tests {
             },
         )
         .unwrap();
+        let mut first = binding("b1", "gpt-5");
+        first.supplier_id = supplier.id.clone();
+        let mut second = binding("b2", "gpt-5-mini");
+        second.supplier_id = supplier.id;
         cfg.agent_mut(AgentKind::Codex).set(
             Env::Wsl,
-            Some(AgentConfig {
-                supplier_id: supplier.id,
-                protocol: Protocol::Responses,
-                model: "gpt-5".to_string(),
-                reasoning_effort: Some("high".to_string()),
-                plan_reasoning_effort: None,
-                context_length: None,
-                compact_ratio: None,
-                claude_models: None,
-                grok_web_search: None,
+            Some(AgentSlot {
+                active: Some("b1".to_string()),
+                bindings: vec![first, second],
             }),
         );
         cfg
@@ -324,17 +358,11 @@ mod tests {
         let payload = build_payload(&cfg);
         let raw = pack_payload(&payload, None).unwrap();
         let restored = unpack_payload(&raw, None).unwrap();
-        assert_eq!(restored.version, 3);
+        assert_eq!(restored.version, 4);
         assert_eq!(restored.suppliers.len(), 1);
-        assert_eq!(
-            restored
-                .agents
-                .codex
-                .wsl
-                .as_ref()
-                .map(|config| config.model.as_str()),
-            Some("gpt-5")
-        );
+        let slot = restored.agents.codex.wsl.as_ref().unwrap();
+        assert_eq!(slot.bindings.len(), 2);
+        assert_eq!(slot.active.as_deref(), Some("b1"));
     }
 
     #[test]
@@ -364,7 +392,46 @@ mod tests {
     }
 
     #[test]
-    fn reads_v2_payload_and_collapses_bindings() {
+    fn reads_v3_payload_as_single_binding() {
+        let raw = r#"{
+            "version": 3,
+            "updated_at": "2026-10-30T12:00:00+08:00",
+            "suppliers": [
+                {
+                    "id": "s1",
+                    "name": "relay",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-1",
+                    "protocols": ["responses"],
+                    "models": []
+                }
+            ],
+            "agents": {
+                "codex": {
+                    "wsl": {
+                        "supplier_id": "s1",
+                        "protocol": "responses",
+                        "model": "gpt-5"
+                    }
+                },
+                "claude": {},
+                "grok": {},
+                "opencode": {}
+            }
+        }"#;
+        let payload = unpack_payload(
+            &format!(r#"{{"version":3,"encrypted":false,"payload":{raw}}}"#),
+            None,
+        )
+        .unwrap();
+        assert_eq!(payload.version, 4);
+        let slot = payload.agents.codex.wsl.as_ref().unwrap();
+        assert_eq!(slot.bindings.len(), 1);
+        assert_eq!(slot.active_binding().unwrap().model, "gpt-5");
+    }
+
+    #[test]
+    fn reads_v2_payload_and_keeps_catalog() {
         let raw = r#"{
             "version": 2,
             "updated_at": "2026-10-30T12:00:00+08:00",
@@ -387,6 +454,12 @@ mod tests {
                             "supplier_id": "s1",
                             "protocol": "responses",
                             "model": "gpt-5"
+                        },
+                        {
+                            "id": "b2",
+                            "supplier_id": "s1",
+                            "protocol": "responses",
+                            "model": "gpt-5-mini"
                         }
                     ]
                 },
@@ -400,15 +473,9 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(payload.version, 3);
-        assert_eq!(
-            payload
-                .agents
-                .codex
-                .wsl
-                .as_ref()
-                .map(|config| config.model.as_str()),
-            Some("gpt-5")
-        );
+        assert_eq!(payload.version, 4);
+        let slot = payload.agents.codex.wsl.as_ref().unwrap();
+        assert_eq!(slot.bindings.len(), 2);
+        assert_eq!(slot.active_binding().unwrap().model, "gpt-5");
     }
 }

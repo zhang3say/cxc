@@ -51,10 +51,14 @@ export const api = {
       id,
     }),
 
-  saveAgentConfig: (agent: AgentKind, env: Env, input: AgentConfigInput) =>
-    call<Config>("save_agent_config", { agent, env, input }),
-  clearAgentConfig: (agent: AgentKind, env: Env) =>
-    call<Config>("clear_agent_config", { agent, env }),
+  addBinding: (agent: AgentKind, env: Env, input: AgentConfigInput, activate: boolean) =>
+    call<Config>("add_binding", { agent, env, input, activate }),
+  editBinding: (agent: AgentKind, env: Env, id: string, input: AgentConfigInput) =>
+    call<Config>("edit_binding", { agent, env, id, input }),
+  deleteBinding: (agent: AgentKind, env: Env, id: string) =>
+    call<Config>("delete_binding", { agent, env, id }),
+  activateBinding: (agent: AgentKind, env: Env, id: string) =>
+    call<Config>("activate_binding", { agent, env, id }),
   rewriteAgent: (agent: AgentKind, env: Env) =>
     call<Config>("rewrite_agent", { agent, env }),
 

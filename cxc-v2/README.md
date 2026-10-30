@@ -8,7 +8,7 @@ CXC 第二代桌面端。与旧版并行开发，沿用旧版的视觉语言，�
 - **Agent 自动识别**：按 PATH 探测每个 `(工具, 环境)`；不可达的环境不显示，未安装的工具仍可手动配置。
 - **全局中转站**：名称、Base URL、API Key、备注、协议集合、模型目录只保存一份。
 - **三协议探测**：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses，逐个端点探测并写回。
-- **每个 Agent 一份配置**：卡片内直接编辑模型、协议、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射 / Grok web_search 策略；点「保存并写入」立即写入目标文件。
+- **绑定列表**：每个 Agent 可以保存多条绑定（中转站 + 模型 + 参数），同一时刻只有一条使用中；列表里点「启用」即切换并写入目标文件，表单在对话框里编辑。
 - **按模型测连通性**：单模型测试、按中转站批量测试，结果持久化。
 - **其余能力**：自定义目录（按工具 × 环境）、`.bak` 备份、Gist 同步、系统托盘、更新检查、中英文与明暗主题。
 
@@ -25,7 +25,7 @@ cxc-v2/
 配置文件：Linux / WSL `~/.config/cxc-v2/config.yaml`，Windows `%USERPROFILE%\.config\cxc-v2\config.yaml`。
 
 ```yaml
-version: 3
+version: 4
 suppliers:
   - id: "..."
     name: "openrouter"
@@ -38,16 +38,26 @@ suppliers:
 agents:
   codex:
     wsl:
-      supplier_id: "..."
-      protocol: responses
-      model: "openai/gpt-5"
-      reasoning_effort: high
-      context_length: 200k
-      compact_ratio: 80
+      active: "b1"
+      bindings:
+        - id: "b1"
+          supplier_id: "..."
+          protocol: responses
+          model: "openai/gpt-5"
+          reasoning_effort: high
+          context_length: 200k
+          compact_ratio: 80
+        - id: "b2"
+          supplier_id: "..."
+          protocol: responses
+          model: "gpt-5-mini"
     windows:
-      supplier_id: "..."
-      protocol: responses
-      model: "gpt-5-mini"
+      active: "b3"
+      bindings:
+        - id: "b3"
+          supplier_id: "..."
+          protocol: responses
+          model: "gpt-5-mini"
   claude: {}
   grok: {}
   opencode: {}
@@ -58,7 +68,7 @@ custom_dirs:
   opencode: { wsl: "", windows: "" }
 ```
 
-旧版 `~/.config/cxc/config.yaml` 在首次启动时一次性导入；版本 2 的 `cxc-v2` 配置会自动收敛成新结构。旧文件只读，不会被修改。
+旧版 `~/.config/cxc/config.yaml` 在首次启动时一次性导入；版本 2 / 3 的 `cxc-v2` 配置会自动收敛成绑定列表（旧配置成为唯一一条使用中的绑定）。旧文件只读，不会被修改。
 
 ## 开发
 
@@ -86,7 +96,7 @@ npm run build
 | 压缩比例 | `model_auto_compact_token_limit` | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | `auto_compact_threshold_percent` | `compaction.reserved` 换算 |
 | 多模型 | — | opus / sonnet / haiku / subagent | web_search | — |
 
-每个工具在 WSL 与 Windows 下各有一份配置，写入各自环境的配置文件。
+每个工具在 WSL 与 Windows 下各有一份绑定列表，使用中的那条写入各自环境的配置文件。
 
 ## 设计文档
 
@@ -95,3 +105,4 @@ npm run build
 - `docs/adr/0020-opencode-adapter.md`
 - `docs/adr/0021-cxc-v2-config-and-migration.md`
 - `docs/adr/0022-agent-per-environment-single-config.md`
+- `docs/adr/0023-agent-binding-list.md`

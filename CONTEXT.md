@@ -115,9 +115,13 @@ Agent 所在的运行环境，取值为 `wsl` 或 `windows`。环境是 Agent �
 
 CXC 2 中只保存一份的中转站凭证：`id`、名称、Base URL、API Key、协议集合、备注和模型目录。所有 Agent 共用同一批 Supplier；Agent 配置通过 `supplier_id` 引用它。删除被引用的 Supplier 会被拒绝。
 
-## Agent Config (Agent 配置)
+## Binding (Agent 绑定)
 
-某个 `(工具, 环境)` 唯一的一份配置：引用一个 Supplier，并保存协议、模型、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射或 Grok web_search 策略。Agent 卡片内直接编辑，点「保存并写入」立即写目标配置文件；写入失败时配置保持不变。
+某个 `(工具, 环境)` 下保存的一条配置：引用一个 Supplier，并保存协议、模型、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射或 Grok web_search 策略。每条绑定有稳定 `id`，创建后不变。
+
+## Active Binding (使用中的绑定)
+
+每个 `(工具, 环境)` 同时只有一条绑定处于使用中。启用一条绑定会把它写入该环境的目标配置文件，写入成功后才切换状态；写入失败时配置保持不变。使用中的绑定不能直接删除，要先启用别的。Agent 页的列表里用左侧蓝色竖条与「使用中」徽章标出，不再单独占一个区块。
 
 ## Protocol Set (协议集合)
 

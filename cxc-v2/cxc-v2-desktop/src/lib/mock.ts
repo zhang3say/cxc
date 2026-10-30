@@ -22,7 +22,7 @@ const STORAGE_KEY = "cxc-v2-mock-config";
 
 function seed(): Config {
   return {
-    version: 3,
+    version: 4,
     suppliers: [
       {
         id: "a1b2c3d4e5f60718",
@@ -108,56 +108,101 @@ function seed(): Config {
     agents: {
       codex: {
         wsl: {
-          supplier_id: "b2c3d4e5f6071829",
-          protocol: "responses",
-          model: "gpt-5",
-          reasoning_effort: "high",
-          plan_reasoning_effort: "xhigh",
-          context_length: "200k",
-          compact_ratio: 80,
+          active: "bind-codex-1",
+          bindings: [
+            {
+              id: "bind-codex-1",
+              supplier_id: "b2c3d4e5f6071829",
+              protocol: "responses",
+              model: "gpt-5",
+              reasoning_effort: "high",
+              plan_reasoning_effort: "xhigh",
+              context_length: "200k",
+              compact_ratio: 80,
+            },
+            {
+              id: "bind-codex-2",
+              supplier_id: "a1b2c3d4e5f60718",
+              protocol: "chat_completions",
+              model: "openai/gpt-5",
+              reasoning_effort: "medium",
+            },
+          ],
         },
         windows: {
-          supplier_id: "b2c3d4e5f6071829",
-          protocol: "responses",
-          model: "gpt-5-mini",
-          reasoning_effort: "medium",
-          context_length: "200k",
-          compact_ratio: 80,
+          active: "bind-codex-3",
+          bindings: [
+            {
+              id: "bind-codex-3",
+              supplier_id: "b2c3d4e5f6071829",
+              protocol: "responses",
+              model: "gpt-5-mini",
+              reasoning_effort: "medium",
+              context_length: "200k",
+              compact_ratio: 80,
+            },
+          ],
         },
       },
       claude: {
         wsl: {
-          supplier_id: "c3d4e5f60718293a",
-          protocol: "messages",
-          model: "claude-sonnet-4-5",
-          reasoning_effort: "high",
-          context_length: "1m",
-          compact_ratio: 85,
-          claude_models: {
-            opus: "claude-opus-4-5",
-            haiku: "claude-haiku-4-5",
-          },
+          active: "bind-claude-1",
+          bindings: [
+            {
+              id: "bind-claude-1",
+              supplier_id: "c3d4e5f60718293a",
+              protocol: "messages",
+              model: "claude-sonnet-4-5",
+              reasoning_effort: "high",
+              context_length: "1m",
+              compact_ratio: 85,
+              claude_models: {
+                opus: "claude-opus-4-5",
+                haiku: "claude-haiku-4-5",
+              },
+            },
+          ],
         },
       },
       grok: {
         wsl: {
-          supplier_id: "a1b2c3d4e5f60718",
-          protocol: "chat_completions",
-          model: "x-ai/grok-4.5",
-          reasoning_effort: "high",
-          context_length: "500k",
-          compact_ratio: 75,
-          grok_web_search: { mode: "follow" },
+          active: "bind-grok-1",
+          bindings: [
+            {
+              id: "bind-grok-1",
+              supplier_id: "a1b2c3d4e5f60718",
+              protocol: "chat_completions",
+              model: "x-ai/grok-4.5",
+              reasoning_effort: "high",
+              context_length: "500k",
+              compact_ratio: 75,
+              grok_web_search: { mode: "follow" },
+            },
+            {
+              id: "bind-grok-2",
+              supplier_id: "a1b2c3d4e5f60718",
+              protocol: "chat_completions",
+              model: "openai/gpt-5",
+              reasoning_effort: "minimal",
+              context_length: "200k",
+            },
+          ],
         },
       },
       opencode: {
         wsl: {
-          supplier_id: "a1b2c3d4e5f60718",
-          protocol: "chat_completions",
-          model: "openai/gpt-5",
-          reasoning_effort: "medium",
-          context_length: "200k",
-          compact_ratio: 80,
+          active: "bind-opencode-1",
+          bindings: [
+            {
+              id: "bind-opencode-1",
+              supplier_id: "a1b2c3d4e5f60718",
+              protocol: "chat_completions",
+              model: "openai/gpt-5",
+              reasoning_effort: "medium",
+              context_length: "200k",
+              compact_ratio: 80,
+            },
+          ],
         },
       },
     },
@@ -171,7 +216,7 @@ function load(): Config {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Config;
-      if (parsed.version === 3) return parsed;
+      if (parsed.version === 4) return parsed;
     }
   } catch {
     // ignore
@@ -217,8 +262,10 @@ function supplierOf(config: Config, supplierId: string): Supplier {
 
 function references(config: Config, supplierId: string): string[] {
   return AGENT_KINDS.filter((kind) =>
-    ENVS.some(
-      (env) => config.agents[kind]?.[env]?.supplier_id === supplierId,
+    ENVS.some((env) =>
+      (config.agents[kind]?.[env]?.bindings ?? []).some(
+        (binding) => binding.supplier_id === supplierId,
+      ),
     ),
   ).map((kind) => kind);
 }
@@ -258,7 +305,11 @@ function normalizeWebSearch(policy?: GrokWebSearch): GrokWebSearch | undefined {
   return policy;
 }
 
-function buildConfig(config: Config, input: AgentConfigInput): AgentConfig {
+function buildConfig(
+  config: Config,
+  input: AgentConfigInput,
+  id: string,
+): AgentConfig {
   const supplier = supplierOf(config, input.supplier_id);
   if (!supplier.protocols.includes(input.protocol)) {
     throw new Error(`供应商尚未确认支持 ${input.protocol} 协议`);
@@ -266,6 +317,7 @@ function buildConfig(config: Config, input: AgentConfigInput): AgentConfig {
   const model = input.model.trim();
   if (!model) throw new Error("模型不能为空");
   return {
+    id,
     supplier_id: input.supplier_id,
     protocol: input.protocol,
     model,
@@ -444,20 +496,58 @@ export async function mockInvoke<T>(
       return { config: clone(config), outcomes } as T;
     }
 
-    case "save_agent_config": {
+    case "add_binding": {
       const agent = agentKey(payload.agent as string);
       const env = envKey(payload.env as string);
       const input = payload.input as AgentConfigInput;
-      const built = buildConfig(config, input);
-      config.agents[agent] = { ...config.agents[agent], [env]: built };
+      const activate = Boolean(payload.activate);
+      const built = buildConfig(config, input, `bind-${id().slice(0, 8)}`);
+      const slot = config.agents[agent]?.[env] ?? { bindings: [] };
+      slot.bindings = [...(slot.bindings ?? []), built];
+      if (activate || !slot.active) slot.active = built.id;
+      config.agents[agent] = { ...config.agents[agent], [env]: slot };
       save(config);
       return clone(config) as T;
     }
 
-    case "clear_agent_config": {
+    case "edit_binding": {
       const agent = agentKey(payload.agent as string);
       const env = envKey(payload.env as string);
-      config.agents[agent] = { ...config.agents[agent], [env]: null };
+      const bindingId = payload.id as string;
+      const input = payload.input as AgentConfigInput;
+      const slot = config.agents[agent]?.[env];
+      if (!slot) throw new Error("绑定不存在");
+      const index = slot.bindings.findIndex((item) => item.id === bindingId);
+      if (index < 0) throw new Error("绑定不存在");
+      const built = buildConfig(config, input, bindingId);
+      slot.bindings[index] = built;
+      save(config);
+      return clone(config) as T;
+    }
+
+    case "delete_binding": {
+      const agent = agentKey(payload.agent as string);
+      const env = envKey(payload.env as string);
+      const bindingId = payload.id as string;
+      const slot = config.agents[agent]?.[env];
+      if (!slot) throw new Error("绑定不存在");
+      if (slot.active === bindingId) {
+        throw new Error("这条绑定正在使用中，请先启用别的绑定再删除");
+      }
+      slot.bindings = slot.bindings.filter((item) => item.id !== bindingId);
+      save(config);
+      return clone(config) as T;
+    }
+
+    case "activate_binding": {
+      const agent = agentKey(payload.agent as string);
+      const env = envKey(payload.env as string);
+      const bindingId = payload.id as string;
+      const slot = config.agents[agent]?.[env];
+      if (!slot?.bindings.some((item) => item.id === bindingId)) {
+        throw new Error("绑定不存在");
+      }
+      slot.active = bindingId;
       save(config);
       return clone(config) as T;
     }
@@ -499,8 +589,8 @@ export async function mockInvoke<T>(
       const report: MergeReport = {
         suppliers_added: 0,
         suppliers_updated: config.suppliers.length,
-        configs_added: 0,
-        configs_updated: 4,
+        bindings_added: 0,
+        bindings_updated: 4,
       };
       if (config.sync) config.sync.last_synced_at = new Date().toISOString();
       save(config);

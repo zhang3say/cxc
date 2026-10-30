@@ -155,6 +155,7 @@ mod tests {
 
     fn config() -> AgentConfig {
         AgentConfig {
+            id: "b1".to_string(),
             supplier_id: "abcdef1234567890".to_string(),
             protocol: Protocol::ChatCompletions,
             model: "gpt-5".to_string(),

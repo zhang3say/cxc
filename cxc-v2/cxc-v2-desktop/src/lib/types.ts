@@ -35,8 +35,9 @@ export type GrokWebSearch =
   | { mode: "model"; model: string }
   | { mode: "unset" };
 
-/** 某个 Agent（工具 + 环境）唯一的一份配置。 */
+/** 某个 Agent（工具 + 环境）下的一条绑定。 */
 export interface AgentConfig {
+  id: string;
   supplier_id: string;
   protocol: Protocol;
   model: string;
@@ -48,9 +49,15 @@ export interface AgentConfig {
   grok_web_search?: GrokWebSearch;
 }
 
+/** 一个 (工具, 环境) 下保存的绑定与当前使用中的那条。 */
+export interface AgentSlot {
+  active?: string | null;
+  bindings: AgentConfig[];
+}
+
 export interface AgentEnvs {
-  wsl?: AgentConfig | null;
-  windows?: AgentConfig | null;
+  wsl?: AgentSlot | null;
+  windows?: AgentSlot | null;
 }
 
 export interface Agents {
@@ -144,8 +151,8 @@ export interface ImportReport {
 export interface MergeReport {
   suppliers_added: number;
   suppliers_updated: number;
-  configs_added: number;
-  configs_updated: number;
+  bindings_added: number;
+  bindings_updated: number;
 }
 
 export interface UpdateInfo {
@@ -248,12 +255,23 @@ export const REASONING_OPTIONS: Record<AgentKind, string[]> = {
   opencode: ["minimal", "low", "medium", "high", "xhigh"],
 };
 
-export function configOf(
+export function slotOf(
+  config: Config,
+  kind: AgentKind,
+  env: Env,
+): AgentSlot | undefined {
+  return config.agents[kind]?.[env] ?? undefined;
+}
+
+/** 当前使用中的绑定。`active` 指向不存在的 id 时视为没有。 */
+export function activeBinding(
   config: Config,
   kind: AgentKind,
   env: Env,
 ): AgentConfig | undefined {
-  return config.agents[kind]?.[env] ?? undefined;
+  const slot = slotOf(config, kind, env);
+  if (!slot?.active) return undefined;
+  return slot.bindings.find((binding) => binding.id === slot.active);
 }
 
 export function emptyDirs(): CustomDirs {

@@ -212,6 +212,7 @@ mod tests {
 
     fn config() -> AgentConfig {
         AgentConfig {
+            id: "b1".to_string(),
             supplier_id: "abcdef1234567890".to_string(),
             protocol: Protocol::Messages,
             model: "claude-sonnet".to_string(),

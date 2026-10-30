@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
-use crate::agent::{self, AgentConfigInput, AgentKind, ClaudeModels, GrokWebSearch};
+use crate::agent::{self, AgentConfigInput, AgentKind, AgentSlot, ClaudeModels, GrokWebSearch};
 use crate::config::{self, Config, Env};
 use crate::protocol::Protocol;
 use crate::supplier::{self, SupplierInput};
@@ -231,17 +231,30 @@ pub(crate) fn import_agent(
     let windows = pick(providers, active_windows, false);
 
     if let Some(config) = build_config(cfg, kind, wsl, supplier_ids, report)
-        && cfg.config_of(kind, Env::Wsl).is_none()
+        && cfg.agent(kind).get(Env::Wsl).is_none()
     {
-        cfg.agent_mut(kind).set(Env::Wsl, Some(config));
+        cfg.agent_mut(kind)
+            .set(Env::Wsl, Some(single_binding(config)));
         report.configs += 1;
     }
     if let Some(windows) = windows
         && let Some(config) = build_config(cfg, kind, windows, supplier_ids, report)
-        && cfg.config_of(kind, Env::Windows).is_none()
+        && cfg.agent(kind).get(Env::Windows).is_none()
     {
-        cfg.agent_mut(kind).set(Env::Windows, Some(config));
+        cfg.agent_mut(kind)
+            .set(Env::Windows, Some(single_binding(config)));
         report.configs += 1;
+    }
+}
+
+/// 旧版每个 provider 导入成一条绑定，并设为使用中。
+fn single_binding(mut config: crate::agent::AgentConfig) -> AgentSlot {
+    if config.id.is_empty() {
+        config.id = agent::new_binding_id();
+    }
+    AgentSlot {
+        active: Some(config.id.clone()),
+        bindings: vec![config],
     }
 }
 
@@ -352,7 +365,7 @@ fn build_config(
         grok_web_search: provider.grok_web_search.clone(),
     };
 
-    match agent::build_config(cfg, kind, input) {
+    match agent::build_binding(cfg, kind, input) {
         Ok(config) => Some(config),
         Err(error) => {
             report
@@ -474,6 +487,12 @@ grok_custom_dir: ''
             Some("claude-sonnet")
         );
         assert!(cfg.config_of(AgentKind::Claude, Env::Windows).is_none());
+
+        // 每条导入的配置都是一条使用中的绑定
+        let slot = cfg.agent(AgentKind::Codex).get(Env::Wsl).unwrap();
+        assert_eq!(slot.bindings.len(), 1);
+        assert_eq!(slot.active.as_deref(), Some(slot.bindings[0].id.as_str()));
+        assert!(!slot.bindings[0].id.is_empty());
     }
 
     #[test]

@@ -234,26 +234,40 @@ export default function App() {
     return result.result;
   };
 
-  const saveAgentConfig = async (input: AgentConfigInput) => {
+  const addBinding = async (input: AgentConfigInput, activate: boolean) => {
     setSaving(true);
     try {
-      const updated = await api.saveAgentConfig(agent, env, input);
+      const updated = await api.addBinding(agent, env, input, activate);
       setConfig(updated);
-      showToast(t.savedAndWritten, "success");
+      showToast(activate ? t.bindingActivated : t.bindingSaved, "success");
     } catch (error) {
-      showToast(`${t.writeFailed}: ${errorText(error)}`, "error");
+      showToast(errorText(error), "error");
       throw error;
     } finally {
       setSaving(false);
     }
   };
 
-  const rewriteAgent = async () => {
+  const editBinding = async (id: string, input: AgentConfigInput) => {
     setSaving(true);
     try {
-      const updated = await api.rewriteAgent(agent, env);
+      const updated = await api.editBinding(agent, env, id, input);
       setConfig(updated);
-      showToast(t.rewritten, "success");
+      showToast(t.bindingSaved, "success");
+    } catch (error) {
+      showToast(errorText(error), "error");
+      throw error;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activateBinding = async (binding: { id: string }) => {
+    setSaving(true);
+    try {
+      const updated = await api.activateBinding(agent, env, binding.id);
+      setConfig(updated);
+      showToast(t.bindingActivated, "success");
     } catch (error) {
       showToast(errorText(error), "error");
     } finally {
@@ -261,15 +275,15 @@ export default function App() {
     }
   };
 
-  const clearAgentConfig = async () => {
+  const deleteBinding = async (binding: { id: string }) => {
     setConfirm({
-      title: t.clearConfig,
+      title: t.delete,
       description: `${agent} · ${env}`,
-      confirmLabel: t.clearConfig,
+      confirmLabel: t.delete,
       onConfirm: async () => {
-        const updated = await api.clearAgentConfig(agent, env);
+        const updated = await api.deleteBinding(agent, env, binding.id);
         setConfig(updated);
-        showToast(t.cleared, "success");
+        showToast(t.bindingDeleted, "success");
       },
     });
   };
@@ -296,7 +310,7 @@ export default function App() {
           : await api.syncMerge();
     setConfig(result.config);
     showToast(
-      `${t.syncDone} · +${result.report.suppliers_added} / ~${result.report.configs_updated}`,
+      `${t.syncDone} · +${result.report.suppliers_added} / ~${result.report.bindings_updated}`,
       "success",
     );
   };
@@ -368,9 +382,10 @@ export default function App() {
           onEnv={setEnv}
           t={t}
           busy={saving}
-          onSave={saveAgentConfig}
-          onRewrite={rewriteAgent}
-          onClear={clearAgentConfig}
+          onAdd={addBinding}
+          onEdit={editBinding}
+          onDelete={deleteBinding}
+          onActivate={activateBinding}
           onTest={testModel}
         />
       );
