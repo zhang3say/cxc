@@ -2,7 +2,6 @@ import { Bot, Moon, Plus, Search, Server, Settings2, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Messages } from "@/lib/i18n";
-import type { Source } from "@/lib/types";
 import { WindowControls, WindowsWindowControls } from "./WindowControls";
 
 export type Section = "suppliers" | "agents" | "settings";
@@ -10,8 +9,6 @@ export type Section = "suppliers" | "agents" | "settings";
 interface HeaderProps {
   section: Section;
   onSection: (section: Section) => void;
-  source: Source;
-  onToggleSource: () => void;
   search: string;
   onSearch: (value: string) => void;
   onAdd: () => void;
@@ -30,8 +27,6 @@ const sections: { key: Section; icon: typeof Server; label: (t: Messages) => str
 export function Header({
   section,
   onSection,
-  source,
-  onToggleSource,
   search,
   onSearch,
   onAdd,
@@ -74,20 +69,6 @@ export function Header({
           ))}
         </div>
 
-        <button
-          onClick={onToggleSource}
-          className="flex shrink-0 items-center gap-1.5 rounded border border-border/40 bg-muted/30 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground shadow-[inset_0_-1px_0_rgba(0,0,0,0.02)] transition-colors hover:bg-muted/60 hover:text-foreground"
-          title={`${t.sourceLabel}: ${source === "wsl" ? "WSL" : "App"}`}
-        >
-          <span
-            className={`size-1.5 rounded-full ${
-              source === "wsl"
-                ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]"
-                : "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.4)]"
-            }`}
-          />
-          {source === "wsl" ? "WSL" : "App"}
-        </button>
       </div>
 
       <div className="cxc-no-drag flex min-w-0 flex-1 items-center justify-end gap-2">
@@ -101,7 +82,7 @@ export function Header({
           />
         </div>
 
-        {section !== "settings" && (
+        {section === "suppliers" && (
           <Button
             onClick={onAdd}
             className="size-8 shrink-0 rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90"

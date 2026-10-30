@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::agent::AgentKind;
-use crate::config::Config;
+use crate::agent::{AgentKind, Agents};
+use crate::config::{Config, Env};
 use crate::protocol::Protocol;
 use crate::supplier::{Supplier, SupplierModel};
 
@@ -19,8 +19,8 @@ pub enum SyncMode {
 pub struct MergeReport {
     pub suppliers_added: usize,
     pub suppliers_updated: usize,
-    pub bindings_added: usize,
-    pub bindings_updated: usize,
+    pub configs_added: usize,
+    pub configs_updated: usize,
 }
 
 pub fn merge_payload(cfg: &mut Config, payload: SyncPayload) -> MergeReport {
@@ -50,46 +50,51 @@ pub fn merge_payload(cfg: &mut Config, payload: SyncPayload) -> MergeReport {
     }
 
     for kind in AgentKind::ALL {
-        let remote_bindings = payload.agents.bindings(kind).to_vec();
-        for mut binding in remote_bindings {
-            if let Some(supplier_id) = id_map.get(&binding.supplier_id) {
-                binding.supplier_id = supplier_id.clone();
+        for env in Env::ALL {
+            let Some(remote) = payload.agents.get(kind).get(env).cloned() else {
+                continue;
+            };
+            let mut remote = remote;
+            if let Some(supplier_id) = id_map.get(&remote.supplier_id) {
+                remote.supplier_id = supplier_id.clone();
             }
-            if cfg.supplier(&binding.supplier_id).is_none() {
+            if cfg.supplier(&remote.supplier_id).is_none() {
                 continue;
             }
             let agent = cfg.agent_mut(kind);
-            if let Some(local) = agent
-                .bindings
-                .iter_mut()
-                .find(|local| local.id == binding.id)
-            {
-                *local = binding;
-                report.bindings_updated += 1;
+            if agent.get(env).is_some() {
+                report.configs_updated += 1;
             } else {
-                agent.bindings.push(binding);
-                report.bindings_added += 1;
+                report.configs_added += 1;
             }
+            agent.set(env, Some(remote));
         }
     }
 
-    clear_invalid_active(cfg);
     report
 }
 
 pub fn overwrite_payload(cfg: &mut Config, payload: SyncPayload) -> MergeReport {
     let report = MergeReport {
         suppliers_added: payload.suppliers.len(),
-        bindings_added: AgentKind::ALL
-            .iter()
-            .map(|kind| payload.agents.bindings(*kind).len())
-            .sum(),
+        configs_added: count_configs(&payload.agents),
         ..MergeReport::default()
     };
     cfg.suppliers = payload.suppliers;
-    payload.agents.apply_to(&mut cfg.agents);
-    clear_invalid_active(cfg);
+    cfg.agents = payload.agents;
     report
+}
+
+fn count_configs(agents: &Agents) -> usize {
+    AgentKind::ALL
+        .iter()
+        .map(|kind| {
+            Env::ALL
+                .iter()
+                .filter(|env| agents.get(*kind).get(**env).is_some())
+                .count()
+        })
+        .sum()
 }
 
 fn merge_supplier(local: &mut Supplier, remote: &Supplier) {
@@ -133,26 +138,11 @@ fn same_endpoint(left: &Supplier, right: &Supplier) -> bool {
         && left.api_key.trim() == right.api_key.trim()
 }
 
-fn clear_invalid_active(cfg: &mut Config) {
-    for kind in AgentKind::ALL {
-        let agent = cfg.agent_mut(kind);
-        if let Some(id) = agent.active_app.clone()
-            && agent.binding(&id).is_none()
-        {
-            agent.active_app = None;
-        }
-        if let Some(id) = agent.active_wsl.clone()
-            && agent.binding(&id).is_none()
-        {
-            agent.active_wsl = None;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{BindingInput, add_binding};
+    use crate::agent::AgentConfig;
+    use crate::protocol::Protocol;
     use crate::supplier::{SupplierInput, add_supplier};
 
     fn config_with_supplier() -> (Config, String) {
@@ -169,53 +159,64 @@ mod tests {
         )
         .unwrap();
         let id = supplier.id.clone();
-        add_binding(
-            &mut cfg,
-            AgentKind::Codex,
-            BindingInput {
+        cfg.agent_mut(AgentKind::Codex).set(
+            Env::Wsl,
+            Some(AgentConfig {
                 supplier_id: id.clone(),
                 protocol: Protocol::Responses,
                 model: "gpt-5".to_string(),
-                ..BindingInput::default()
-            },
-        )
-        .unwrap();
+                reasoning_effort: None,
+                plan_reasoning_effort: None,
+                context_length: None,
+                compact_ratio: None,
+                claude_models: None,
+                grok_web_search: None,
+            }),
+        );
         (cfg, id)
     }
 
     #[test]
-    fn merge_is_additive_and_remaps_supplier_ids() {
+    fn merge_remaps_supplier_ids_and_updates_configs() {
         let (mut local, local_supplier) = config_with_supplier();
         let (remote_cfg, _) = config_with_supplier();
         let mut payload = super::super::build_payload(&remote_cfg);
         payload.suppliers[0].id = "remote-id".to_string();
-        for binding in &mut payload.agents.codex {
-            binding.supplier_id = "remote-id".to_string();
-            binding.model = "gpt-5-mini".to_string();
+        if let Some(config) = payload.agents.codex.wsl.as_mut() {
+            config.supplier_id = "remote-id".to_string();
+            config.model = "gpt-5-mini".to_string();
         }
+        payload.agents.codex.windows = payload.agents.codex.wsl.clone();
+
         let report = merge_payload(&mut local, payload);
         assert_eq!(local.suppliers.len(), 1);
         assert_eq!(report.suppliers_updated, 1);
-        assert_eq!(local.agents.codex.bindings.len(), 2);
+        assert_eq!(report.configs_updated, 1);
+        assert_eq!(report.configs_added, 1);
+        assert_eq!(
+            local
+                .config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("gpt-5-mini")
+        );
         assert!(
             local
                 .agents
                 .codex
-                .bindings
-                .iter()
-                .all(|binding| binding.supplier_id == local_supplier)
+                .wsl
+                .as_ref()
+                .is_some_and(|config| config.supplier_id == local_supplier)
         );
     }
 
     #[test]
-    fn overwrite_replaces_bindings_and_clears_active() {
+    fn overwrite_replaces_agents() {
         let (mut local, _) = config_with_supplier();
-        local.agent_mut(AgentKind::Codex).active_app =
-            Some(local.agents.codex.bindings[0].id.clone());
         let (remote_cfg, _) = config_with_supplier();
         let payload = super::super::build_payload(&remote_cfg);
         overwrite_payload(&mut local, payload);
-        assert_eq!(local.agents.codex.bindings.len(), 1);
-        assert!(local.agents.codex.active_app.is_none());
+        assert_eq!(local.suppliers.len(), 1);
+        assert!(local.agents.codex.wsl.is_some());
+        assert!(local.agents.codex.windows.is_none());
     }
 }

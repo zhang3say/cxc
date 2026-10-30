@@ -5,9 +5,12 @@ use thiserror::Error;
 
 use crate::supplier::Supplier;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Protocol {
+    #[default]
     ChatCompletions,
     Responses,
     Messages,

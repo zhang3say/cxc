@@ -2,57 +2,84 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::agent::{AgentKind, CustomDirs};
-use crate::config::Source;
+use crate::config::Env;
 use crate::target;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DetectedAgent {
     pub kind: AgentKind,
+    pub env: Env,
     pub installed: bool,
     pub binary: Option<String>,
     pub config_dir: Option<String>,
     pub configured: bool,
-    pub source: Source,
 }
 
-pub fn detect_all(source: Source, custom_dirs: &CustomDirs) -> Vec<DetectedAgent> {
-    AgentKind::ALL
-        .iter()
-        .map(|kind| detect_one(*kind, source, custom_dirs))
-        .collect()
+/// 当前机器能访问到的环境。不可达的环境不会出现在界面上。
+pub fn reachable_envs() -> Vec<Env> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut envs = vec![Env::Wsl];
+        if std::path::Path::new("/mnt/c/Windows/System32/cmd.exe").exists() {
+            envs.push(Env::Windows);
+        }
+        envs
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut envs = vec![Env::Windows];
+        if wsl_available() {
+            envs.insert(0, Env::Wsl);
+        }
+        envs
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        vec![Env::Wsl]
+    }
 }
 
-pub fn detect_one(kind: AgentKind, source: Source, custom_dirs: &CustomDirs) -> DetectedAgent {
-    let binary = find_binary(kind.binary_name(), source);
-    let config_dir = target::resolve_config_dir(kind, source, custom_dirs.get(kind)).ok();
+pub fn detect_all(custom_dirs: &CustomDirs) -> Vec<DetectedAgent> {
+    let mut detected = Vec::new();
+    for env in reachable_envs() {
+        for kind in AgentKind::ALL {
+            detected.push(detect_one(kind, env, custom_dirs));
+        }
+    }
+    detected
+}
+
+pub fn detect_one(kind: AgentKind, env: Env, custom_dirs: &CustomDirs) -> DetectedAgent {
+    let binary = find_binary(kind.binary_name(), env);
+    let config_dir = target::resolve_config_dir(kind, env, custom_dirs.get(kind, env)).ok();
     let configured = config_dir.as_ref().map(|dir| dir.exists()).unwrap_or(false);
 
     DetectedAgent {
         kind,
+        env,
         installed: binary.is_some(),
         binary: binary.map(|path| path.to_string_lossy().to_string()),
         config_dir: config_dir.map(|path| path.to_string_lossy().to_string()),
         configured,
-        source,
     }
 }
 
-fn find_binary(name: &str, source: Source) -> Option<PathBuf> {
+fn find_binary(name: &str, env: Env) -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        if source == Source::App
-            && let Some(path) = windows_which(name)
-        {
-            return Some(path);
+        if env == Env::Windows {
+            return windows_which(name);
         }
     }
     #[cfg(target_os = "windows")]
     {
-        if source == Source::Wsl {
+        if env == Env::Wsl {
             return wsl_which(name);
         }
     }
-    let _ = source;
+    let _ = env;
     which::which(name).ok()
 }
 
@@ -83,6 +110,15 @@ fn windows_which(name: &str) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "windows")]
+fn wsl_available() -> bool {
+    std::process::Command::new("wsl")
+        .args(["-e", "true"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
 fn wsl_which(name: &str) -> Option<PathBuf> {
     let output = std::process::Command::new("wsl")
         .args(["-e", "sh", "-lc", &format!("command -v {name}")])
@@ -109,10 +145,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detects_current_host_agents() {
+    fn reachable_envs_always_contains_local_env() {
+        let envs = reachable_envs();
+        assert!(!envs.is_empty());
+        assert!(envs.contains(&Env::Wsl) || envs.contains(&Env::Windows));
+    }
+
+    #[test]
+    fn detects_every_reachable_agent() {
         let dirs = CustomDirs::default();
-        let agents = detect_all(Source::Wsl, &dirs);
-        assert_eq!(agents.len(), 4);
-        assert_eq!(agents[0].kind, AgentKind::Codex);
+        let agents = detect_all(&dirs);
+        assert_eq!(agents.len(), AgentKind::ALL.len() * reachable_envs().len());
+        assert!(agents.iter().any(|agent| agent.kind == AgentKind::Codex));
     }
 }

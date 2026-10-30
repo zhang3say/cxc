@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertCircle, CheckCircle2, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,25 +14,24 @@ import { Header, type Section } from "@/components/layout/Header";
 import { SupplierPage } from "@/components/suppliers/SupplierPage";
 import { SupplierDialog } from "@/components/suppliers/SupplierDialog";
 import { AgentPage } from "@/components/agents/AgentPage";
-import { BindingDialog } from "@/components/agents/BindingDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, isTauri } from "@/lib/api";
 import { messages, type Lang } from "@/lib/i18n";
 import type {
+  AgentConfigInput,
   AgentKind,
-  Binding,
-  BindingInput,
   Config,
   CustomDirs,
   DetectedAgent,
+  Env,
   ModelTestResult,
   Protocol,
-  Source,
   Supplier,
   SupplierInput,
   SyncConfig,
 } from "@/lib/types";
+import { emptyDirs } from "@/lib/types";
+import { errorText } from "@/lib/utils";
 
 type ToastKind = "success" | "error" | "info";
 interface Toast {
@@ -50,20 +50,17 @@ interface ConfirmState {
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [detected, setDetected] = useState<DetectedAgent[]>([]);
+  const [envs, setEnvs] = useState<Env[]>(["wsl"]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("suppliers");
   const [agent, setAgent] = useState<AgentKind>("codex");
-  const [showAllAgents, setShowAllAgents] = useState(false);
+  const [env, setEnv] = useState<Env>("wsl");
   const [search, setSearch] = useState("");
   const [supplierDialog, setSupplierDialog] = useState<{
     open: boolean;
     supplier: Supplier | null;
   }>({ open: false, supplier: null });
-  const [bindingDialog, setBindingDialog] = useState<{
-    open: boolean;
-    binding: Binding | null;
-  }>({ open: false, binding: null });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -95,18 +92,22 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [nextConfig, nextDetected, nextVersion, nextPath] = await Promise.all([
-        api.getConfig(),
-        api.detectAgents(),
-        api.getAppVersion(),
-        api.getPathEnv(),
-      ]);
+      const [nextConfig, nextEnvs, nextDetected, nextVersion, nextPath] =
+        await Promise.all([
+          api.getConfig(),
+          api.getEnvs(),
+          api.detectAgents(),
+          api.getAppVersion(),
+          api.getPathEnv(),
+        ]);
       setConfig(nextConfig);
+      setEnvs(nextEnvs);
       setDetected(nextDetected);
       setVersion(nextVersion);
       setPathEnv(nextPath);
+      setEnv((current) => (nextEnvs.includes(current) ? current : (nextEnvs[0] ?? "wsl")));
     } catch (error) {
-      setLoadError(String(error));
+      setLoadError(errorText(error));
     } finally {
       setLoading(false);
     }
@@ -125,29 +126,7 @@ export default function App() {
     localStorage.setItem("cxc-v2-theme", theme);
   }, [theme]);
 
-  const changeLang = (next: Lang) => {
-    setLang(next);
-  };
-
-  const toggleSource = async () => {
-    if (!config) return;
-    const next: Source = config.source === "wsl" ? "app" : "wsl";
-    try {
-      const updated = await api.saveSettings(
-        next,
-        config.custom_dirs ?? { codex: "", claude: "", grok: "", opencode: "" },
-      );
-      setConfig(updated);
-      const nextDetected = await api.detectAgents();
-      setDetected(nextDetected);
-      showToast(t.sourceSwitched, "success");
-    } catch (error) {
-      showToast(String(error), "error");
-    }
-  };
-
   const submitSupplier = async (input: SupplierInput, probeAfterSave: boolean) => {
-    if (!config) return;
     setSaving(true);
     try {
       const updated = supplierDialog.supplier
@@ -163,7 +142,7 @@ export default function App() {
           const result = await api.probeSupplier(saved.id);
           setConfig(result.config);
           const added = result.report.added.length
-            ? result.report.added.map((item) => item).join(", ")
+            ? result.report.added.join(", ")
             : "—";
           showToast(`${t.probeDone}: +${added}`, "success");
         }
@@ -196,7 +175,7 @@ export default function App() {
         .join(" · ");
       showToast(`${t.probeDone} · ${summary}`, "success");
     } catch (error) {
-      showToast(String(error), "error");
+      showToast(errorText(error), "error");
     } finally {
       setBusy((current) => {
         const next = { ...current };
@@ -213,7 +192,7 @@ export default function App() {
       setConfig(result.config);
       showToast(`${t.modelsFetched}: ${result.models.length}`, "success");
     } catch (error) {
-      showToast(String(error), "error");
+      showToast(errorText(error), "error");
     } finally {
       setBusy((current) => {
         const next = { ...current };
@@ -231,7 +210,7 @@ export default function App() {
       const ok = result.outcomes.filter((outcome) => outcome.result.ok).length;
       showToast(`${t.testDone}: ${ok}/${result.outcomes.length}`, "success");
     } catch (error) {
-      showToast(String(error), "error");
+      showToast(errorText(error), "error");
     } finally {
       setBusy((current) => {
         const next = { ...current };
@@ -242,11 +221,11 @@ export default function App() {
   };
 
   const testModel = async (
-    supplier: Supplier,
+    supplierId: string,
     model: string,
     protocol: Protocol,
   ): Promise<ModelTestResult> => {
-    const result = await api.testSupplierModel(supplier.id, model, protocol);
+    const result = await api.testSupplierModel(supplierId, model, protocol);
     setConfig(result.config);
     showToast(
       `${model} · ${result.result.ok ? t.success : t.failed} · ${result.result.latency_ms} ms`,
@@ -255,70 +234,48 @@ export default function App() {
     return result.result;
   };
 
-  const submitBinding = async (input: BindingInput) => {
-    if (!config) return;
+  const saveAgentConfig = async (input: AgentConfigInput) => {
     setSaving(true);
     try {
-      const updated = bindingDialog.binding
-        ? await api.editBinding(agent, bindingDialog.binding.id, input)
-        : await api.addBinding(agent, input);
+      const updated = await api.saveAgentConfig(agent, env, input);
       setConfig(updated);
-      setBindingDialog({ open: false, binding: null });
-      showToast(bindingDialog.binding ? t.editBinding : t.addBinding, "success");
+      showToast(t.savedAndWritten, "success");
+    } catch (error) {
+      showToast(`${t.writeFailed}: ${errorText(error)}`, "error");
+      throw error;
     } finally {
       setSaving(false);
     }
   };
 
-  const deleteBinding = (binding: Binding) => {
+  const rewriteAgent = async () => {
+    setSaving(true);
+    try {
+      const updated = await api.rewriteAgent(agent, env);
+      setConfig(updated);
+      showToast(t.rewritten, "success");
+    } catch (error) {
+      showToast(errorText(error), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearAgentConfig = async () => {
     setConfirm({
-      title: t.deleteBinding,
-      description: t.bindingActive,
-      confirmLabel: t.delete,
+      title: t.clearConfig,
+      description: `${agent} · ${env}`,
+      confirmLabel: t.clearConfig,
       onConfirm: async () => {
-        const updated = await api.deleteBinding(agent, binding.id);
+        const updated = await api.clearAgentConfig(agent, env);
         setConfig(updated);
-        showToast(t.deleteBinding, "success");
+        showToast(t.cleared, "success");
       },
     });
   };
 
-  const activateBinding = async (binding: Binding) => {
-    if (!config) return;
-    setSaving(true);
-    try {
-      const updated = await api.activateBinding(agent, config.source, binding.id);
-      setConfig(updated);
-      showToast(t.active, "success");
-    } catch (error) {
-      showToast(String(error), "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const reloadActive = async () => {
-    if (!config) return;
-    setSaving(true);
-    try {
-      const updated = await api.reloadActive(agent, config.source);
-      setConfig(updated);
-      showToast(t.reload, "success");
-    } catch (error) {
-      showToast(String(error), "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testBinding = async (binding: Binding) => {
-    const supplier = config?.suppliers.find((item) => item.id === binding.supplier_id);
-    if (!supplier) return;
-    await testModel(supplier, binding.model, binding.protocol);
-  };
-
-  const saveSettings = async (source: Source, customDirs: CustomDirs) => {
-    const updated = await api.saveSettings(source, customDirs);
+  const saveSettings = async (customDirs: CustomDirs) => {
+    const updated = await api.saveSettings(customDirs);
     setConfig(updated);
     const nextDetected = await api.detectAgents();
     setDetected(nextDetected);
@@ -339,14 +296,17 @@ export default function App() {
           : await api.syncMerge();
     setConfig(result.config);
     showToast(
-      `${t.syncDone} · +${result.report.suppliers_added} / ~${result.report.bindings_updated}`,
+      `${t.syncDone} · +${result.report.suppliers_added} / ~${result.report.configs_updated}`,
       "success",
     );
   };
 
   const importLegacy = async () => {
     const report = await api.importLegacyConfig();
-    showToast(`${report.reason} · ${report.suppliers} / ${report.bindings}`, report.imported ? "success" : "info");
+    showToast(
+      `${report.reason} · ${report.suppliers} / ${report.configs}`,
+      report.imported ? "success" : "info",
+    );
     await reload();
   };
 
@@ -367,16 +327,7 @@ export default function App() {
         }
       }
     } catch (error) {
-      showToast(String(error), "error");
-    }
-  };
-
-  const activeAddLabel = section === "agents" ? t.addBinding : t.addSupplier;
-  const handleAdd = () => {
-    if (section === "agents") {
-      setBindingDialog({ open: true, binding: null });
-    } else {
-      setSupplierDialog({ open: true, supplier: null });
+      showToast(errorText(error), "error");
     }
   };
 
@@ -393,9 +344,12 @@ export default function App() {
       return (
         <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-red-200 bg-red-50 text-red-600">
           <AlertCircle className="size-6" />
-          <p className="text-xs font-semibold">{t.errorPrefix}{loadError}</p>
+          <p className="text-xs font-semibold">
+            {t.errorPrefix}
+            {loadError}
+          </p>
           <Button size="sm" variant="outline" onClick={() => void reload()}>
-            {t.reload}
+            {t.redetect}
           </Button>
         </div>
       );
@@ -406,20 +360,18 @@ export default function App() {
         <AgentPage
           config={config}
           detected={detected}
+          envs={envs}
           agent={agent}
-          source={config.source}
+          env={env}
           search={search}
           onAgent={setAgent}
-          showAll={showAllAgents}
-          onShowAll={setShowAllAgents}
+          onEnv={setEnv}
           t={t}
           busy={saving}
-          onAddBinding={() => setBindingDialog({ open: true, binding: null })}
-          onEditBinding={(binding) => setBindingDialog({ open: true, binding })}
-          onDeleteBinding={deleteBinding}
-          onActivate={activateBinding}
-          onReload={reloadActive}
-          onTestBinding={testBinding}
+          onSave={saveAgentConfig}
+          onRewrite={rewriteAgent}
+          onClear={clearAgentConfig}
+          onTest={testModel}
         />
       );
     }
@@ -435,7 +387,9 @@ export default function App() {
         onProbe={probeSupplier}
         onFetchModels={fetchModels}
         onTestAll={testAll}
-        onTestModel={testModel}
+        onTestModel={(supplier, model, protocol) =>
+          testModel(supplier.id, model, protocol)
+        }
       />
     );
   }, [
@@ -444,8 +398,9 @@ export default function App() {
     config,
     section,
     agent,
+    env,
+    envs,
     detected,
-    showAllAgents,
     search,
     busy,
     saving,
@@ -458,12 +413,10 @@ export default function App() {
       <Header
         section={section}
         onSection={setSection}
-        source={config?.source ?? "wsl"}
-        onToggleSource={() => void toggleSource()}
         search={search}
         onSearch={setSearch}
-        onAdd={handleAdd}
-        addLabel={activeAddLabel}
+        onAdd={() => setSupplierDialog({ open: true, supplier: null })}
+        addLabel={t.addSupplier}
         onSettings={() => setSettingsOpen(true)}
         theme={theme}
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
@@ -483,28 +436,26 @@ export default function App() {
         onSubmit={submitSupplier}
       />
 
-      <BindingDialog
-        open={bindingDialog.open}
-        agent={agent}
-        binding={bindingDialog.binding}
-        config={config ?? { version: 2, source: "wsl", suppliers: [], agents: { codex: { bindings: [] }, claude: { bindings: [] }, grok: { bindings: [] }, opencode: { bindings: [] } }, custom_dirs: { codex: "", claude: "", grok: "", opencode: "" }, migrated_from_v1: false }}
-        t={t}
-        saving={saving}
-        onClose={() => setBindingDialog({ open: false, binding: null })}
-        onSubmit={submitBinding}
-        onTest={async (supplierId, model, protocol) => {
-          const supplier = config?.suppliers.find((item) => item.id === supplierId);
-          if (!supplier) throw new Error(t.selectSupplier);
-          return testModel(supplier, model, protocol);
-        }}
-      />
-
       <SettingsDialog
         open={settingsOpen}
-        config={config ?? { version: 2, source: "wsl", suppliers: [], agents: { codex: { bindings: [] }, claude: { bindings: [] }, grok: { bindings: [] }, opencode: { bindings: [] } }, custom_dirs: { codex: "", claude: "", grok: "", opencode: "" }, migrated_from_v1: false }}
+        config={
+          config ?? {
+            version: 3,
+            suppliers: [],
+            agents: {
+              codex: {},
+              claude: {},
+              grok: {},
+              opencode: {},
+            },
+            custom_dirs: emptyDirs(),
+            migrated_from_v1: false,
+          }
+        }
+        envs={envs}
         t={t}
         lang={lang}
-        onLang={changeLang}
+        onLang={setLang}
         onClose={() => setSettingsOpen(false)}
         onSave={saveSettings}
         onSyncSave={saveSync}
@@ -536,7 +487,7 @@ export default function App() {
                 const action = confirm?.onConfirm;
                 setConfirm(null);
                 if (action) {
-                  void action().catch((error) => showToast(String(error), "error"));
+                  void action().catch((error) => showToast(errorText(error), "error"));
                 }
               }}
             >

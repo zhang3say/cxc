@@ -7,8 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-use crate::agent::{AgentKind, Binding};
-use crate::config::Source;
+use crate::agent::{AgentConfig, AgentKind};
+use crate::config::Env;
 use crate::supplier::Supplier;
 
 #[derive(Error, Debug)]
@@ -29,23 +29,23 @@ pub enum TargetError {
     },
     #[error("找不到用户家目录")]
     NoHomeDir,
-    #[error("找不到 {agent} 的配置目录：{path}\n\n建议：在设置里填写自定义目录")]
-    ConfigDirNotFound { agent: &'static str, path: String },
+    #[error("找不到 {agent} 在 {env} 环境下的配置目录：{path}\n\n建议：在设置里填写自定义目录")]
+    ConfigDirNotFound {
+        agent: &'static str,
+        env: &'static str,
+        path: String,
+    },
 }
 
 pub trait AgentAdapter {
     fn kind(&self) -> AgentKind;
-    fn config_path(
-        &self,
-        source: Source,
-        custom_dir: Option<&Path>,
-    ) -> Result<PathBuf, TargetError>;
+    fn config_path(&self, env: Env, custom_dir: Option<&Path>) -> Result<PathBuf, TargetError>;
     fn apply(
         &self,
         supplier: &Supplier,
-        binding: &Binding,
+        config: &AgentConfig,
         custom_dir: Option<&Path>,
-        source: Source,
+        env: Env,
     ) -> Result<(), TargetError>;
 }
 
@@ -58,10 +58,10 @@ pub fn adapter_for(kind: AgentKind) -> Box<dyn AgentAdapter> {
     }
 }
 
-/// 解析 agent 的配置目录。自定义目录优先；否则按来源推导。
+/// 解析 agent 在指定环境下的配置目录。自定义目录优先；否则按环境推导。
 pub fn resolve_config_dir(
     kind: AgentKind,
-    source: Source,
+    env: Env,
     custom_dir: Option<&Path>,
 ) -> Result<PathBuf, TargetError> {
     if let Some(dir) = custom_dir {
@@ -70,26 +70,25 @@ pub fn resolve_config_dir(
 
     #[cfg(target_os = "linux")]
     {
-        match source {
-            Source::Wsl => {
+        match env {
+            Env::Wsl => {
                 let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
                 Ok(default_dir_in_home(kind, &home))
             }
-            Source::App => {
-                let win_home =
-                    windows_home_from_wsl(kind).ok_or_else(|| TargetError::ConfigDirNotFound {
-                        agent: kind.display_name(),
-                        path: "Windows 用户目录".to_string(),
-                    })?;
-                Ok(win_home)
+            Env::Windows => {
+                windows_home_from_wsl(kind).ok_or_else(|| TargetError::ConfigDirNotFound {
+                    agent: kind.display_name(),
+                    env: env.label(),
+                    path: "Windows 用户目录".to_string(),
+                })
             }
         }
     }
 
     #[cfg(target_os = "windows")]
     {
-        match source {
-            Source::App => {
+        match env {
+            Env::Windows => {
                 let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
                 if kind == AgentKind::OpenCode {
                     if let Some(appdata) = dirs::config_dir() {
@@ -98,10 +97,11 @@ pub fn resolve_config_dir(
                 }
                 Ok(default_dir_in_home(kind, &home))
             }
-            Source::Wsl => {
+            Env::Wsl => {
                 let home =
                     wsl_home_from_windows().ok_or_else(|| TargetError::ConfigDirNotFound {
                         agent: kind.display_name(),
+                        env: env.label(),
                         path: "WSL 用户目录".to_string(),
                     })?;
                 Ok(default_dir_in_home(kind, &home))
@@ -111,9 +111,17 @@ pub fn resolve_config_dir(
 
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
-        let _ = source;
-        let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
-        Ok(default_dir_in_home(kind, &home))
+        match env {
+            Env::Wsl => {
+                let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
+                Ok(default_dir_in_home(kind, &home))
+            }
+            Env::Windows => Err(TargetError::ConfigDirNotFound {
+                agent: kind.display_name(),
+                env: env.label(),
+                path: "Windows 用户目录".to_string(),
+            }),
+        }
     }
 }
 

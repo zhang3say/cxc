@@ -2,8 +2,8 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::agent::{AgentKind, Binding, ClaudeModels, claude_model_for_context};
-use crate::config::Source;
+use crate::agent::{AgentConfig, AgentKind, ClaudeModels, claude_model_for_context};
+use crate::config::Env;
 use crate::supplier::Supplier;
 
 use super::{
@@ -29,28 +29,24 @@ impl AgentAdapter for ClaudeAdapter {
         AgentKind::Claude
     }
 
-    fn config_path(
-        &self,
-        source: Source,
-        custom_dir: Option<&Path>,
-    ) -> Result<PathBuf, TargetError> {
-        Ok(resolve_config_dir(AgentKind::Claude, source, custom_dir)?.join("settings.json"))
+    fn config_path(&self, env: Env, custom_dir: Option<&Path>) -> Result<PathBuf, TargetError> {
+        Ok(resolve_config_dir(AgentKind::Claude, env, custom_dir)?.join("settings.json"))
     }
 
     fn apply(
         &self,
         supplier: &Supplier,
-        binding: &Binding,
+        config: &AgentConfig,
         custom_dir: Option<&Path>,
-        source: Source,
+        env: Env,
     ) -> Result<(), TargetError> {
-        if binding.protocol != crate::protocol::Protocol::Messages {
+        if config.protocol != crate::protocol::Protocol::Messages {
             return Err(TargetError::ParseError(
                 "Claude 只支持 Anthropic Messages 协议".to_string(),
             ));
         }
 
-        let dir = resolve_config_dir(AgentKind::Claude, source, custom_dir)?;
+        let dir = resolve_config_dir(AgentKind::Claude, env, custom_dir)?;
         fs::create_dir_all(&dir).map_err(|error| TargetError::WriteError {
             path: dir.clone(),
             source: error,
@@ -70,60 +66,60 @@ impl AgentAdapter for ClaudeAdapter {
         if !settings.get("env").map(Value::is_object).unwrap_or(false) {
             settings["env"] = json!({});
         }
-        let env = settings["env"].as_object_mut().unwrap();
+        let env_obj = settings["env"].as_object_mut().unwrap();
 
-        env.insert(
+        env_obj.insert(
             "ANTHROPIC_BASE_URL".to_string(),
             json!(supplier.base_url.trim()),
         );
-        env.insert(
+        env_obj.insert(
             "ANTHROPIC_AUTH_TOKEN".to_string(),
             json!(supplier.api_key.trim()),
         );
-        env.remove("ANTHROPIC_API_KEY");
+        env_obj.remove("ANTHROPIC_API_KEY");
 
-        let context = binding.context_tokens();
-        let main = binding.model.trim();
+        let context = config.context_tokens();
+        let main = config.model.trim();
         let opus = tier_model(
-            binding.claude_models.as_ref(),
+            config.claude_models.as_ref(),
             |models| models.opus.as_ref(),
             main,
             context,
         );
         let sonnet = tier_model(
-            binding.claude_models.as_ref(),
+            config.claude_models.as_ref(),
             |models| models.sonnet.as_ref(),
             main,
             context,
         );
         let haiku = tier_model(
-            binding.claude_models.as_ref(),
+            config.claude_models.as_ref(),
             |models| models.haiku.as_ref(),
             main,
             context,
         );
         let subagent = tier_model(
-            binding.claude_models.as_ref(),
+            config.claude_models.as_ref(),
             |models| models.subagent.as_ref(),
             main,
             context,
         );
 
-        env.insert(
+        env_obj.insert(
             "ANTHROPIC_MODEL".to_string(),
             json!(claude_model_for_context(main, context)),
         );
-        env.insert("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), json!(opus));
-        env.insert("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), json!(sonnet));
-        env.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
-        env.insert(
+        env_obj.insert("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), json!(opus));
+        env_obj.insert("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), json!(sonnet));
+        env_obj.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
+        env_obj.insert(
             "ANTHROPIC_DEFAULT_FABLE_MODEL".to_string(),
             json!(claude_model_for_context(main, context)),
         );
-        env.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(subagent));
+        env_obj.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(subagent));
 
-        apply_reasoning_effort(&mut settings, binding);
-        apply_compact_window(&mut settings, binding);
+        apply_reasoning_effort(&mut settings, config);
+        apply_compact_window(&mut settings, config);
 
         let output = serde_json::to_string_pretty(&settings)
             .map_err(|error| TargetError::SerializeError(error.to_string()))?;
@@ -150,27 +146,27 @@ fn tier_model(
     claude_model_for_context(explicit.unwrap_or(main), context)
 }
 
-fn apply_compact_window(settings: &mut Value, binding: &Binding) {
-    let Some(env) = settings.get_mut("env").and_then(Value::as_object_mut) else {
+fn apply_compact_window(settings: &mut Value, config: &AgentConfig) {
+    let Some(env_obj) = settings.get_mut("env").and_then(Value::as_object_mut) else {
         return;
     };
-    if let Some(tokens) = binding.compact_token_limit() {
-        env.insert(
+    if let Some(tokens) = config.compact_token_limit() {
+        env_obj.insert(
             "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
             json!(tokens.to_string()),
         );
     } else {
-        env.remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+        env_obj.remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
     }
 }
 
-fn apply_reasoning_effort(settings: &mut Value, binding: &Binding) {
-    let Some(level) = binding.reasoning_effort_level() else {
+fn apply_reasoning_effort(settings: &mut Value, config: &AgentConfig) {
+    let Some(level) = config.reasoning_effort_level() else {
         if let Some(object) = settings.as_object_mut() {
             object.remove("effortLevel");
         }
-        if let Some(env) = settings.get_mut("env").and_then(Value::as_object_mut) {
-            env.remove("CLAUDE_CODE_EFFORT_LEVEL");
+        if let Some(env_obj) = settings.get_mut("env").and_then(Value::as_object_mut) {
+            env_obj.remove("CLAUDE_CODE_EFFORT_LEVEL");
         }
         return;
     };
@@ -178,8 +174,8 @@ fn apply_reasoning_effort(settings: &mut Value, binding: &Binding) {
     if let Some(object) = settings.as_object_mut() {
         object.remove("effortLevel");
     }
-    if let Some(env) = settings.get_mut("env").and_then(Value::as_object_mut) {
-        env.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), json!(level));
+    if let Some(env_obj) = settings.get_mut("env").and_then(Value::as_object_mut) {
+        env_obj.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), json!(level));
     }
     if let Some(models) = settings
         .get_mut("modelSettings")
@@ -214,9 +210,8 @@ mod tests {
         }
     }
 
-    fn binding() -> Binding {
-        Binding {
-            id: "b1".to_string(),
+    fn config() -> AgentConfig {
+        AgentConfig {
             supplier_id: "abcdef1234567890".to_string(),
             protocol: Protocol::Messages,
             model: "claude-sonnet".to_string(),
@@ -243,7 +238,7 @@ mod tests {
         )
         .unwrap();
         ClaudeAdapter::new()
-            .apply(&supplier(), &binding(), Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let settings: Value =
@@ -279,11 +274,11 @@ mod tests {
     #[test]
     fn rejects_non_messages_protocol() {
         let dir = TempDir::new().unwrap();
-        let mut binding = binding();
-        binding.protocol = Protocol::Responses;
+        let mut config = config();
+        config.protocol = Protocol::Responses;
         assert!(
             ClaudeAdapter::new()
-                .apply(&supplier(), &binding, Some(dir.path()), Source::Wsl)
+                .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
                 .is_err()
         );
     }

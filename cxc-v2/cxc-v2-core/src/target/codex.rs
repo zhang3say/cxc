@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
-use crate::agent::{AgentKind, Binding};
-use crate::config::Source;
+use crate::agent::{AgentConfig, AgentKind};
+use crate::config::Env;
 use crate::protocol::Protocol;
 use crate::supplier::Supplier;
 
@@ -42,22 +42,18 @@ impl AgentAdapter for CodexAdapter {
         AgentKind::Codex
     }
 
-    fn config_path(
-        &self,
-        source: Source,
-        custom_dir: Option<&Path>,
-    ) -> Result<PathBuf, TargetError> {
-        Ok(resolve_config_dir(AgentKind::Codex, source, custom_dir)?.join("config.toml"))
+    fn config_path(&self, env: Env, custom_dir: Option<&Path>) -> Result<PathBuf, TargetError> {
+        Ok(resolve_config_dir(AgentKind::Codex, env, custom_dir)?.join("config.toml"))
     }
 
     fn apply(
         &self,
         supplier: &Supplier,
-        binding: &Binding,
+        config: &AgentConfig,
         custom_dir: Option<&Path>,
-        source: Source,
+        env: Env,
     ) -> Result<(), TargetError> {
-        let dir = resolve_config_dir(AgentKind::Codex, source, custom_dir)?;
+        let dir = resolve_config_dir(AgentKind::Codex, env, custom_dir)?;
         fs::create_dir_all(&dir).map_err(|error| TargetError::WriteError {
             path: dir.clone(),
             source: error,
@@ -78,30 +74,30 @@ impl AgentAdapter for CodexAdapter {
             .map_err(|error: toml_edit::TomlError| TargetError::ParseError(error.to_string()))?;
 
         let key = provider_key(supplier);
-        doc["model"] = toml_edit::value(binding.model.trim());
+        doc["model"] = toml_edit::value(config.model.trim());
         doc["model_provider"] = toml_edit::value(&key);
         apply_optional_key(
             &mut doc,
             "model_reasoning_effort",
-            binding.reasoning_effort_level(),
+            config.reasoning_effort_level(),
         );
         apply_optional_key(
             &mut doc,
             "plan_mode_reasoning_effort",
-            binding.plan_reasoning_effort_level(),
+            config.plan_reasoning_effort_level(),
         );
-        apply_optional_int(&mut doc, "model_context_window", binding.context_tokens());
+        apply_optional_int(&mut doc, "model_context_window", config.context_tokens());
         apply_optional_int(
             &mut doc,
             "model_auto_compact_token_limit",
-            binding.compact_token_limit(),
+            config.compact_token_limit(),
         );
 
         ensure_table(&mut doc, "model_providers");
         ensure_standard_table(&mut doc, "model_providers", &key);
         let block = &mut doc["model_providers"][&key];
         block["base_url"] = toml_edit::value(supplier.base_url.trim());
-        block["wire_api"] = toml_edit::value(Self::wire_api(binding.protocol)?);
+        block["wire_api"] = toml_edit::value(Self::wire_api(config.protocol)?);
         block["name"] = toml_edit::value(&key);
         block["requires_openai_auth"] = toml_edit::value(true);
 
@@ -185,7 +181,7 @@ fn ensure_standard_table(doc: &mut DocumentMut, section: &str, key: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{AgentKind, Binding};
+    use crate::agent::{AgentConfig, AgentKind};
     use crate::supplier::Supplier;
     use tempfile::TempDir;
 
@@ -202,9 +198,8 @@ mod tests {
         }
     }
 
-    fn binding() -> Binding {
-        Binding {
-            id: "b1".to_string(),
+    fn config() -> AgentConfig {
+        AgentConfig {
             supplier_id: "abcdef1234567890".to_string(),
             protocol: Protocol::Responses,
             model: "gpt-5".to_string(),
@@ -222,7 +217,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let adapter = CodexAdapter::new();
         adapter
-            .apply(&supplier(), &binding(), Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let config = fs::read_to_string(dir.path().join("config.toml")).unwrap();
@@ -255,13 +250,13 @@ mod tests {
             "[ui]\ntheme = \"dark\"\nmodel_reasoning_effort = \"low\"\n",
         )
         .unwrap();
-        let mut binding = binding();
-        binding.reasoning_effort = None;
-        binding.plan_reasoning_effort = None;
-        binding.context_length = None;
-        binding.compact_ratio = None;
+        let mut config = config();
+        config.reasoning_effort = None;
+        config.plan_reasoning_effort = None;
+        config.context_length = None;
+        config.compact_ratio = None;
         CodexAdapter::new()
-            .apply(&supplier(), &binding, Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
             .unwrap();
         let doc: DocumentMut = fs::read_to_string(dir.path().join("config.toml"))
             .unwrap()
@@ -276,11 +271,11 @@ mod tests {
     #[test]
     fn rejects_messages_protocol() {
         let dir = TempDir::new().unwrap();
-        let mut binding = binding();
-        binding.protocol = Protocol::Messages;
+        let mut config = config();
+        config.protocol = Protocol::Messages;
         assert!(
             CodexAdapter::new()
-                .apply(&supplier(), &binding, Some(dir.path()), Source::Wsl)
+                .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
                 .is_err()
         );
     }

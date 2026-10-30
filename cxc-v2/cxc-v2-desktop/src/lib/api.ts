@@ -1,18 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { mockInvoke } from "./mock";
 import type {
+  AgentConfigInput,
   AgentKind,
-  BindingInput,
   Config,
   CustomDirs,
   DetectedAgent,
+  Env,
   ImportReport,
   MergeReport,
   ModelTestOutcome,
   ModelTestResult,
   ProbeReport,
   Protocol,
-  Source,
   SupplierInput,
   SyncConfig,
   UpdateInfo,
@@ -28,15 +28,14 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 export const api = {
   getConfig: () => call<Config>("get_config"),
+  getEnvs: () => call<Env[]>("get_envs"),
   detectAgents: () => call<DetectedAgent[]>("detect_agents"),
   getPathEnv: () => call<string>("get_path_env"),
 
-  addSupplier: (input: SupplierInput) =>
-    call<Config>("add_supplier", { input }),
+  addSupplier: (input: SupplierInput) => call<Config>("add_supplier", { input }),
   editSupplier: (id: string, input: SupplierInput) =>
     call<Config>("edit_supplier", { id, input }),
-  deleteSupplier: (id: string) =>
-    call<Config>("delete_supplier", { id }),
+  deleteSupplier: (id: string) => call<Config>("delete_supplier", { id }),
   probeSupplier: (id: string) =>
     call<{ config: Config; report: ProbeReport }>("probe_supplier", { id }),
   fetchSupplierModels: (id: string) =>
@@ -52,23 +51,18 @@ export const api = {
       id,
     }),
 
-  addBinding: (agent: AgentKind, input: BindingInput) =>
-    call<Config>("add_binding", { agent, input }),
-  editBinding: (agent: AgentKind, id: string, input: BindingInput) =>
-    call<Config>("edit_binding", { agent, id, input }),
-  deleteBinding: (agent: AgentKind, id: string) =>
-    call<Config>("delete_binding", { agent, id }),
-  activateBinding: (agent: AgentKind, source: Source, id: string) =>
-    call<Config>("activate_binding", { agent, source, id }),
-  reloadActive: (agent: AgentKind, source: Source) =>
-    call<Config>("reload_active", { agent, source }),
+  saveAgentConfig: (agent: AgentKind, env: Env, input: AgentConfigInput) =>
+    call<Config>("save_agent_config", { agent, env, input }),
+  clearAgentConfig: (agent: AgentKind, env: Env) =>
+    call<Config>("clear_agent_config", { agent, env }),
+  rewriteAgent: (agent: AgentKind, env: Env) =>
+    call<Config>("rewrite_agent", { agent, env }),
 
-  saveSettings: (source: Source, customDirs: CustomDirs) =>
-    call<Config>("save_settings", { source, customDirs }),
+  saveSettings: (customDirs: CustomDirs) =>
+    call<Config>("save_settings", { customDirs }),
 
   getSyncConfig: () => call<SyncConfig>("get_sync_config"),
-  saveSyncConfig: (sync: SyncConfig) =>
-    call<Config>("save_sync_config", { sync }),
+  saveSyncConfig: (sync: SyncConfig) => call<Config>("save_sync_config", { sync }),
   testGistConnection: (token: string, gistId?: string) =>
     call<string>("test_gist_connection", { token, gistId }),
   syncPush: () => call<{ config: Config; report: MergeReport }>("sync_push"),

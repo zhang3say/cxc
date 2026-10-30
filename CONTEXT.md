@@ -105,23 +105,27 @@ An optional directory path configuration in CXC. Used when the Grok config files
 
 ## CXC 2 (第二代桌面端)
 
-`cxc-v2/` 下的并行重写版本。沿用旧版视觉语言，使用独立配置 `~/.config/cxc-v2/config.yaml`，旧版配置只作为一次性导入来源。数据模型是「全局中转站 + 每个 Agent 的绑定目录」。
+`cxc-v2/` 下的并行重写版本。沿用旧版视觉语言，使用独立配置 `~/.config/cxc-v2/config.yaml`，旧版配置只作为一次性导入来源。数据模型是「全局中转站 + 每个 Agent 一份配置」，Agent 的身份是「工具 + 环境」。
+
+## Environment (环境)
+
+Agent 所在的运行环境，取值为 `wsl` 或 `windows`。环境是 Agent 身份的一部分：`Grok (WSL)` 与 `Grok (Windows)` 是两个独立 Agent，各自一份配置、各自写入。不可达的环境不显示（Linux / WSL 下 Windows 侧依赖 `/mnt/c`，Windows 下 WSL 侧依赖 `wsl.exe`）。
 
 ## Supplier (全局中转站)
 
-CXC 2 中只保存一份的中转站凭证：`id`、名称、Base URL、API Key、协议集合、备注和模型目录。所有 Agent 共用同一批 Supplier；绑定通过 `supplier_id` 引用它。删除被绑定引用的 Supplier 会被拒绝。
+CXC 2 中只保存一份的中转站凭证：`id`、名称、Base URL、API Key、协议集合、备注和模型目录。所有 Agent 共用同一批 Supplier；Agent 配置通过 `supplier_id` 引用它。删除被引用的 Supplier 会被拒绝。
 
-## Binding (Agent 绑定)
+## Agent Config (Agent 配置)
 
-某个 Agent 的一条可启用配置：引用一个 Supplier，并保存协议、模型、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射或 Grok web_search 策略。每个 Agent 可以保存多条 Binding，每个来源（App / WSL）同时只启用一条。
+某个 `(工具, 环境)` 唯一的一份配置：引用一个 Supplier，并保存协议、模型、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射或 Grok web_search 策略。Agent 卡片内直接编辑，点「保存并写入」立即写目标配置文件；写入失败时配置保持不变。
 
 ## Protocol Set (协议集合)
 
-Supplier 上确认支持的协议集合，取值为 `chat_completions`、`responses`、`messages`。可以手选，也可以对端点探测后写回；探测只增不删。Binding 的协议必须同时被 Agent 和 Supplier 支持。
+Supplier 上确认支持的协议集合，取值为 `chat_completions`、`responses`、`messages`。可以手选，也可以对端点探测后写回；探测只增不删。Agent 配置的协议必须同时被工具和 Supplier 支持。
 
 ## Agent Detection (Agent 自动识别)
 
-按 PATH 探测 Codex、Claude Code、Grok CLI、OpenCode 是否已安装。配置目录只用于标记「已配置 / 未配置」和定位写入目标；未检测到的 Agent 可以通过「显示全部」手动配置。
+按 PATH 探测每个 `(工具, 环境)` 是否已安装：本机环境用 `which`，跨环境用 `cmd.exe /c where` 或 `wsl.exe command -v`。配置目录只用于标记「已配置 / 未配置」和定位写入目标；四个工具固定显示，用状态点标出安装状态。
 
 ## Model Connectivity (模型连通性)
 

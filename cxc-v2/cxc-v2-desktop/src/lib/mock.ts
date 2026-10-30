@@ -1,27 +1,28 @@
 import type {
+  AgentConfig,
+  AgentConfigInput,
   AgentKind,
-  Binding,
-  BindingInput,
   ClaudeModels,
   Config,
+  CustomDirs,
   DetectedAgent,
+  Env,
   GrokWebSearch,
   MergeReport,
   ModelTestOutcome,
   ProbeReport,
   Protocol,
-  Source,
   Supplier,
   SupplierInput,
   SyncConfig,
 } from "./types";
+import { AGENT_KINDS, ENVS, emptyDirs } from "./types";
 
 const STORAGE_KEY = "cxc-v2-mock-config";
 
 function seed(): Config {
   return {
-    version: 2,
-    source: "wsl",
+    version: 3,
     suppliers: [
       {
         id: "a1b2c3d4e5f60718",
@@ -47,11 +48,11 @@ function seed(): Config {
             last_ok: true,
           },
           {
-            model: "deepseek/deepseek-v4",
+            model: "x-ai/grok-4.5",
             protocols: ["chat_completions"],
-            latency_ms: 1200,
-            last_ok: false,
-            last_error: "HTTP 429: rate limited",
+            last_test: new Date().toISOString(),
+            latency_ms: 520,
+            last_ok: true,
           },
         ],
       },
@@ -106,76 +107,61 @@ function seed(): Config {
     ],
     agents: {
       codex: {
-        active_wsl: "bind-codex-1",
-        bindings: [
-          {
-            id: "bind-codex-1",
-            supplier_id: "b2c3d4e5f6071829",
-            protocol: "responses",
-            model: "gpt-5",
-            reasoning_effort: "high",
-            plan_reasoning_effort: "xhigh",
-            context_length: "200k",
-            compact_ratio: 80,
-          },
-          {
-            id: "bind-codex-2",
-            supplier_id: "a1b2c3d4e5f60718",
-            protocol: "chat_completions",
-            model: "openai/gpt-5",
-            reasoning_effort: "medium",
-          },
-        ],
+        wsl: {
+          supplier_id: "b2c3d4e5f6071829",
+          protocol: "responses",
+          model: "gpt-5",
+          reasoning_effort: "high",
+          plan_reasoning_effort: "xhigh",
+          context_length: "200k",
+          compact_ratio: 80,
+        },
+        windows: {
+          supplier_id: "b2c3d4e5f6071829",
+          protocol: "responses",
+          model: "gpt-5-mini",
+          reasoning_effort: "medium",
+          context_length: "200k",
+          compact_ratio: 80,
+        },
       },
       claude: {
-        active_wsl: "bind-claude-1",
-        bindings: [
-          {
-            id: "bind-claude-1",
-            supplier_id: "c3d4e5f60718293a",
-            protocol: "messages",
-            model: "claude-sonnet-4-5",
-            reasoning_effort: "high",
-            context_length: "1m",
-            compact_ratio: 85,
-            claude_models: {
-              opus: "claude-opus-4-5",
-              haiku: "claude-haiku-4-5",
-            },
+        wsl: {
+          supplier_id: "c3d4e5f60718293a",
+          protocol: "messages",
+          model: "claude-sonnet-4-5",
+          reasoning_effort: "high",
+          context_length: "1m",
+          compact_ratio: 85,
+          claude_models: {
+            opus: "claude-opus-4-5",
+            haiku: "claude-haiku-4-5",
           },
-        ],
+        },
       },
       grok: {
-        active_wsl: "bind-grok-1",
-        bindings: [
-          {
-            id: "bind-grok-1",
-            supplier_id: "a1b2c3d4e5f60718",
-            protocol: "chat_completions",
-            model: "x-ai/grok-4.5",
-            reasoning_effort: "high",
-            context_length: "500k",
-            compact_ratio: 75,
-            grok_web_search: { mode: "follow" },
-          },
-        ],
+        wsl: {
+          supplier_id: "a1b2c3d4e5f60718",
+          protocol: "chat_completions",
+          model: "x-ai/grok-4.5",
+          reasoning_effort: "high",
+          context_length: "500k",
+          compact_ratio: 75,
+          grok_web_search: { mode: "follow" },
+        },
       },
       opencode: {
-        active_wsl: "bind-opencode-1",
-        bindings: [
-          {
-            id: "bind-opencode-1",
-            supplier_id: "a1b2c3d4e5f60718",
-            protocol: "chat_completions",
-            model: "openai/gpt-5",
-            reasoning_effort: "medium",
-            context_length: "200k",
-            compact_ratio: 80,
-          },
-        ],
+        wsl: {
+          supplier_id: "a1b2c3d4e5f60718",
+          protocol: "chat_completions",
+          model: "openai/gpt-5",
+          reasoning_effort: "medium",
+          context_length: "200k",
+          compact_ratio: 80,
+        },
       },
     },
-    custom_dirs: { codex: "", claude: "", grok: "", opencode: "" },
+    custom_dirs: emptyDirs(),
     migrated_from_v1: true,
   };
 }
@@ -183,7 +169,10 @@ function seed(): Config {
 function load(): Config {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Config;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Config;
+      if (parsed.version === 3) return parsed;
+    }
   } catch {
     // ignore
   }
@@ -202,7 +191,9 @@ function clone<T>(value: T): T {
 
 function id(): string {
   return Array.from({ length: 16 }, () =>
-    Math.floor(Math.random() * 256).toString(16).padStart(2, "0"),
+    Math.floor(Math.random() * 256)
+      .toString(16)
+      .padStart(2, "0"),
   ).join("");
 }
 
@@ -214,6 +205,10 @@ function agentKey(agent: string): AgentKind {
   return agent as AgentKind;
 }
 
+function envKey(env: string): Env {
+  return env === "windows" ? "windows" : "wsl";
+}
+
 function supplierOf(config: Config, supplierId: string): Supplier {
   const supplier = config.suppliers.find((item) => item.id === supplierId);
   if (!supplier) throw new Error("供应商不存在");
@@ -221,17 +216,11 @@ function supplierOf(config: Config, supplierId: string): Supplier {
 }
 
 function references(config: Config, supplierId: string): string[] {
-  const labels: Record<AgentKind, string> = {
-    codex: "Codex",
-    claude: "Claude Code",
-    grok: "Grok CLI",
-    opencode: "OpenCode",
-  };
-  return (Object.keys(config.agents) as AgentKind[])
-    .filter((kind) =>
-      config.agents[kind].bindings.some((binding) => binding.supplier_id === supplierId),
-    )
-    .map((kind) => labels[kind]);
+  return AGENT_KINDS.filter((kind) =>
+    ENVS.some(
+      (env) => config.agents[kind]?.[env]?.supplier_id === supplierId,
+    ),
+  ).map((kind) => kind);
 }
 
 function probeReport(supplier: Supplier): ProbeReport {
@@ -269,6 +258,26 @@ function normalizeWebSearch(policy?: GrokWebSearch): GrokWebSearch | undefined {
   return policy;
 }
 
+function buildConfig(config: Config, input: AgentConfigInput): AgentConfig {
+  const supplier = supplierOf(config, input.supplier_id);
+  if (!supplier.protocols.includes(input.protocol)) {
+    throw new Error(`供应商尚未确认支持 ${input.protocol} 协议`);
+  }
+  const model = input.model.trim();
+  if (!model) throw new Error("模型不能为空");
+  return {
+    supplier_id: input.supplier_id,
+    protocol: input.protocol,
+    model,
+    reasoning_effort: input.reasoning_effort || undefined,
+    plan_reasoning_effort: input.plan_reasoning_effort || undefined,
+    context_length: input.context_length?.trim() || undefined,
+    compact_ratio: input.compact_ratio,
+    claude_models: normalizeClaudeModels(input.claude_models),
+    grok_web_search: normalizeWebSearch(input.grok_web_search),
+  };
+}
+
 function modelList(supplier: Supplier): string[] {
   const base = supplier.models.map((model) => model.model);
   const extras = ["gpt-5", "gpt-5-mini", "claude-sonnet-4-5", "claude-opus-4-5", "grok-4.5"];
@@ -286,44 +295,36 @@ export async function mockInvoke<T>(
     case "get_config":
       return clone(config) as T;
 
+    case "get_envs":
+      return ["wsl", "windows"] as T;
+
     case "get_path_env":
       return "/home/leezi/.local/bin:/home/leezi/.grok/bin:/usr/local/bin:/usr/bin:/bin" as T;
 
     case "detect_agents": {
-      const detected: DetectedAgent[] = [
-        {
-          kind: "codex",
-          installed: true,
-          binary: "/home/leezi/.local/bin/codex",
-          config_dir: "/home/leezi/.codex",
-          configured: true,
-          source: config.source,
-        },
-        {
-          kind: "claude",
-          installed: true,
-          binary: "/home/leezi/.local/bin/claude",
-          config_dir: "/home/leezi/.claude",
-          configured: true,
-          source: config.source,
-        },
-        {
-          kind: "grok",
-          installed: true,
-          binary: "/home/leezi/.grok/bin/grok",
-          config_dir: "/home/leezi/.grok",
-          configured: true,
-          source: config.source,
-        },
-        {
-          kind: "opencode",
-          installed: true,
-          binary: "/usr/local/bin/opencode",
-          config_dir: "/home/leezi/.config/opencode",
-          configured: true,
-          source: config.source,
-        },
-      ];
+      const detected: DetectedAgent[] = [];
+      for (const env of ENVS) {
+        for (const kind of AGENT_KINDS) {
+          detected.push({
+            kind,
+            env,
+            installed: true,
+            binary:
+              env === "wsl"
+                ? `/home/leezi/.local/bin/${kind}`
+                : `C:\\Users\\leezi\\AppData\\Roaming\\npm\\${kind}.cmd`,
+            config_dir:
+              env === "wsl"
+                ? kind === "opencode"
+                  ? "/home/leezi/.config/opencode"
+                  : `/home/leezi/.${kind}`
+                : kind === "opencode"
+                  ? "C:\\Users\\leezi\\AppData\\Roaming\\opencode"
+                  : `C:\\Users\\leezi\\.${kind}`,
+            configured: true,
+          });
+        }
+      }
       return detected as T;
     }
 
@@ -362,7 +363,7 @@ export async function mockInvoke<T>(
       const supplierId = payload.id as string;
       const refs = references(config, supplierId);
       if (refs.length) {
-        throw new Error(`供应商仍被以下绑定引用：${refs.join("、")}`);
+        throw new Error(`供应商仍被以下 Agent 引用：${refs.join("、")}`);
       }
       config.suppliers = config.suppliers.filter((supplier) => supplier.id !== supplierId);
       save(config);
@@ -443,83 +444,30 @@ export async function mockInvoke<T>(
       return { config: clone(config), outcomes } as T;
     }
 
-    case "add_binding": {
+    case "save_agent_config": {
       const agent = agentKey(payload.agent as string);
-      const input = payload.input as BindingInput;
-      supplierOf(config, input.supplier_id);
-      const binding: Binding = {
-        id: `bind-${id().slice(0, 8)}`,
-        supplier_id: input.supplier_id,
-        protocol: input.protocol,
-        model: input.model.trim(),
-        reasoning_effort: input.reasoning_effort,
-        plan_reasoning_effort: input.plan_reasoning_effort,
-        context_length: input.context_length,
-        compact_ratio: input.compact_ratio,
-        claude_models: normalizeClaudeModels(input.claude_models),
-        grok_web_search: normalizeWebSearch(input.grok_web_search),
-      };
-      config.agents[agent].bindings.push(binding);
+      const env = envKey(payload.env as string);
+      const input = payload.input as AgentConfigInput;
+      const built = buildConfig(config, input);
+      config.agents[agent] = { ...config.agents[agent], [env]: built };
       save(config);
       return clone(config) as T;
     }
 
-    case "edit_binding": {
+    case "clear_agent_config": {
       const agent = agentKey(payload.agent as string);
-      const binding = config.agents[agent].bindings.find(
-        (item) => item.id === (payload.id as string),
-      );
-      if (!binding) throw new Error("绑定不存在");
-      const input = payload.input as BindingInput;
-      Object.assign(binding, {
-        supplier_id: input.supplier_id,
-        protocol: input.protocol,
-        model: input.model.trim(),
-        reasoning_effort: input.reasoning_effort,
-        plan_reasoning_effort: input.plan_reasoning_effort,
-        context_length: input.context_length,
-        compact_ratio: input.compact_ratio,
-        claude_models: normalizeClaudeModels(input.claude_models),
-        grok_web_search: normalizeWebSearch(input.grok_web_search),
-      });
+      const env = envKey(payload.env as string);
+      config.agents[agent] = { ...config.agents[agent], [env]: null };
       save(config);
       return clone(config) as T;
     }
 
-    case "delete_binding": {
-      const agent = agentKey(payload.agent as string);
-      const bindingId = payload.id as string;
-      const agentConfig = config.agents[agent];
-      if (agentConfig.active_app === bindingId || agentConfig.active_wsl === bindingId) {
-        throw new Error("该绑定正在启用，请先切换后再删除");
-      }
-      agentConfig.bindings = agentConfig.bindings.filter((item) => item.id !== bindingId);
-      save(config);
+    case "rewrite_agent":
+      await delay(300);
       return clone(config) as T;
-    }
-
-    case "activate_binding": {
-      const agent = agentKey(payload.agent as string);
-      const source = payload.source as Source;
-      const bindingId = payload.id as string;
-      if (!config.agents[agent].bindings.some((item) => item.id === bindingId)) {
-        throw new Error("绑定不存在");
-      }
-      if (source === "app") config.agents[agent].active_app = bindingId;
-      else config.agents[agent].active_wsl = bindingId;
-      save(config);
-      return clone(config) as T;
-    }
-
-    case "reload_active": {
-      return clone(config) as T;
-    }
 
     case "save_settings": {
-      config.source = payload.source as Source;
-      const dirs = (payload.customDirs ?? payload.custom_dirs) as
-        | Config["custom_dirs"]
-        | undefined;
+      const dirs = (payload.customDirs ?? payload.custom_dirs) as CustomDirs | undefined;
       if (dirs) config.custom_dirs = dirs;
       save(config);
       return clone(config) as T;
@@ -551,8 +499,8 @@ export async function mockInvoke<T>(
       const report: MergeReport = {
         suppliers_added: 0,
         suppliers_updated: config.suppliers.length,
-        bindings_added: 0,
-        bindings_updated: 4,
+        configs_added: 0,
+        configs_updated: 4,
       };
       if (config.sync) config.sync.last_synced_at = new Date().toISOString();
       save(config);
@@ -574,7 +522,7 @@ export async function mockInvoke<T>(
         imported: false,
         reason: "浏览器演示模式不读取本机旧配置",
         suppliers: 0,
-        bindings: 0,
+        configs: 0,
         skipped: [],
       } as T;
 

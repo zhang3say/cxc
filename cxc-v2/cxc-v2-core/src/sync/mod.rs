@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::agent::{AgentKind, Agents, Binding};
-use crate::config::Config;
+use crate::agent::{AgentKind, Agents};
+use crate::config::{self, Config};
 use crate::supplier::{Supplier, SupplierModel};
 use crypto::{decrypt_aes_gcm, encrypt_aes_gcm};
 pub use gist::{GistClient, GistError};
 
-pub const CURRENT_SYNC_VERSION: u32 = 2;
+pub const CURRENT_SYNC_VERSION: u32 = 3;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -45,54 +45,8 @@ pub struct SyncConfig {
     pub last_synced_at: Option<DateTime<Local>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
-pub struct SyncAgents {
-    #[serde(default)]
-    pub codex: Vec<Binding>,
-    #[serde(default)]
-    pub claude: Vec<Binding>,
-    #[serde(default)]
-    pub grok: Vec<Binding>,
-    #[serde(default)]
-    pub opencode: Vec<Binding>,
-}
-
-impl SyncAgents {
-    pub fn from_agents(agents: &Agents) -> Self {
-        Self {
-            codex: agents.codex.bindings.clone(),
-            claude: agents.claude.bindings.clone(),
-            grok: agents.grok.bindings.clone(),
-            opencode: agents.opencode.bindings.clone(),
-        }
-    }
-
-    pub fn apply_to(&self, agents: &mut Agents) {
-        agents.codex.bindings = self.codex.clone();
-        agents.claude.bindings = self.claude.clone();
-        agents.grok.bindings = self.grok.clone();
-        agents.opencode.bindings = self.opencode.clone();
-    }
-
-    pub fn bindings(&self, kind: AgentKind) -> &[Binding] {
-        match kind {
-            AgentKind::Codex => &self.codex,
-            AgentKind::Claude => &self.claude,
-            AgentKind::Grok => &self.grok,
-            AgentKind::OpenCode => &self.opencode,
-        }
-    }
-
-    pub fn bindings_mut(&mut self, kind: AgentKind) -> &mut Vec<Binding> {
-        match kind {
-            AgentKind::Codex => &mut self.codex,
-            AgentKind::Claude => &mut self.claude,
-            AgentKind::Grok => &mut self.grok,
-            AgentKind::OpenCode => &mut self.opencode,
-        }
-    }
-}
-
+/// 跨设备载荷：全局中转站 + 每个 Agent 每个环境的一份配置。
+/// 不含自定义目录与本机测试结果。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SyncPayload {
     pub version: u32,
@@ -100,7 +54,7 @@ pub struct SyncPayload {
     #[serde(default)]
     pub suppliers: Vec<Supplier>,
     #[serde(default)]
-    pub agents: SyncAgents,
+    pub agents: Agents,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -116,7 +70,17 @@ struct SyncEnvelope {
 }
 
 #[derive(Deserialize)]
-struct LegacySyncPayload {
+struct LegacySyncPayloadV2 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    suppliers: Vec<Supplier>,
+    #[serde(default)]
+    agents: config::LegacyAgentsV2,
+}
+
+#[derive(Deserialize)]
+struct LegacySyncPayloadV1 {
     #[serde(default)]
     updated_at: Option<DateTime<Local>>,
     #[serde(default)]
@@ -132,7 +96,7 @@ pub fn build_payload(cfg: &Config) -> SyncPayload {
         version: CURRENT_SYNC_VERSION,
         updated_at: Local::now(),
         suppliers: cfg.suppliers.iter().map(sanitize_supplier).collect(),
-        agents: SyncAgents::from_agents(&cfg.agents),
+        agents: cfg.agents.clone(),
     }
 }
 
@@ -212,11 +176,24 @@ pub fn unpack_payload(raw: &str, secret_key: Option<&str>) -> Result<SyncPayload
 
 fn parse_payload_value(value: Value) -> Result<SyncPayload, SyncError> {
     let version = value.get("version").and_then(Value::as_u64).unwrap_or(1) as u32;
-    if version >= 2 {
+
+    if version >= CURRENT_SYNC_VERSION {
         return Ok(serde_json::from_value(value)?);
     }
 
-    let legacy: LegacySyncPayload = serde_json::from_value(value)?;
+    if version == 2 {
+        let legacy: LegacySyncPayloadV2 = serde_json::from_value(value)?;
+        let cfg = Config {
+            suppliers: legacy.suppliers,
+            agents: config::agents_from_legacy(&legacy.agents),
+            ..Config::default()
+        };
+        let mut payload = build_payload(&cfg);
+        payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
+        return Ok(payload);
+    }
+
+    let legacy: LegacySyncPayloadV1 = serde_json::from_value(value)?;
     let mut cfg = Config::default();
     let mut report = crate::migration::ImportReport::default();
     let mut supplier_ids = std::collections::HashMap::new();
@@ -306,7 +283,8 @@ pub async fn pull_from_gist(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{BindingInput, add_binding};
+    use crate::agent::{AgentConfig, AgentKind};
+    use crate::config::Env;
     use crate::protocol::Protocol;
     use crate::supplier::{SupplierInput, add_supplier};
 
@@ -323,17 +301,20 @@ mod tests {
             },
         )
         .unwrap();
-        add_binding(
-            &mut cfg,
-            AgentKind::Codex,
-            BindingInput {
+        cfg.agent_mut(AgentKind::Codex).set(
+            Env::Wsl,
+            Some(AgentConfig {
                 supplier_id: supplier.id,
                 protocol: Protocol::Responses,
                 model: "gpt-5".to_string(),
-                ..BindingInput::default()
-            },
-        )
-        .unwrap();
+                reasoning_effort: Some("high".to_string()),
+                plan_reasoning_effort: None,
+                context_length: None,
+                compact_ratio: None,
+                claude_models: None,
+                grok_web_search: None,
+            }),
+        );
         cfg
     }
 
@@ -343,9 +324,17 @@ mod tests {
         let payload = build_payload(&cfg);
         let raw = pack_payload(&payload, None).unwrap();
         let restored = unpack_payload(&raw, None).unwrap();
-        assert_eq!(restored.version, 2);
+        assert_eq!(restored.version, 3);
         assert_eq!(restored.suppliers.len(), 1);
-        assert_eq!(restored.agents.codex.len(), 1);
+        assert_eq!(
+            restored
+                .agents
+                .codex
+                .wsl
+                .as_ref()
+                .map(|config| config.model.as_str()),
+            Some("gpt-5")
+        );
     }
 
     #[test]
@@ -359,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn payload_excludes_test_results_and_active() {
+    fn payload_excludes_test_results_and_custom_dirs() {
         let mut cfg = sample_config();
         cfg.suppliers[0].models.push(SupplierModel {
             model: "gpt-5".to_string(),
@@ -367,9 +356,59 @@ mod tests {
             latency_ms: Some(100),
             ..SupplierModel::default()
         });
-        cfg.agent_mut(AgentKind::Codex).active_app = Some("b1".to_string());
+        cfg.custom_dirs.codex.wsl = "/tmp/codex".to_string();
         let payload = build_payload(&cfg);
         assert!(payload.suppliers[0].models[0].last_ok.is_none());
-        assert!(payload.agents.codex[0].id == cfg.agents.codex.bindings[0].id);
+        let raw = serde_json::to_string(&payload).unwrap();
+        assert!(!raw.contains("/tmp/codex"));
+    }
+
+    #[test]
+    fn reads_v2_payload_and_collapses_bindings() {
+        let raw = r#"{
+            "version": 2,
+            "updated_at": "2026-10-30T12:00:00+08:00",
+            "suppliers": [
+                {
+                    "id": "s1",
+                    "name": "relay",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-1",
+                    "protocols": ["responses"],
+                    "models": []
+                }
+            ],
+            "agents": {
+                "codex": {
+                    "active_wsl": "b1",
+                    "bindings": [
+                        {
+                            "id": "b1",
+                            "supplier_id": "s1",
+                            "protocol": "responses",
+                            "model": "gpt-5"
+                        }
+                    ]
+                },
+                "claude": { "bindings": [] },
+                "grok": { "bindings": [] },
+                "opencode": { "bindings": [] }
+            }
+        }"#;
+        let payload = unpack_payload(
+            &format!(r#"{{"version":2,"encrypted":false,"payload":{raw}}}"#),
+            None,
+        )
+        .unwrap();
+        assert_eq!(payload.version, 3);
+        assert_eq!(
+            payload
+                .agents
+                .codex
+                .wsl
+                .as_ref()
+                .map(|config| config.model.as_str()),
+            Some("gpt-5")
+        );
     }
 }

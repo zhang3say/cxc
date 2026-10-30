@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
 
-use crate::config::{Config, Source};
+use crate::config::{Config, Env};
 use crate::protocol::Protocol;
-use crate::supplier::{self, Supplier};
+use crate::supplier::Supplier;
 use crate::target::AgentAdapter;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -199,10 +199,11 @@ impl GrokWebSearch {
     }
 }
 
+/// 某个 Agent（工具 + 环境）唯一的一份配置。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Binding {
-    pub id: String,
+pub struct AgentConfig {
     pub supplier_id: String,
+    #[serde(default)]
     pub protocol: Protocol,
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -219,7 +220,7 @@ pub struct Binding {
     pub grok_web_search: Option<GrokWebSearch>,
 }
 
-impl Binding {
+impl AgentConfig {
     pub fn reasoning_effort_level(&self) -> Option<&str> {
         trimmed_level(self.reasoning_effort.as_deref())
     }
@@ -247,19 +248,25 @@ impl Binding {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BindingInput {
+pub struct AgentConfigInput {
     pub supplier_id: String,
     pub protocol: Protocol,
     pub model: String,
+    #[serde(default)]
     pub reasoning_effort: Option<String>,
+    #[serde(default)]
     pub plan_reasoning_effort: Option<String>,
+    #[serde(default)]
     pub context_length: Option<String>,
+    #[serde(default)]
     pub compact_ratio: Option<u8>,
+    #[serde(default)]
     pub claude_models: Option<ClaudeModels>,
+    #[serde(default)]
     pub grok_web_search: Option<GrokWebSearch>,
 }
 
-impl Default for BindingInput {
+impl Default for AgentConfigInput {
     fn default() -> Self {
         Self {
             supplier_id: String::new(),
@@ -275,58 +282,49 @@ impl Default for BindingInput {
     }
 }
 
+/// 一个工具在两个环境下的配置。`None` 表示该环境还没配置。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct AgentConfig {
+pub struct AgentEnvs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_app: Option<String>,
+    pub wsl: Option<AgentConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_wsl: Option<String>,
-    #[serde(default)]
-    pub bindings: Vec<Binding>,
+    pub windows: Option<AgentConfig>,
 }
 
-impl AgentConfig {
-    pub fn active(&self, source: Source) -> Option<&str> {
-        match source {
-            Source::App => self.active_app.as_deref(),
-            Source::Wsl => self.active_wsl.as_deref(),
+impl AgentEnvs {
+    pub fn get(&self, env: Env) -> Option<&AgentConfig> {
+        match env {
+            Env::Wsl => self.wsl.as_ref(),
+            Env::Windows => self.windows.as_ref(),
         }
     }
 
-    pub fn set_active(&mut self, source: Source, id: Option<String>) {
-        match source {
-            Source::App => self.active_app = id,
-            Source::Wsl => self.active_wsl = id,
+    pub fn set(&mut self, env: Env, config: Option<AgentConfig>) {
+        match env {
+            Env::Wsl => self.wsl = config,
+            Env::Windows => self.windows = config,
         }
     }
 
-    pub fn binding(&self, id: &str) -> Option<&Binding> {
-        self.bindings.iter().find(|binding| binding.id == id)
-    }
-
-    pub fn binding_mut(&mut self, id: &str) -> Option<&mut Binding> {
-        self.bindings.iter_mut().find(|binding| binding.id == id)
-    }
-
-    pub fn is_active(&self, id: &str) -> bool {
-        self.active_app.as_deref() == Some(id) || self.active_wsl.as_deref() == Some(id)
+    pub fn is_empty(&self) -> bool {
+        self.wsl.is_none() && self.windows.is_none()
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Agents {
     #[serde(default)]
-    pub codex: AgentConfig,
+    pub codex: AgentEnvs,
     #[serde(default)]
-    pub claude: AgentConfig,
+    pub claude: AgentEnvs,
     #[serde(default)]
-    pub grok: AgentConfig,
+    pub grok: AgentEnvs,
     #[serde(default)]
-    pub opencode: AgentConfig,
+    pub opencode: AgentEnvs,
 }
 
 impl Agents {
-    pub fn get(&self, kind: AgentKind) -> &AgentConfig {
+    pub fn get(&self, kind: AgentKind) -> &AgentEnvs {
         match kind {
             AgentKind::Codex => &self.codex,
             AgentKind::Claude => &self.claude,
@@ -335,7 +333,7 @@ impl Agents {
         }
     }
 
-    pub fn get_mut(&mut self, kind: AgentKind) -> &mut AgentConfig {
+    pub fn get_mut(&mut self, kind: AgentKind) -> &mut AgentEnvs {
         match kind {
             AgentKind::Codex => &mut self.codex,
             AgentKind::Claude => &mut self.claude,
@@ -346,24 +344,18 @@ impl Agents {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct CustomDirs {
+pub struct EnvDirs {
     #[serde(default)]
-    pub codex: String,
+    pub wsl: String,
     #[serde(default)]
-    pub claude: String,
-    #[serde(default)]
-    pub grok: String,
-    #[serde(default)]
-    pub opencode: String,
+    pub windows: String,
 }
 
-impl CustomDirs {
-    pub fn get(&self, kind: AgentKind) -> Option<&Path> {
-        let value = match kind {
-            AgentKind::Codex => &self.codex,
-            AgentKind::Claude => &self.claude,
-            AgentKind::Grok => &self.grok,
-            AgentKind::OpenCode => &self.opencode,
+impl EnvDirs {
+    pub fn get(&self, env: Env) -> Option<&Path> {
+        let value = match env {
+            Env::Wsl => &self.wsl,
+            Env::Windows => &self.windows,
         };
         let value = value.trim();
         if value.is_empty() {
@@ -373,14 +365,52 @@ impl CustomDirs {
         }
     }
 
-    pub fn set(&mut self, kind: AgentKind, value: String) {
+    pub fn set(&mut self, env: Env, value: String) {
         let value = value.trim().to_string();
-        match kind {
-            AgentKind::Codex => self.codex = value,
-            AgentKind::Claude => self.claude = value,
-            AgentKind::Grok => self.grok = value,
-            AgentKind::OpenCode => self.opencode = value,
+        match env {
+            Env::Wsl => self.wsl = value,
+            Env::Windows => self.windows = value,
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct CustomDirs {
+    #[serde(default)]
+    pub codex: EnvDirs,
+    #[serde(default)]
+    pub claude: EnvDirs,
+    #[serde(default)]
+    pub grok: EnvDirs,
+    #[serde(default)]
+    pub opencode: EnvDirs,
+}
+
+impl CustomDirs {
+    pub fn dirs(&self, kind: AgentKind) -> &EnvDirs {
+        match kind {
+            AgentKind::Codex => &self.codex,
+            AgentKind::Claude => &self.claude,
+            AgentKind::Grok => &self.grok,
+            AgentKind::OpenCode => &self.opencode,
+        }
+    }
+
+    pub fn dirs_mut(&mut self, kind: AgentKind) -> &mut EnvDirs {
+        match kind {
+            AgentKind::Codex => &mut self.codex,
+            AgentKind::Claude => &mut self.claude,
+            AgentKind::Grok => &mut self.grok,
+            AgentKind::OpenCode => &mut self.opencode,
+        }
+    }
+
+    pub fn get(&self, kind: AgentKind, env: Env) -> Option<&Path> {
+        self.dirs(kind).get(env)
+    }
+
+    pub fn set(&mut self, kind: AgentKind, env: Env, value: String) {
+        self.dirs_mut(kind).set(env, value);
     }
 }
 
@@ -388,8 +418,8 @@ impl CustomDirs {
 pub enum AgentError {
     #[error("Agent 不存在：{0}")]
     UnknownAgent(String),
-    #[error("绑定不存在：{0}")]
-    BindingNotFound(String),
+    #[error("该 Agent 还没有配置")]
+    NotConfigured,
     #[error("供应商不存在：{0}")]
     SupplierNotFound(String),
     #[error("{agent} 不支持 {protocol} 协议")]
@@ -401,119 +431,78 @@ pub enum AgentError {
     SupplierProtocolMissing(&'static str),
     #[error("模型不能为空")]
     EmptyModel,
-    #[error("该绑定正在 {0} 来源启用，请先切换后再删除")]
-    ActiveBinding(String),
     #[error("写入配置失败：{0}")]
     Write(String),
 }
 
-pub fn add_binding(
-    cfg: &mut Config,
-    kind: AgentKind,
-    input: BindingInput,
-) -> Result<Binding, AgentError> {
-    let binding = normalize_binding(cfg, kind, input)?;
-    cfg.agent_mut(kind).bindings.push(binding.clone());
-    Ok(binding)
-}
-
-pub fn edit_binding(
-    cfg: &mut Config,
-    kind: AgentKind,
-    id: &str,
-    input: BindingInput,
-) -> Result<Binding, AgentError> {
-    let binding = normalize_binding(cfg, kind, input)?;
-    let agent = cfg.agent_mut(kind);
-    let target = agent
-        .binding_mut(id)
-        .ok_or_else(|| AgentError::BindingNotFound(id.to_string()))?;
-    let mut updated = binding;
-    updated.id = target.id.clone();
-    *target = updated.clone();
-    Ok(updated)
-}
-
-pub fn remove_binding(cfg: &mut Config, kind: AgentKind, id: &str) -> Result<(), AgentError> {
-    let agent = cfg.agent_mut(kind);
-    if agent.is_active(id) {
-        let sources = [
-            (Source::App, agent.active_app.as_deref() == Some(id)),
-            (Source::Wsl, agent.active_wsl.as_deref() == Some(id)),
-        ]
-        .into_iter()
-        .filter_map(|(source, active)| active.then_some(source.as_str()))
-        .collect::<Vec<_>>()
-        .join(" / ");
-        return Err(AgentError::ActiveBinding(sources));
-    }
-    let before = agent.bindings.len();
-    agent.bindings.retain(|binding| binding.id != id);
-    if agent.bindings.len() == before {
-        return Err(AgentError::BindingNotFound(id.to_string()));
-    }
-    Ok(())
-}
-
-pub fn activate_binding(
-    cfg: &mut Config,
-    kind: AgentKind,
-    source: Source,
-    id: &str,
-    adapter: &dyn AgentAdapter,
-) -> Result<(), AgentError> {
-    let binding = cfg
-        .agent(kind)
-        .binding(id)
-        .cloned()
-        .ok_or_else(|| AgentError::BindingNotFound(id.to_string()))?;
-    let supplier = cfg
-        .supplier(&binding.supplier_id)
-        .cloned()
-        .ok_or_else(|| AgentError::SupplierNotFound(binding.supplier_id.clone()))?;
-
-    validate_protocol(kind, &supplier, binding.protocol)?;
-    adapter
-        .apply(&supplier, &binding, cfg.custom_dirs.get(kind), source)
-        .map_err(|error| AgentError::Write(error.to_string()))?;
-
-    cfg.agent_mut(kind)
-        .set_active(source, Some(binding.id.clone()));
-    Ok(())
-}
-
-pub fn reload_active(
+/// 校验并生成配置，不保存、不写目标工具。
+pub fn build_config(
     cfg: &Config,
     kind: AgentKind,
-    source: Source,
+    input: AgentConfigInput,
+) -> Result<AgentConfig, AgentError> {
+    normalize_config(cfg, kind, input)
+}
+
+/// 只保存到 CXC 配置，不写目标工具（同步、迁移用）。
+pub fn set_config(
+    cfg: &mut Config,
+    kind: AgentKind,
+    env: Env,
+    input: AgentConfigInput,
+) -> Result<AgentConfig, AgentError> {
+    let config = normalize_config(cfg, kind, input)?;
+    cfg.agent_mut(kind).set(env, Some(config.clone()));
+    Ok(config)
+}
+
+/// 校验 → 写目标工具 → 保存到 CXC。写入失败时 CXC 配置保持不变。
+pub fn save_and_apply(
+    cfg: &mut Config,
+    kind: AgentKind,
+    env: Env,
+    input: AgentConfigInput,
+    adapter: &dyn AgentAdapter,
+) -> Result<AgentConfig, AgentError> {
+    let config = normalize_config(cfg, kind, input)?;
+    let supplier = cfg
+        .supplier(&config.supplier_id)
+        .cloned()
+        .ok_or_else(|| AgentError::SupplierNotFound(config.supplier_id.clone()))?;
+
+    adapter
+        .apply(&supplier, &config, cfg.custom_dirs.get(kind, env), env)
+        .map_err(|error| AgentError::Write(error.to_string()))?;
+
+    cfg.agent_mut(kind).set(env, Some(config.clone()));
+    Ok(config)
+}
+
+/// 按已保存的配置重新写入目标工具。
+pub fn rewrite(
+    cfg: &Config,
+    kind: AgentKind,
+    env: Env,
     adapter: &dyn AgentAdapter,
 ) -> Result<(), AgentError> {
-    let id = cfg
-        .agent(kind)
-        .active(source)
-        .ok_or_else(|| AgentError::BindingNotFound("当前来源没有启用的绑定".to_string()))?;
-    let binding = cfg
-        .agent(kind)
-        .binding(id)
-        .ok_or_else(|| AgentError::BindingNotFound(id.to_string()))?;
+    let config = cfg.config_of(kind, env).ok_or(AgentError::NotConfigured)?;
     let supplier = cfg
-        .supplier(&binding.supplier_id)
-        .ok_or_else(|| AgentError::SupplierNotFound(binding.supplier_id.clone()))?;
-    validate_protocol(kind, supplier, binding.protocol)?;
+        .supplier(&config.supplier_id)
+        .ok_or_else(|| AgentError::SupplierNotFound(config.supplier_id.clone()))?;
     adapter
-        .apply(supplier, binding, cfg.custom_dirs.get(kind), source)
+        .apply(supplier, config, cfg.custom_dirs.get(kind, env), env)
         .map_err(|error| AgentError::Write(error.to_string()))
 }
 
-pub fn deactivate_binding(cfg: &mut Config, kind: AgentKind, source: Source) {
-    cfg.agent_mut(kind).set_active(source, None);
+pub fn clear_config(cfg: &mut Config, kind: AgentKind, env: Env) {
+    cfg.agent_mut(kind).set(env, None);
 }
 
-fn normalize_binding(
+fn normalize_config(
     cfg: &Config,
     kind: AgentKind,
-    input: BindingInput,
-) -> Result<Binding, AgentError> {
+    input: AgentConfigInput,
+) -> Result<AgentConfig, AgentError> {
     let supplier = cfg
         .supplier(&input.supplier_id)
         .ok_or_else(|| AgentError::SupplierNotFound(input.supplier_id.clone()))?;
@@ -562,8 +551,7 @@ fn normalize_binding(
         None
     };
 
-    Ok(Binding {
-        id: supplier::new_id(),
+    Ok(AgentConfig {
         supplier_id: input.supplier_id,
         protocol: input.protocol,
         model: model.to_string(),
@@ -674,6 +662,7 @@ pub fn connectivity_model(model: &str, is_claude: bool) -> String {
 mod tests {
     use super::*;
     use crate::supplier::{SupplierInput, add_supplier};
+    use std::path::PathBuf;
 
     fn supplier(cfg: &mut Config, protocols: Vec<Protocol>) -> Supplier {
         add_supplier(
@@ -689,23 +678,24 @@ mod tests {
         .unwrap()
     }
 
-    fn input(supplier_id: &str, protocol: Protocol, model: &str) -> BindingInput {
-        BindingInput {
+    fn input(supplier_id: &str, protocol: Protocol, model: &str) -> AgentConfigInput {
+        AgentConfigInput {
             supplier_id: supplier_id.to_string(),
             protocol,
             model: model.to_string(),
-            ..BindingInput::default()
+            ..AgentConfigInput::default()
         }
     }
 
     #[test]
-    fn add_binding_normalizes_settings() {
+    fn set_config_normalizes_settings() {
         let mut cfg = Config::default();
         let supplier = supplier(&mut cfg, vec![Protocol::Responses]);
-        let binding = add_binding(
+        let config = set_config(
             &mut cfg,
             AgentKind::Codex,
-            BindingInput {
+            Env::Wsl,
+            AgentConfigInput {
                 reasoning_effort: Some(" high ".to_string()),
                 plan_reasoning_effort: Some("none".to_string()),
                 context_length: Some("200000".to_string()),
@@ -714,10 +704,45 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(binding.reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(binding.plan_reasoning_effort, None);
-        assert_eq!(binding.context_length.as_deref(), Some("200k"));
-        assert_eq!(binding.compact_ratio, Some(80));
+        assert_eq!(config.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(config.plan_reasoning_effort, None);
+        assert_eq!(config.context_length.as_deref(), Some("200k"));
+        assert_eq!(config.compact_ratio, Some(80));
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("gpt-5")
+        );
+    }
+
+    #[test]
+    fn environments_are_independent() {
+        let mut cfg = Config::default();
+        let supplier = supplier(&mut cfg, vec![Protocol::Responses]);
+        set_config(
+            &mut cfg,
+            AgentKind::Codex,
+            Env::Wsl,
+            input(&supplier.id, Protocol::Responses, "gpt-5"),
+        )
+        .unwrap();
+        set_config(
+            &mut cfg,
+            AgentKind::Codex,
+            Env::Windows,
+            input(&supplier.id, Protocol::Responses, "gpt-5-mini"),
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("gpt-5")
+        );
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Windows)
+                .map(|config| config.model.as_str()),
+            Some("gpt-5-mini")
+        );
     }
 
     #[test]
@@ -725,54 +750,39 @@ mod tests {
         let mut cfg = Config::default();
         let supplier = supplier(&mut cfg, vec![Protocol::Messages, Protocol::Responses]);
         assert!(matches!(
-            add_binding(
+            set_config(
                 &mut cfg,
                 AgentKind::Claude,
+                Env::Wsl,
                 input(&supplier.id, Protocol::Responses, "claude")
             ),
             Err(AgentError::UnsupportedProtocol { .. })
         ));
-        let binding = add_binding(
+        let config = set_config(
             &mut cfg,
             AgentKind::Claude,
-            BindingInput {
+            Env::Wsl,
+            AgentConfigInput {
                 context_length: Some("200k".to_string()),
                 ..input(&supplier.id, Protocol::Messages, "claude")
             },
         )
         .unwrap();
-        assert_eq!(binding.context_length, None);
+        assert_eq!(config.context_length, None);
     }
 
     #[test]
-    fn binding_requires_supplier_protocol() {
+    fn config_requires_supplier_protocol() {
         let mut cfg = Config::default();
         let supplier = supplier(&mut cfg, vec![Protocol::ChatCompletions]);
         assert!(matches!(
-            add_binding(
+            set_config(
                 &mut cfg,
                 AgentKind::Codex,
+                Env::Wsl,
                 input(&supplier.id, Protocol::Responses, "gpt-5")
             ),
             Err(AgentError::SupplierProtocolMissing(_))
-        ));
-    }
-
-    #[test]
-    fn active_binding_cannot_be_removed() {
-        let mut cfg = Config::default();
-        let supplier = supplier(&mut cfg, vec![Protocol::Responses]);
-        let binding = add_binding(
-            &mut cfg,
-            AgentKind::Codex,
-            input(&supplier.id, Protocol::Responses, "gpt-5"),
-        )
-        .unwrap();
-        cfg.agent_mut(AgentKind::Codex)
-            .set_active(Source::Wsl, Some(binding.id.clone()));
-        assert!(matches!(
-            remove_binding(&mut cfg, AgentKind::Codex, &binding.id),
-            Err(AgentError::ActiveBinding(_))
         ));
     }
 
@@ -787,18 +797,18 @@ mod tests {
 
         fn config_path(
             &self,
-            _source: Source,
-            _custom_dir: Option<&std::path::Path>,
-        ) -> Result<std::path::PathBuf, crate::target::TargetError> {
-            Ok(std::path::PathBuf::from("/tmp/cxc-v2-test"))
+            _env: Env,
+            _custom_dir: Option<&Path>,
+        ) -> Result<PathBuf, crate::target::TargetError> {
+            Ok(PathBuf::from("/tmp/cxc-v2-test"))
         }
 
         fn apply(
             &self,
             _supplier: &Supplier,
-            _binding: &Binding,
-            _custom_dir: Option<&std::path::Path>,
-            _source: Source,
+            _config: &AgentConfig,
+            _custom_dir: Option<&Path>,
+            _env: Env,
         ) -> Result<(), crate::target::TargetError> {
             if self.fail {
                 Err(crate::target::TargetError::ParseError(
@@ -811,42 +821,32 @@ mod tests {
     }
 
     #[test]
-    fn activation_updates_active_only_after_successful_write() {
+    fn failed_write_leaves_config_untouched() {
         let mut cfg = Config::default();
         let supplier = supplier(&mut cfg, vec![Protocol::Responses]);
-        let binding = add_binding(
-            &mut cfg,
-            AgentKind::Codex,
-            input(&supplier.id, Protocol::Responses, "gpt-5"),
-        )
-        .unwrap();
-
         let failing = FakeAdapter { fail: true };
         assert!(
-            activate_binding(
+            save_and_apply(
                 &mut cfg,
                 AgentKind::Codex,
-                Source::Wsl,
-                &binding.id,
-                &failing
+                Env::Wsl,
+                input(&supplier.id, Protocol::Responses, "gpt-5"),
+                &failing,
             )
             .is_err()
         );
-        assert_eq!(cfg.agent(AgentKind::Codex).active_wsl, None);
+        assert!(cfg.config_of(AgentKind::Codex, Env::Wsl).is_none());
 
         let working = FakeAdapter { fail: false };
-        activate_binding(
+        save_and_apply(
             &mut cfg,
             AgentKind::Codex,
-            Source::Wsl,
-            &binding.id,
+            Env::Wsl,
+            input(&supplier.id, Protocol::Responses, "gpt-5"),
             &working,
         )
         .unwrap();
-        assert_eq!(
-            cfg.agent(AgentKind::Codex).active_wsl.as_deref(),
-            Some(binding.id.as_str())
-        );
+        assert!(cfg.config_of(AgentKind::Codex, Env::Wsl).is_some());
     }
 
     #[test]

@@ -4,12 +4,13 @@ CXC 第二代桌面端。与旧版并行开发，沿用旧版的视觉语言，�
 
 ## 功能
 
-- **Agent 自动识别**：按 PATH 探测 Codex、Claude Code、Grok CLI、OpenCode；未检测到的 Agent 可在「显示全部」中手动配置。
+- **Agent = 工具 + 环境**：Codex / Claude Code / Grok CLI / OpenCode 各自在 WSL 与 Windows 下是独立 Agent，配置互不影响。
+- **Agent 自动识别**：按 PATH 探测每个 `(工具, 环境)`；不可达的环境不显示，未安装的工具仍可手动配置。
 - **全局中转站**：名称、Base URL、API Key、备注、协议集合、模型目录只保存一份。
 - **三协议探测**：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses，逐个端点探测并写回。
-- **每 Agent 独立绑定**：一个 Agent 可以保存多条绑定，同一来源同时只启用一条；绑定携带模型、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射 / Grok web_search 策略。
+- **每个 Agent 一份配置**：卡片内直接编辑模型、协议、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射 / Grok web_search 策略；点「保存并写入」立即写入目标文件。
 - **按模型测连通性**：单模型测试、按中转站批量测试，结果持久化。
-- **旧版功能对齐**：App / WSL 来源、自定义目录、`.bak` 备份、Gist 同步、系统托盘、更新检查、中英文与明暗主题。
+- **其余能力**：自定义目录（按工具 × 环境）、`.bak` 备份、Gist 同步、系统托盘、更新检查、中英文与明暗主题。
 
 ## 目录
 
@@ -24,8 +25,7 @@ cxc-v2/
 配置文件：Linux / WSL `~/.config/cxc-v2/config.yaml`，Windows `%USERPROFILE%\.config\cxc-v2\config.yaml`。
 
 ```yaml
-version: 2
-source: wsl
+version: 3
 suppliers:
   - id: "..."
     name: "openrouter"
@@ -37,18 +37,28 @@ suppliers:
         protocols: [chat_completions, messages]
 agents:
   codex:
-    active_wsl: "binding-id"
-    bindings:
-      - id: "binding-id"
-        supplier_id: "..."
-        protocol: responses
-        model: "openai/gpt-5"
-        reasoning_effort: high
-        context_length: 200k
-        compact_ratio: 80
+    wsl:
+      supplier_id: "..."
+      protocol: responses
+      model: "openai/gpt-5"
+      reasoning_effort: high
+      context_length: 200k
+      compact_ratio: 80
+    windows:
+      supplier_id: "..."
+      protocol: responses
+      model: "gpt-5-mini"
+  claude: {}
+  grok: {}
+  opencode: {}
+custom_dirs:
+  codex: { wsl: "", windows: "" }
+  claude: { wsl: "", windows: "" }
+  grok: { wsl: "", windows: "" }
+  opencode: { wsl: "", windows: "" }
 ```
 
-旧版 `~/.config/cxc/config.yaml` 在首次启动时一次性导入；旧文件只读，不会被修改。
+旧版 `~/.config/cxc/config.yaml` 在首次启动时一次性导入；版本 2 的 `cxc-v2` 配置会自动收敛成新结构。旧文件只读，不会被修改。
 
 ## 开发
 
@@ -76,9 +86,12 @@ npm run build
 | 压缩比例 | `model_auto_compact_token_limit` | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | `auto_compact_threshold_percent` | `compaction.reserved` 换算 |
 | 多模型 | — | opus / sonnet / haiku / subagent | web_search | — |
 
+每个工具在 WSL 与 Windows 下各有一份配置，写入各自环境的配置文件。
+
 ## 设计文档
 
 - `docs/adr/0018-global-suppliers-and-agent-bindings.md`
 - `docs/adr/0019-three-protocol-probing.md`
 - `docs/adr/0020-opencode-adapter.md`
 - `docs/adr/0021-cxc-v2-config-and-migration.md`
+- `docs/adr/0022-agent-per-environment-single-config.md`

@@ -2,8 +2,8 @@ use serde_json::{Map, Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::agent::{AgentKind, Binding};
-use crate::config::Source;
+use crate::agent::{AgentConfig, AgentKind};
+use crate::config::Env;
 use crate::protocol::Protocol;
 use crate::supplier::Supplier;
 
@@ -39,22 +39,18 @@ impl AgentAdapter for OpenCodeAdapter {
         AgentKind::OpenCode
     }
 
-    fn config_path(
-        &self,
-        source: Source,
-        custom_dir: Option<&Path>,
-    ) -> Result<PathBuf, TargetError> {
-        Ok(resolve_config_dir(AgentKind::OpenCode, source, custom_dir)?.join("opencode.json"))
+    fn config_path(&self, env: Env, custom_dir: Option<&Path>) -> Result<PathBuf, TargetError> {
+        Ok(resolve_config_dir(AgentKind::OpenCode, env, custom_dir)?.join("opencode.json"))
     }
 
     fn apply(
         &self,
         supplier: &Supplier,
-        binding: &Binding,
+        config: &AgentConfig,
         custom_dir: Option<&Path>,
-        source: Source,
+        env: Env,
     ) -> Result<(), TargetError> {
-        let dir = resolve_config_dir(AgentKind::OpenCode, source, custom_dir)?;
+        let dir = resolve_config_dir(AgentKind::OpenCode, env, custom_dir)?;
         fs::create_dir_all(&dir).map_err(|error| TargetError::WriteError {
             path: dir.clone(),
             source: error,
@@ -62,7 +58,7 @@ impl AgentAdapter for OpenCodeAdapter {
         let config_path = dir.join("opencode.json");
         backup(&config_path)?;
 
-        let mut config: Value = if config_path.exists() {
+        let mut doc: Value = if config_path.exists() {
             let data = read_to_string(&config_path)?;
             serde_json::from_str(&data).map_err(|error| {
                 TargetError::ParseError(format!("opencode.json 解析失败: {error}"))
@@ -71,30 +67,26 @@ impl AgentAdapter for OpenCodeAdapter {
             json!({ "$schema": "https://opencode.ai/config.json" })
         };
 
-        if !config.is_object() {
-            config = json!({ "$schema": "https://opencode.ai/config.json" });
+        if !doc.is_object() {
+            doc = json!({ "$schema": "https://opencode.ai/config.json" });
         }
-        if !config
-            .get("provider")
-            .map(Value::is_object)
-            .unwrap_or(false)
-        {
-            config["provider"] = json!({});
+        if !doc.get("provider").map(Value::is_object).unwrap_or(false) {
+            doc["provider"] = json!({});
         }
 
         let key = provider_key(supplier);
-        let model = binding.model.trim();
+        let model = config.model.trim();
         let mut model_config = Map::new();
         model_config.insert("name".to_string(), json!(model));
 
-        if let Some(tokens) = binding.context_tokens() {
+        if let Some(tokens) = config.context_tokens() {
             model_config.insert("limit".to_string(), json!({ "context": tokens }));
         }
         let mut options = Map::new();
-        if let Some(level) = binding.reasoning_effort_level() {
+        if let Some(level) = config.reasoning_effort_level() {
             options.insert("reasoningEffort".to_string(), json!(level));
         }
-        if binding.protocol == Protocol::Responses {
+        if config.protocol == Protocol::Responses {
             options.insert("useResponses".to_string(), json!(true));
         }
         if !options.is_empty() {
@@ -105,7 +97,7 @@ impl AgentAdapter for OpenCodeAdapter {
         models.insert(model.to_string(), Value::Object(model_config));
 
         let provider = json!({
-            "npm": Self::npm(binding.protocol),
+            "npm": Self::npm(config.protocol),
             "name": supplier.name,
             "options": {
                 "baseURL": supplier.base_url,
@@ -113,24 +105,23 @@ impl AgentAdapter for OpenCodeAdapter {
             },
             "models": Value::Object(models)
         });
-        config["provider"][&key] = provider;
+        doc["provider"][&key] = provider;
 
-        config["model"] = json!(format!("{key}/{model}"));
+        doc["model"] = json!(format!("{key}/{model}"));
 
         if let (Some(tokens), Some(ratio)) =
-            (binding.context_tokens(), binding.compact_ratio_percent())
+            (config.context_tokens(), config.compact_ratio_percent())
         {
             let reserved = (tokens.saturating_mul(u64::from(100 - ratio)) / 100).max(1_000);
-            config["compaction"] = json!({
+            doc["compaction"] = json!({
                 "auto": true,
                 "reserved": reserved
             });
-        } else if let Some(compaction) = config.get_mut("compaction").and_then(Value::as_object_mut)
-        {
+        } else if let Some(compaction) = doc.get_mut("compaction").and_then(Value::as_object_mut) {
             compaction.remove("reserved");
         }
 
-        let output = serde_json::to_string_pretty(&config)
+        let output = serde_json::to_string_pretty(&doc)
             .map_err(|error| TargetError::SerializeError(error.to_string()))?;
         write_secure_file(&config_path, output.as_bytes()).map_err(|error| {
             TargetError::WriteError {
@@ -145,7 +136,6 @@ impl AgentAdapter for OpenCodeAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Binding;
     use crate::protocol::Protocol;
     use crate::supplier::Supplier;
     use tempfile::TempDir;
@@ -163,9 +153,8 @@ mod tests {
         }
     }
 
-    fn binding() -> Binding {
-        Binding {
-            id: "b1".to_string(),
+    fn config() -> AgentConfig {
+        AgentConfig {
             supplier_id: "abcdef1234567890".to_string(),
             protocol: Protocol::ChatCompletions,
             model: "gpt-5".to_string(),
@@ -187,7 +176,7 @@ mod tests {
         )
         .unwrap();
         OpenCodeAdapter::new()
-            .apply(&supplier(), &binding(), Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let config: Value =
@@ -219,10 +208,10 @@ mod tests {
     #[test]
     fn maps_messages_to_anthropic_provider() {
         let dir = TempDir::new().unwrap();
-        let mut binding = binding();
-        binding.protocol = Protocol::Messages;
+        let mut config = config();
+        config.protocol = Protocol::Messages;
         OpenCodeAdapter::new()
-            .apply(&supplier(), &binding, Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
             .unwrap();
         let config: Value =
             serde_json::from_str(&fs::read_to_string(dir.path().join("opencode.json")).unwrap())

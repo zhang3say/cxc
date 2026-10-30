@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, Item, Table, Value};
 
-use crate::agent::{AgentKind, Binding, GrokWebSearch};
-use crate::config::Source;
+use crate::agent::{AgentConfig, AgentKind, GrokWebSearch};
+use crate::config::Env;
 use crate::protocol::Protocol;
 use crate::supplier::Supplier;
 
@@ -44,22 +44,18 @@ impl AgentAdapter for GrokAdapter {
         AgentKind::Grok
     }
 
-    fn config_path(
-        &self,
-        source: Source,
-        custom_dir: Option<&Path>,
-    ) -> Result<PathBuf, TargetError> {
-        Ok(resolve_config_dir(AgentKind::Grok, source, custom_dir)?.join("config.toml"))
+    fn config_path(&self, env: Env, custom_dir: Option<&Path>) -> Result<PathBuf, TargetError> {
+        Ok(resolve_config_dir(AgentKind::Grok, env, custom_dir)?.join("config.toml"))
     }
 
     fn apply(
         &self,
         supplier: &Supplier,
-        binding: &Binding,
+        config: &AgentConfig,
         custom_dir: Option<&Path>,
-        source: Source,
+        env: Env,
     ) -> Result<(), TargetError> {
-        let dir = resolve_config_dir(AgentKind::Grok, source, custom_dir)?;
+        let dir = resolve_config_dir(AgentKind::Grok, env, custom_dir)?;
         fs::create_dir_all(&dir).map_err(|error| TargetError::WriteError {
             path: dir.clone(),
             source: error,
@@ -78,18 +74,18 @@ impl AgentAdapter for GrokAdapter {
 
         let key = provider_key(supplier);
         ensure_table(&mut doc, MODELS_SECTION);
-        doc[MODELS_SECTION]["default"] = toml_edit::value(binding.model.trim());
+        doc[MODELS_SECTION]["default"] = toml_edit::value(config.model.trim());
 
         write_provider_block(
             &mut doc,
             &key,
             supplier.base_url.trim(),
             supplier.api_key.trim(),
-            Self::api_backend(binding.protocol),
+            Self::api_backend(config.protocol),
         );
 
-        let mut models = vec![binding.model.trim().to_string()];
-        if let Some(GrokWebSearch::Model { model }) = &binding.grok_web_search {
+        let mut models = vec![config.model.trim().to_string()];
+        if let Some(GrokWebSearch::Model { model }) = &config.grok_web_search {
             let model = model.trim();
             if !model.is_empty() && !models.iter().any(|existing| existing == model) {
                 models.push(model.to_string());
@@ -103,12 +99,12 @@ impl AgentAdapter for GrokAdapter {
             block["model"] = toml_edit::value(model.as_str());
             block["model_provider"] = toml_edit::value(key.as_str());
             clear_model_endpoint_fields(block);
-            apply_model_context_window(block, binding.context_tokens());
+            apply_model_context_window(block, config.context_tokens());
         }
 
-        apply_web_search(&mut doc, binding);
-        apply_reasoning_effort(&mut doc, binding);
-        apply_session_compact(&mut doc, binding.compact_ratio_percent());
+        apply_web_search(&mut doc, config);
+        apply_reasoning_effort(&mut doc, config);
+        apply_session_compact(&mut doc, config.compact_ratio_percent());
 
         let output = doc.to_string();
         output
@@ -185,8 +181,8 @@ fn apply_model_context_window(block: &mut Item, tokens: Option<u64>) {
     }
 }
 
-fn apply_web_search(doc: &mut DocumentMut, binding: &Binding) {
-    let policy = binding
+fn apply_web_search(doc: &mut DocumentMut, config: &AgentConfig) {
+    let policy = config
         .grok_web_search
         .clone()
         .unwrap_or(GrokWebSearch::Follow);
@@ -202,7 +198,7 @@ fn apply_web_search(doc: &mut DocumentMut, binding: &Binding) {
             }
         }
         GrokWebSearch::Follow => {
-            doc[MODELS_SECTION]["web_search"] = toml_edit::value(binding.model.trim());
+            doc[MODELS_SECTION]["web_search"] = toml_edit::value(config.model.trim());
         }
         GrokWebSearch::Model { model } => {
             doc[MODELS_SECTION]["web_search"] = toml_edit::value(model.trim());
@@ -210,12 +206,12 @@ fn apply_web_search(doc: &mut DocumentMut, binding: &Binding) {
     }
 }
 
-fn apply_reasoning_effort(doc: &mut DocumentMut, binding: &Binding) {
-    let model = binding.model.trim();
+fn apply_reasoning_effort(doc: &mut DocumentMut, config: &AgentConfig) {
+    let model = config.model.trim();
     if model.is_empty() {
         return;
     }
-    if let Some(level) = binding.reasoning_effort_level() {
+    if let Some(level) = config.reasoning_effort_level() {
         ensure_table(doc, MODEL_SECTION);
         ensure_standard_table(doc, MODEL_SECTION, model);
         doc[MODEL_SECTION][model]["reasoning_effort"] = toml_edit::value(level);
@@ -245,7 +241,6 @@ fn apply_session_compact(doc: &mut DocumentMut, ratio: Option<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Binding;
     use crate::protocol::Protocol;
     use crate::supplier::Supplier;
     use tempfile::TempDir;
@@ -263,9 +258,8 @@ mod tests {
         }
     }
 
-    fn binding() -> Binding {
-        Binding {
-            id: "b1".to_string(),
+    fn config() -> AgentConfig {
+        AgentConfig {
             supplier_id: "abcdef1234567890".to_string(),
             protocol: Protocol::Responses,
             model: "grok-4.5".to_string(),
@@ -287,7 +281,7 @@ mod tests {
         )
         .unwrap();
         GrokAdapter::new()
-            .apply(&supplier(), &binding(), Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let doc: DocumentMut = fs::read_to_string(dir.path().join("config.toml"))
@@ -325,12 +319,12 @@ mod tests {
     #[test]
     fn web_search_policy_is_applied() {
         let dir = TempDir::new().unwrap();
-        let mut binding = binding();
-        binding.grok_web_search = Some(GrokWebSearch::Model {
+        let mut config = config();
+        config.grok_web_search = Some(GrokWebSearch::Model {
             model: "grok-search".to_string(),
         });
         GrokAdapter::new()
-            .apply(&supplier(), &binding, Some(dir.path()), Source::Wsl)
+            .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
             .unwrap();
         let doc: DocumentMut = fs::read_to_string(dir.path().join("config.toml"))
             .unwrap()

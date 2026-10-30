@@ -4,7 +4,7 @@
 
 > 为 Codex、Claude、Grok 等 AI 编程工具快速切换 API 中转站/代理端点。
 
-> 第二代桌面端正在 `cxc-v2/` 并行开发：全局中转站、Agent 自动识别、三协议探测、按模型测连通性。见 [cxc-v2/README.md](cxc-v2/README.md)。
+> 第二代桌面端正在 `cxc-v2/` 并行开发：全局中转站、Agent 按「工具 + 环境」拆分、三协议探测、按模型测连通性。见 [cxc-v2/README.md](cxc-v2/README.md)。
 
 [![Rust Version](https://img.shields.io/badge/rust-1.96%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)

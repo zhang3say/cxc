@@ -177,11 +177,11 @@ pub fn remove_supplier(cfg: &mut Config, id: &str) -> Result<(), SupplierError> 
     let mut references = Vec::new();
     for kind in AgentKind::ALL {
         let agent = cfg.agent(kind);
-        if agent
-            .bindings
-            .iter()
-            .any(|binding| binding.supplier_id == id)
-        {
+        if crate::config::Env::ALL.iter().any(|env| {
+            agent
+                .get(*env)
+                .is_some_and(|config| config.supplier_id == id)
+        }) {
             references.push(kind.display_name().to_string());
         }
     }
@@ -335,10 +335,9 @@ mod tests {
             input("relay", "https://api.example.com/v1", "sk-1"),
         )
         .unwrap();
-        cfg.agent_mut(AgentKind::Codex)
-            .bindings
-            .push(crate::agent::Binding {
-                id: "b1".to_string(),
+        cfg.agent_mut(AgentKind::Codex).set(
+            crate::config::Env::Wsl,
+            Some(crate::agent::AgentConfig {
                 supplier_id: supplier.id.clone(),
                 protocol: Protocol::Responses,
                 model: "gpt-5".to_string(),
@@ -348,7 +347,8 @@ mod tests {
                 compact_ratio: None,
                 claude_models: None,
                 grok_web_search: None,
-            });
+            }),
+        );
         assert!(matches!(
             remove_supplier(&mut cfg, &supplier.id),
             Err(SupplierError::Referenced(_))

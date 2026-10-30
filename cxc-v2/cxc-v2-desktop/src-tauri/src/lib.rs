@@ -1,5 +1,5 @@
-use cxc_v2_core::agent::{self, AgentKind, BindingInput};
-use cxc_v2_core::config::{self, Config, Source};
+use cxc_v2_core::agent::{self, AgentConfigInput, AgentKind, CustomDirs};
+use cxc_v2_core::config::{self, Config, Env};
 use cxc_v2_core::connectivity::{self, ModelTestOutcome, ModelTestResult};
 use cxc_v2_core::detect::{self, DetectedAgent};
 use cxc_v2_core::migration::{self, ImportReport};
@@ -87,9 +87,14 @@ fn get_config() -> Result<Config, String> {
 }
 
 #[tauri::command]
+fn get_envs() -> Vec<Env> {
+    detect::reachable_envs()
+}
+
+#[tauri::command]
 fn detect_agents() -> Result<Vec<DetectedAgent>, String> {
     let cfg = load_config()?;
-    Ok(detect::detect_all(cfg.source, &cfg.custom_dirs))
+    Ok(detect::detect_all(&cfg.custom_dirs))
 }
 
 #[tauri::command]
@@ -230,84 +235,49 @@ async fn test_supplier_models(id: String) -> Result<BulkTestResponse, String> {
 }
 
 #[tauri::command]
-fn add_binding(
+fn save_agent_config(
     app: tauri::AppHandle,
     agent: String,
-    input: BindingInput,
+    env: String,
+    input: AgentConfigInput,
 ) -> Result<Config, String> {
     let mut cfg = load_config()?;
     let kind = parse_agent(&agent)?;
-    agent::add_binding(&mut cfg, kind, input).map_err(|error| error.to_string())?;
-    save_config(&cfg)?;
-    let _ = update_tray_menu_with_config(&app, &cfg);
-    Ok(cfg)
-}
-
-#[tauri::command]
-fn edit_binding(
-    app: tauri::AppHandle,
-    agent: String,
-    id: String,
-    input: BindingInput,
-) -> Result<Config, String> {
-    let mut cfg = load_config()?;
-    let kind = parse_agent(&agent)?;
-    agent::edit_binding(&mut cfg, kind, &id, input).map_err(|error| error.to_string())?;
-    save_config(&cfg)?;
-    let _ = update_tray_menu_with_config(&app, &cfg);
-    Ok(cfg)
-}
-
-#[tauri::command]
-fn delete_binding(app: tauri::AppHandle, agent: String, id: String) -> Result<Config, String> {
-    let mut cfg = load_config()?;
-    let kind = parse_agent(&agent)?;
-    agent::remove_binding(&mut cfg, kind, &id).map_err(|error| error.to_string())?;
-    save_config(&cfg)?;
-    let _ = update_tray_menu_with_config(&app, &cfg);
-    Ok(cfg)
-}
-
-#[tauri::command]
-fn activate_binding(
-    app: tauri::AppHandle,
-    agent: String,
-    source: String,
-    id: String,
-) -> Result<Config, String> {
-    let mut cfg = load_config()?;
-    let kind = parse_agent(&agent)?;
-    let source = Source::parse(&source);
+    let env = Env::parse(&env);
     let adapter = target::adapter_for(kind);
-    agent::activate_binding(&mut cfg, kind, source, &id, adapter.as_ref())
+    agent::save_and_apply(&mut cfg, kind, env, input, adapter.as_ref())
         .map_err(|error| error.to_string())?;
     save_config(&cfg)?;
     let _ = update_tray_menu_with_config(&app, &cfg);
-    notify_switched(kind, &cfg, source);
+    notify_written(kind, env, &cfg);
     let _ = app.emit("config-updated", &cfg);
     Ok(cfg)
 }
 
 #[tauri::command]
-fn reload_active(app: tauri::AppHandle, agent: String, source: String) -> Result<Config, String> {
-    let cfg = load_config()?;
+fn clear_agent_config(agent: String, env: String) -> Result<Config, String> {
+    let mut cfg = load_config()?;
     let kind = parse_agent(&agent)?;
-    let source = Source::parse(&source);
-    let adapter = target::adapter_for(kind);
-    agent::reload_active(&cfg, kind, source, adapter.as_ref())
-        .map_err(|error| error.to_string())?;
-    let _ = update_tray_menu_with_config(&app, &cfg);
+    let env = Env::parse(&env);
+    agent::clear_config(&mut cfg, kind, env);
+    save_config(&cfg)?;
     Ok(cfg)
 }
 
 #[tauri::command]
-fn save_settings(
-    app: tauri::AppHandle,
-    source: String,
-    custom_dirs: agent::CustomDirs,
-) -> Result<Config, String> {
+fn rewrite_agent(agent: String, env: String) -> Result<Config, String> {
+    let cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::rewrite(&cfg, kind, env, adapter.as_ref()).map_err(|error| error.to_string())?;
+    notify_written(kind, env, &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+fn save_settings(app: tauri::AppHandle, custom_dirs: CustomDirs) -> Result<Config, String> {
     let mut cfg = load_config()?;
-    cfg.source = Source::parse(&source);
     cfg.custom_dirs = custom_dirs;
     save_config(&cfg)?;
     let _ = update_tray_menu_with_config(&app, &cfg);
@@ -450,29 +420,25 @@ fn version_gt(left: &str, right: &str) -> bool {
     false
 }
 
+fn agent_label(kind: AgentKind, env: Env) -> String {
+    format!("{} ({})", kind.display_name(), env.label())
+}
+
 fn update_tray_menu_with_config(app: &tauri::AppHandle, cfg: &Config) -> Result<(), String> {
     let menu = Menu::new(app).map_err(|error| error.to_string())?;
 
-    for kind in AgentKind::ALL {
-        let agent_cfg = cfg.agent(kind);
-        let active_id = agent_cfg.active(cfg.source);
-        for binding in &agent_cfg.bindings {
-            let supplier_name = cfg
-                .supplier(&binding.supplier_id)
-                .map(|supplier| supplier.name.as_str())
-                .unwrap_or("?");
-            let label = format!(
-                "{} · {} / {}",
-                kind.display_name(),
-                supplier_name,
-                binding.model
-            );
+    for env in detect::reachable_envs() {
+        for kind in AgentKind::ALL {
+            let Some(config) = cfg.config_of(kind, env) else {
+                continue;
+            };
+            let label = format!("{} · {}", agent_label(kind, env), config.model);
             let item = CheckMenuItem::with_id(
                 app,
-                format!("activate:{}:{}", kind.as_str(), binding.id),
+                format!("rewrite:{}:{}", kind.as_str(), env.as_str()),
                 label,
                 true,
-                active_id == Some(binding.id.as_str()),
+                false,
                 None::<&str>,
             )
             .map_err(|error| error.to_string())?;
@@ -507,19 +473,12 @@ fn update_tray_menu(app: &tauri::AppHandle) -> Result<(), String> {
     update_tray_menu_with_config(app, &cfg)
 }
 
-fn notify_switched(kind: AgentKind, cfg: &Config, source: Source) {
-    let Some(id) = cfg.agent(kind).active(source) else {
+fn notify_written(kind: AgentKind, env: Env, cfg: &Config) {
+    let Some(config) = cfg.config_of(kind, env) else {
         return;
     };
-    let Some(binding) = cfg.agent(kind).binding(id) else {
-        return;
-    };
-    let supplier = cfg
-        .supplier(&binding.supplier_id)
-        .map(|supplier| supplier.name.clone())
-        .unwrap_or_default();
-    let title = format!("{} · {}", kind.display_name(), supplier);
-    let body = format!("已启用 {}", binding.model);
+    let title = agent_label(kind, env);
+    let body = format!("已写入 {}", config.model);
     std::thread::spawn(move || {
         let _ = notify_rust::Notification::new()
             .summary(&title)
@@ -535,19 +494,17 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-fn activate_from_tray(app: &tauri::AppHandle, agent: &str, binding_id: &str) {
+fn rewrite_from_tray(app: &tauri::AppHandle, agent: &str, env: &str) {
     let Ok(kind) = parse_agent(agent) else {
         return;
     };
-    let Ok(mut cfg) = load_config() else {
+    let env = Env::parse(env);
+    let Ok(cfg) = load_config() else {
         return;
     };
-    let source = cfg.source;
     let adapter = target::adapter_for(kind);
-    if agent::activate_binding(&mut cfg, kind, source, binding_id, adapter.as_ref()).is_ok() {
-        let _ = save_config(&cfg);
-        let _ = update_tray_menu_with_config(app, &cfg);
-        notify_switched(kind, &cfg, source);
+    if agent::rewrite(&cfg, kind, env, adapter.as_ref()).is_ok() {
+        notify_written(kind, env, &cfg);
         let _ = app.emit("config-updated", &cfg);
     }
 }
@@ -589,10 +546,10 @@ pub fn run() {
                         app.exit(0);
                     } else if id == "show_window" {
                         show_main_window(app);
-                    } else if let Some(rest) = id.strip_prefix("activate:") {
+                    } else if let Some(rest) = id.strip_prefix("rewrite:") {
                         let mut parts = rest.splitn(2, ':');
-                        if let (Some(agent), Some(binding_id)) = (parts.next(), parts.next()) {
-                            activate_from_tray(app, agent, binding_id);
+                        if let (Some(agent), Some(env)) = (parts.next(), parts.next()) {
+                            rewrite_from_tray(app, agent, env);
                         }
                     }
                 })
@@ -609,6 +566,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_envs,
             detect_agents,
             get_path_env,
             add_supplier,
@@ -618,11 +576,9 @@ pub fn run() {
             fetch_supplier_models,
             test_supplier_model,
             test_supplier_models,
-            add_binding,
-            edit_binding,
-            delete_binding,
-            activate_binding,
-            reload_active,
+            save_agent_config,
+            clear_agent_config,
+            rewrite_agent,
             save_settings,
             get_sync_config,
             save_sync_config,

@@ -1,4 +1,4 @@
-export type Source = "app" | "wsl";
+export type Env = "wsl" | "windows";
 export type Protocol = "chat_completions" | "responses" | "messages";
 export type AgentKind = "codex" | "claude" | "grok" | "opencode";
 
@@ -35,8 +35,8 @@ export type GrokWebSearch =
   | { mode: "model"; model: string }
   | { mode: "unset" };
 
-export interface Binding {
-  id: string;
+/** 某个 Agent（工具 + 环境）唯一的一份配置。 */
+export interface AgentConfig {
   supplier_id: string;
   protocol: Protocol;
   model: string;
@@ -48,24 +48,28 @@ export interface Binding {
   grok_web_search?: GrokWebSearch;
 }
 
-export interface AgentConfig {
-  active_app?: string;
-  active_wsl?: string;
-  bindings: Binding[];
+export interface AgentEnvs {
+  wsl?: AgentConfig | null;
+  windows?: AgentConfig | null;
 }
 
 export interface Agents {
-  codex: AgentConfig;
-  claude: AgentConfig;
-  grok: AgentConfig;
-  opencode: AgentConfig;
+  codex: AgentEnvs;
+  claude: AgentEnvs;
+  grok: AgentEnvs;
+  opencode: AgentEnvs;
+}
+
+export interface EnvDirs {
+  wsl: string;
+  windows: string;
 }
 
 export interface CustomDirs {
-  codex: string;
-  claude: string;
-  grok: string;
-  opencode: string;
+  codex: EnvDirs;
+  claude: EnvDirs;
+  grok: EnvDirs;
+  opencode: EnvDirs;
 }
 
 export interface SyncConfig {
@@ -77,7 +81,6 @@ export interface SyncConfig {
 
 export interface Config {
   version: number;
-  source: Source;
   suppliers: Supplier[];
   agents: Agents;
   custom_dirs: CustomDirs;
@@ -87,11 +90,11 @@ export interface Config {
 
 export interface DetectedAgent {
   kind: AgentKind;
+  env: Env;
   installed: boolean;
   binary?: string;
   config_dir?: string;
   configured: boolean;
-  source: Source;
 }
 
 export interface AgentCapabilities {
@@ -134,15 +137,15 @@ export interface ImportReport {
   imported: boolean;
   reason: string;
   suppliers: number;
-  bindings: number;
+  configs: number;
   skipped: string[];
 }
 
 export interface MergeReport {
   suppliers_added: number;
   suppliers_updated: number;
-  bindings_added: number;
-  bindings_updated: number;
+  configs_added: number;
+  configs_updated: number;
 }
 
 export interface UpdateInfo {
@@ -160,7 +163,7 @@ export interface SupplierInput {
   protocols?: Protocol[];
 }
 
-export interface BindingInput {
+export interface AgentConfigInput {
   supplier_id: string;
   protocol: Protocol;
   model: string;
@@ -173,12 +176,18 @@ export interface BindingInput {
 }
 
 export const AGENT_KINDS: AgentKind[] = ["codex", "claude", "grok", "opencode"];
+export const ENVS: Env[] = ["wsl", "windows"];
 
 export const AGENT_LABELS: Record<AgentKind, string> = {
   codex: "Codex",
   claude: "Claude Code",
   grok: "Grok CLI",
   opencode: "OpenCode",
+};
+
+export const ENV_LABELS: Record<Env, string> = {
+  wsl: "WSL",
+  windows: "Windows",
 };
 
 export const PROTOCOL_LABELS: Record<Protocol, string> = {
@@ -238,3 +247,20 @@ export const REASONING_OPTIONS: Record<AgentKind, string[]> = {
   grok: ["minimal", "low", "medium", "high", "xhigh", "max"],
   opencode: ["minimal", "low", "medium", "high", "xhigh"],
 };
+
+export function configOf(
+  config: Config,
+  kind: AgentKind,
+  env: Env,
+): AgentConfig | undefined {
+  return config.agents[kind]?.[env] ?? undefined;
+}
+
+export function emptyDirs(): CustomDirs {
+  return {
+    codex: { wsl: "", windows: "" },
+    claude: { wsl: "", windows: "" },
+    grok: { wsl: "", windows: "" },
+    opencode: { wsl: "", windows: "" },
+  };
+}

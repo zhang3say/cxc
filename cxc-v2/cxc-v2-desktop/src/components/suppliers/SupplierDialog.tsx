@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { errorText } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import type { Messages } from "@/lib/i18n";
 import type { Protocol, Supplier, SupplierInput } from "@/lib/types";
@@ -85,7 +86,7 @@ export function SupplierDialog({
         probeAfterSave,
       );
     } catch (submitError) {
-      setError(String(submitError));
+      setError(errorText(submitError));
     }
   };
 
