@@ -1,0 +1,81 @@
+import { invoke } from "@tauri-apps/api/core";
+import { mockInvoke } from "./mock";
+import type {
+  AgentKind,
+  BindingInput,
+  Config,
+  CustomDirs,
+  DetectedAgent,
+  ImportReport,
+  MergeReport,
+  ModelTestOutcome,
+  ModelTestResult,
+  ProbeReport,
+  Protocol,
+  Source,
+  SupplierInput,
+  SyncConfig,
+  UpdateInfo,
+} from "./types";
+
+export const isTauri =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (isTauri) return invoke<T>(command, args);
+  return mockInvoke<T>(command, args);
+}
+
+export const api = {
+  getConfig: () => call<Config>("get_config"),
+  detectAgents: () => call<DetectedAgent[]>("detect_agents"),
+  getPathEnv: () => call<string>("get_path_env"),
+
+  addSupplier: (input: SupplierInput) =>
+    call<Config>("add_supplier", { input }),
+  editSupplier: (id: string, input: SupplierInput) =>
+    call<Config>("edit_supplier", { id, input }),
+  deleteSupplier: (id: string) =>
+    call<Config>("delete_supplier", { id }),
+  probeSupplier: (id: string) =>
+    call<{ config: Config; report: ProbeReport }>("probe_supplier", { id }),
+  fetchSupplierModels: (id: string) =>
+    call<{ config: Config; models: string[] }>("fetch_supplier_models", { id }),
+  testSupplierModel: (id: string, model: string, protocol: Protocol) =>
+    call<{ config: Config; result: ModelTestResult }>("test_supplier_model", {
+      id,
+      model,
+      protocol,
+    }),
+  testSupplierModels: (id: string) =>
+    call<{ config: Config; outcomes: ModelTestOutcome[] }>("test_supplier_models", {
+      id,
+    }),
+
+  addBinding: (agent: AgentKind, input: BindingInput) =>
+    call<Config>("add_binding", { agent, input }),
+  editBinding: (agent: AgentKind, id: string, input: BindingInput) =>
+    call<Config>("edit_binding", { agent, id, input }),
+  deleteBinding: (agent: AgentKind, id: string) =>
+    call<Config>("delete_binding", { agent, id }),
+  activateBinding: (agent: AgentKind, source: Source, id: string) =>
+    call<Config>("activate_binding", { agent, source, id }),
+  reloadActive: (agent: AgentKind, source: Source) =>
+    call<Config>("reload_active", { agent, source }),
+
+  saveSettings: (source: Source, customDirs: CustomDirs) =>
+    call<Config>("save_settings", { source, customDirs }),
+
+  getSyncConfig: () => call<SyncConfig>("get_sync_config"),
+  saveSyncConfig: (sync: SyncConfig) =>
+    call<Config>("save_sync_config", { sync }),
+  testGistConnection: (token: string, gistId?: string) =>
+    call<string>("test_gist_connection", { token, gistId }),
+  syncPush: () => call<{ config: Config; report: MergeReport }>("sync_push"),
+  syncPull: () => call<{ config: Config; report: MergeReport }>("sync_pull"),
+  syncMerge: () => call<{ config: Config; report: MergeReport }>("sync_merge"),
+
+  getAppVersion: () => call<string>("get_app_version"),
+  checkUpdate: () => call<UpdateInfo>("check_update"),
+  importLegacyConfig: () => call<ImportReport>("import_legacy_config"),
+};

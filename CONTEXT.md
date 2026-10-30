@@ -103,3 +103,28 @@ An optional directory path configuration in CXC. Used when the Grok config files
 
 面向同步数据的客户端主动安全加固机制。当用户设置了同步主密码时，同步载荷在上传到 GitHub Gist 前会在本地通过 AES-256-GCM 算法全量加密，确保 API Key 与机密中转凭证在云端永不以明文留存。
 
+## CXC 2 (第二代桌面端)
+
+`cxc-v2/` 下的并行重写版本。沿用旧版视觉语言，使用独立配置 `~/.config/cxc-v2/config.yaml`，旧版配置只作为一次性导入来源。数据模型是「全局中转站 + 每个 Agent 的绑定目录」。
+
+## Supplier (全局中转站)
+
+CXC 2 中只保存一份的中转站凭证：`id`、名称、Base URL、API Key、协议集合、备注和模型目录。所有 Agent 共用同一批 Supplier；绑定通过 `supplier_id` 引用它。删除被绑定引用的 Supplier 会被拒绝。
+
+## Binding (Agent 绑定)
+
+某个 Agent 的一条可启用配置：引用一个 Supplier，并保存协议、模型、推理档位、上下文长度、压缩比例，以及 Claude 多模型映射或 Grok web_search 策略。每个 Agent 可以保存多条 Binding，每个来源（App / WSL）同时只启用一条。
+
+## Protocol Set (协议集合)
+
+Supplier 上确认支持的协议集合，取值为 `chat_completions`、`responses`、`messages`。可以手选，也可以对端点探测后写回；探测只增不删。Binding 的协议必须同时被 Agent 和 Supplier 支持。
+
+## Agent Detection (Agent 自动识别)
+
+按 PATH 探测 Codex、Claude Code、Grok CLI、OpenCode 是否已安装。配置目录只用于标记「已配置 / 未配置」和定位写入目标；未检测到的 Agent 可以通过「显示全部」手动配置。
+
+## Model Connectivity (模型连通性)
+
+对 Supplier 模型目录中的单个模型发送最小推理请求，记录延迟、成功状态和错误。支持单模型测试和按中转站批量测试；结果持久化在模型条目上。
+
+

@@ -4,6 +4,9 @@ members = [
     "cxc-core",
     "cxc-desktop/src-tauri",
 ]
+exclude = [
+    "cxc-v2",
+]
 
 # The profile that 'dist' will build with
 [profile.dist]
