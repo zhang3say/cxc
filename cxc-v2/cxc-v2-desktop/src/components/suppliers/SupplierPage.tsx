@@ -365,7 +365,7 @@ interface SupplierPageProps {
     model: string,
     protocol: Protocol,
     keyId?: string,
-  ) => void;
+  ) => Promise<unknown>;
   onTestModelAll: (
     supplier: Supplier,
     model: string,
@@ -668,12 +668,37 @@ function ModelRow({
 }: {
   model: SupplierModel;
   protocols: Protocol[];
+  /** 中转站级操作（探测 / 拉取 / 全部测试）进行中时禁用本行。 */
   busy: boolean;
   keyName?: string;
   t: Messages;
-  onTest: (protocol: Protocol) => void;
-  onTestAll: () => void;
+  onTest: (protocol: Protocol) => Promise<unknown>;
+  onTestAll: () => Promise<void>;
 }) {
+  // 测试状态按行独立：只让被点的那一行 / 那个协议转圈。
+  const [testing, setTesting] = useState<Protocol | "all" | null>(null);
+  const locked = busy || testing != null;
+
+  const runTest = async (protocol: Protocol) => {
+    if (locked) return;
+    setTesting(protocol);
+    try {
+      await onTest(protocol);
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const runAll = async () => {
+    if (locked) return;
+    setTesting("all");
+    try {
+      await onTestAll();
+    } finally {
+      setTesting(null);
+    }
+  };
+
   return (
     <tr className="border-t border-border/40 align-middle">
       <td className="px-3 py-2">
@@ -688,11 +713,14 @@ function ModelRow({
             <button
               key={protocol}
               type="button"
-              disabled={busy}
-              onClick={() => onTest(protocol)}
+              disabled={locked}
+              onClick={() => void runTest(protocol)}
               title={`${t.test} ${PROTOCOL_LABELS[protocol]}`}
-              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${PROTOCOL_BADGE_CLASSES[protocol]}`}
+              className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${PROTOCOL_BADGE_CLASSES[protocol]}`}
             >
+              {testing === protocol ? (
+                <Loader2 className="size-2.5 animate-spin" />
+              ) : null}
               {PROTOCOL_LABELS[protocol]}
             </button>
           ))}
@@ -731,11 +759,11 @@ function ModelRow({
         <Button
           variant="ghost"
           size="icon-sm"
-          disabled={busy}
-          onClick={onTestAll}
+          disabled={locked}
+          onClick={() => void runAll()}
           title={t.testThisModel}
         >
-          {busy ? (
+          {testing === "all" ? (
             <Loader2 className="size-3 animate-spin" />
           ) : (
             <Activity className="size-3" />
