@@ -30,7 +30,7 @@ import type {
   SupplierInput,
   SyncConfig,
 } from "@/lib/types";
-import { emptyDirs } from "@/lib/types";
+import { PROTOCOL_LABELS, emptyDirs } from "@/lib/types";
 import { errorText } from "@/lib/utils";
 
 type ToastKind = "success" | "error" | "info";
@@ -241,6 +241,45 @@ export default function App() {
     return result.result;
   };
 
+  /**
+   * 逐协议测试同一个模型。忙碌状态由调用它的那一行自己维护，
+   * 这里不写全局 busy，否则所有行会一起转圈、看起来像全测了。
+   */
+  const testModelAllProtocols = async (
+    supplier: Supplier,
+    model: string,
+    protocols: Protocol[],
+    keyId?: string,
+  ) => {
+    if (protocols.length === 0) return;
+    try {
+      const results: { protocol: Protocol; ok: boolean; latency: number }[] = [];
+      let last: Config | null = null;
+      for (const protocol of protocols) {
+        const result = await api.testSupplierModel(supplier.id, model, protocol, keyId);
+        last = result.config;
+        results.push({
+          protocol,
+          ok: result.result.ok,
+          latency: result.result.latency_ms,
+        });
+      }
+      if (last) setConfig(last);
+      const detail = results
+        .map(
+          (item) =>
+            `${PROTOCOL_LABELS[item.protocol]} ${item.ok ? "✓" : "✗"} ${item.latency} ms`,
+        )
+        .join(" · ");
+      showToast(
+        `${model} · ${detail}`,
+        results.some((item) => item.ok) ? "success" : "error",
+      );
+    } catch (error) {
+      showToast(errorText(error), "error");
+    }
+  };
+
   const addBinding = async (input: AgentConfigInput, activate: boolean) => {
     setSaving(true);
     try {
@@ -410,9 +449,7 @@ export default function App() {
         onProbe={probeSupplier}
         onFetchModels={fetchModels}
         onTestAll={testAll}
-        onTestModel={(supplier, model, protocol, keyId) =>
-          testModel(supplier.id, model, protocol, keyId)
-        }
+        onTestModelAll={testModelAllProtocols}
       />
     );
   }, [

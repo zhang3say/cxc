@@ -360,12 +360,12 @@ interface SupplierPageProps {
   onProbe: (supplier: Supplier) => void;
   onFetchModels: (supplier: Supplier) => void;
   onTestAll: (supplier: Supplier, keyId?: string) => void;
-  onTestModel: (
+  onTestModelAll: (
     supplier: Supplier,
     model: string,
-    protocol: Protocol,
+    protocols: Protocol[],
     keyId?: string,
-  ) => Promise<unknown>;
+  ) => Promise<void>;
 }
 
 export function SupplierPage({
@@ -379,7 +379,7 @@ export function SupplierPage({
   onProbe,
   onFetchModels,
   onTestAll,
-  onTestModel,
+  onTestModelAll,
 }: SupplierPageProps) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [testKeyId, setTestKeyId] = useState<string | undefined>(undefined);
@@ -599,15 +599,15 @@ export function SupplierPage({
                 </div>
               ) : (
                 <>
-                  <p className="mb-1.5 text-right text-[9px] text-muted-foreground/60">
-                    {t.clickProtocolToTest}
-                  </p>
                   <div className="overflow-hidden rounded-xl border border-border/60">
                     <table className="w-full table-fixed text-left text-[11px]">
                       <thead className="bg-muted/30 text-[9px] uppercase tracking-wider text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2 font-bold">{t.model}</th>
                           <th className="w-[152px] px-3 py-2 font-bold">{t.status}</th>
+                          <th className="w-11 px-2 py-2 text-right font-bold">
+                            <span className="sr-only">{t.test}</span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -621,8 +621,13 @@ export function SupplierPage({
                               detail.keys.find((key) => key.id === model.tested_key_id)?.name
                             }
                             t={t}
-                            onTest={(protocol) =>
-                              onTestModel(detail, model.model, protocol, testAccount?.id)
+                            onTestAll={() =>
+                              onTestModelAll(
+                                detail,
+                                model.model,
+                                protocolsFor(model),
+                                testAccount?.id,
+                              )
                             }
                           />
                         ))}
@@ -645,7 +650,7 @@ function ModelRow({
   busy,
   keyName,
   t,
-  onTest,
+  onTestAll,
 }: {
   model: SupplierModel;
   protocols: Protocol[];
@@ -653,19 +658,19 @@ function ModelRow({
   busy: boolean;
   keyName?: string;
   t: Messages;
-  onTest: (protocol: Protocol) => Promise<unknown>;
+  onTestAll: () => Promise<void>;
 }) {
-  // 测试状态按行独立：只让被点的那一个协议徽章转圈。
-  const [testing, setTesting] = useState<Protocol | null>(null);
-  const locked = busy || testing != null;
+  // 测试状态按行独立：只让被点的那一行转圈。
+  const [testing, setTesting] = useState(false);
+  const locked = busy || testing;
 
-  const runTest = async (protocol: Protocol) => {
+  const runTest = async () => {
     if (locked) return;
-    setTesting(protocol);
+    setTesting(true);
     try {
-      await onTest(protocol);
+      await onTestAll();
     } finally {
-      setTesting(null);
+      setTesting(false);
     }
   };
 
@@ -678,22 +683,8 @@ function ModelRow({
         >
           {model.model}
         </span>
-        <div className="mt-1 flex flex-wrap gap-1">
-          {protocols.map((protocol) => (
-            <button
-              key={protocol}
-              type="button"
-              disabled={locked}
-              onClick={() => void runTest(protocol)}
-              title={`${t.test} ${PROTOCOL_LABELS[protocol]}`}
-              className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${PROTOCOL_BADGE_CLASSES[protocol]}`}
-            >
-              {testing === protocol ? (
-                <Loader2 className="size-2.5 animate-spin" />
-              ) : null}
-              {PROTOCOL_LABELS[protocol]}
-            </button>
-          ))}
+        <div className="mt-1">
+          <ProtocolBadges protocols={protocols} compact />
         </div>
       </td>
       <td className="px-3 py-2">
@@ -724,6 +715,21 @@ function ModelRow({
             {keyName}
           </span>
         ) : null}
+      </td>
+      <td className="px-2 py-2 text-right">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={locked}
+          onClick={() => void runTest()}
+          title={t.testThisModel}
+        >
+          {testing ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Activity className="size-3" />
+          )}
+        </Button>
       </td>
     </tr>
   );
