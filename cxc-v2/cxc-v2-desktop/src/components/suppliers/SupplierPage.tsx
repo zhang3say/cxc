@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   Download,
   Edit2,
+  LayoutGrid,
+  List,
   Loader2,
   Plus,
   RefreshCw,
@@ -71,6 +73,16 @@ function statusOf(supplier: Supplier): "ok" | "fail" | "unknown" {
   return tested.some((model) => model.last_ok) ? "ok" : "fail";
 }
 
+function statusDotClass(status: "ok" | "fail" | "unknown") {
+  if (status === "ok") return "bg-sticker-green shadow-[0_0_6px_rgba(26,174,57,0.35)]";
+  if (status === "fail") return "bg-red-500";
+  return "bg-muted-foreground/30";
+}
+
+function lastLatencyOf(supplier: Supplier): number | undefined {
+  return supplier.models.find((model) => model.latency_ms != null)?.latency_ms;
+}
+
 function formatTime(value?: string) {
   if (!value) return "—";
   try {
@@ -78,6 +90,262 @@ function formatTime(value?: string) {
   } catch {
     return value;
   }
+}
+
+type ViewMode = "list" | "cards";
+const VIEW_STORAGE_KEY = "cxc-v2-supplier-view";
+
+function initialView(): ViewMode {
+  const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+  return stored === "cards" || stored === "list" ? stored : "list";
+}
+
+interface SupplierActionsProps {
+  supplier: Supplier;
+  action?: string;
+  t: Messages;
+  onProbe: () => void;
+  onFetchModels: () => void;
+  onTestAll: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function SupplierActions({
+  action,
+  t,
+  onProbe,
+  onFetchModels,
+  onTestAll,
+  onEdit,
+  onDelete,
+}: SupplierActionsProps) {
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={Boolean(action)}
+        onClick={onProbe}
+        title={t.probe}
+      >
+        {action === "probe" ? (
+          <Loader2 className="size-3 animate-spin" />
+        ) : (
+          <RefreshCw className="size-3" />
+        )}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={Boolean(action)}
+        onClick={onFetchModels}
+        title={t.fetchModels}
+      >
+        {action === "models" ? (
+          <Loader2 className="size-3 animate-spin" />
+        ) : (
+          <Download className="size-3" />
+        )}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={Boolean(action)}
+        onClick={onTestAll}
+        title={t.testAll}
+      >
+        {action === "test" ? (
+          <Loader2 className="size-3 animate-spin" />
+        ) : (
+          <Activity className="size-3" />
+        )}
+      </Button>
+      <span className="mx-0.5 h-4 w-px bg-border/60" />
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={Boolean(action)}
+        onClick={onEdit}
+        title={t.editSupplier}
+      >
+        <Edit2 className="size-3" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={Boolean(action)}
+        onClick={onDelete}
+        className="text-red-500 hover:bg-red-500/10 hover:text-red-600"
+        title={t.delete}
+      >
+        <Trash2 className="size-3" />
+      </Button>
+    </div>
+  );
+}
+
+function SupplierCard({
+  supplier,
+  action,
+  t,
+  onOpen,
+  onProbe,
+  onFetchModels,
+  onTestAll,
+  onEdit,
+  onDelete,
+}: {
+  supplier: Supplier;
+  action?: string;
+  t: Messages;
+  onOpen: () => void;
+  onProbe: () => void;
+  onFetchModels: () => void;
+  onTestAll: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const status = statusOf(supplier);
+  const latency = lastLatencyOf(supplier);
+
+  return (
+    <div
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:border-border hover:shadow-sm"
+      onClick={onOpen}
+    >
+      <div className="flex items-start justify-between gap-3 p-4 pb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`size-2 shrink-0 rounded-full ${statusDotClass(status)}`} />
+            <h3 className="truncate text-sm font-bold text-foreground">{supplier.name}</h3>
+          </div>
+          {supplier.remark ? (
+            <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+              {supplier.remark}
+            </p>
+          ) : null}
+          <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+            {supplier.keys.length} {t.accountsCount}
+          </p>
+        </div>
+        <ProtocolBadges protocols={supplier.protocols} />
+      </div>
+
+      <div className="space-y-2 px-4 pb-3">
+        <p className="truncate font-mono text-[11px] text-muted-foreground/80">
+          {supplier.base_url}
+        </p>
+        <div className="flex items-center justify-between text-[10.5px]">
+          <span className="font-medium text-muted-foreground/80">
+            {supplier.models.length} {t.modelsCount}
+          </span>
+          <span className={`font-bold ${latencyClass(latency)}`}>
+            {latency != null ? `${latency} ms` : t.never}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
+          <span>{t.lastProbe}</span>
+          <span>{formatTime(supplier.last_probe)}</span>
+        </div>
+      </div>
+
+      <div
+        className="mt-auto flex items-center justify-end border-t border-border/50 bg-background/40 px-3 py-2"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <SupplierActions
+          supplier={supplier}
+          action={action}
+          t={t}
+          onProbe={onProbe}
+          onFetchModels={onFetchModels}
+          onTestAll={onTestAll}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SupplierListRow({
+  supplier,
+  action,
+  t,
+  onOpen,
+  onProbe,
+  onFetchModels,
+  onTestAll,
+  onEdit,
+  onDelete,
+}: {
+  supplier: Supplier;
+  action?: string;
+  t: Messages;
+  onOpen: () => void;
+  onProbe: () => void;
+  onFetchModels: () => void;
+  onTestAll: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const status = statusOf(supplier);
+  const latency = lastLatencyOf(supplier);
+
+  return (
+    <tr
+      className="cursor-pointer border-t border-border/40 transition-colors first:border-t-0 hover:bg-muted/10"
+      onClick={onOpen}
+    >
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className={`size-2 shrink-0 rounded-full ${statusDotClass(status)}`} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-xs font-bold text-foreground">
+                {supplier.name}
+              </span>
+              {supplier.remark ? (
+                <span className="hidden truncate text-[10px] text-muted-foreground/70 lg:inline">
+                  {supplier.remark}
+                </span>
+              ) : null}
+            </div>
+            <p className="truncate font-mono text-[10px] text-muted-foreground/70">
+              {supplier.base_url}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2.5">
+        <ProtocolBadges protocols={supplier.protocols} compact />
+      </td>
+      <td className="px-3 py-2.5 text-center font-mono text-[10.5px] text-muted-foreground">
+        {supplier.keys.length}
+      </td>
+      <td className="px-3 py-2.5 text-center font-mono text-[10.5px] text-muted-foreground">
+        {supplier.models.length}
+      </td>
+      <td className={`px-3 py-2.5 text-right font-mono text-[10.5px] font-bold ${latencyClass(latency)}`}>
+        {latency != null ? `${latency} ms` : t.never}
+      </td>
+      <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
+        <div className="flex justify-end">
+          <SupplierActions
+            supplier={supplier}
+            action={action}
+            t={t}
+            onProbe={onProbe}
+            onFetchModels={onFetchModels}
+            onTestAll={onTestAll}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        </div>
+      </td>
+    </tr>
+  );
 }
 
 interface SupplierPageProps {
@@ -114,8 +382,14 @@ export function SupplierPage({
 }: SupplierPageProps) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [testKeyId, setTestKeyId] = useState<string | undefined>(undefined);
+  const [view, setView] = useState<ViewMode>(initialView);
   const detail = config.suppliers.find((supplier) => supplier.id === detailId) ?? null;
   const testAccount = effectiveKey(detail ?? undefined, testKeyId);
+
+  const changeView = (next: ViewMode) => {
+    setView(next);
+    localStorage.setItem(VIEW_STORAGE_KEY, next);
+  };
 
   const suppliers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -149,140 +423,81 @@ export function SupplierPage({
     );
   }
 
+  const rowProps = (supplier: Supplier) => ({
+    supplier,
+    action: busy[supplier.id],
+    t,
+    onOpen: () => setDetailId(supplier.id),
+    onProbe: () => onProbe(supplier),
+    onFetchModels: () => onFetchModels(supplier),
+    onTestAll: () => onTestAll(supplier),
+    onEdit: () => onEdit(supplier),
+    onDelete: () => onDelete(supplier),
+  });
+
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {suppliers.map((supplier) => {
-          const action = busy[supplier.id];
-          const status = statusOf(supplier);
-          const lastLatency = supplier.models.find((model) => model.latency_ms != null)?.latency_ms;
-          return (
-            <div
-              key={supplier.id}
-              className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:border-border hover:shadow-sm"
-              onClick={() => setDetailId(supplier.id)}
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70">
+          {suppliers.length} {t.suppliersCount}
+        </span>
+        <div className="flex h-7 items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
+          {(
+            [
+              { key: "list" as ViewMode, icon: List, label: t.viewList },
+              { key: "cards" as ViewMode, icon: LayoutGrid, label: t.viewCards },
+            ]
+          ).map(({ key, icon: Icon, label }) => (
+            <button
+              key={key}
+              onClick={() => changeView(key)}
+              title={label}
+              aria-label={label}
+              aria-pressed={view === key}
+              className={`flex h-full items-center gap-1 rounded-md px-2 text-[10px] font-bold transition-all ${
+                view === key
+                  ? "border border-border/10 bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <div className="flex items-start justify-between gap-3 p-4 pb-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2 shrink-0 rounded-full ${
-                        status === "ok"
-                          ? "bg-sticker-green shadow-[0_0_6px_rgba(26,174,57,0.35)]"
-                          : status === "fail"
-                            ? "bg-red-500"
-                            : "bg-muted-foreground/30"
-                      }`}
-                    />
-                    <h3 className="truncate text-sm font-bold text-foreground">{supplier.name}</h3>
-                  </div>
-                  {supplier.remark ? (
-                    <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                      {supplier.remark}
-                    </p>
-                  ) : null}
-                  <p className="mt-0.5 text-[10px] text-muted-foreground/70">
-                    {supplier.keys.length} {t.accountsCount}
-                  </p>
-                </div>
-                <ProtocolBadges protocols={supplier.protocols} />
-              </div>
-
-              <div className="space-y-2 px-4 pb-3">
-                <p className="truncate font-mono text-[11px] text-muted-foreground/80">
-                  {supplier.base_url}
-                </p>
-                <div className="flex items-center justify-between text-[10.5px]">
-                  <span className="font-medium text-muted-foreground/80">
-                    {supplier.models.length} {t.modelsCount}
-                  </span>
-                  <span className={`font-bold ${latencyClass(lastLatency)}`}>
-                    {lastLatency != null ? `${lastLatency} ms` : t.never}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
-                  <span>{t.lastProbe}</span>
-                  <span>{formatTime(supplier.last_probe)}</span>
-                </div>
-              </div>
-
-              <div
-                className="mt-auto flex items-center justify-between border-t border-border/50 bg-background/40 px-3 py-2"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={Boolean(action)}
-                    onClick={() => onProbe(supplier)}
-                    title={t.probe}
-                  >
-                    {action === "probe" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="size-3" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={Boolean(action)}
-                    onClick={() => onFetchModels(supplier)}
-                    title={t.fetchModels}
-                  >
-                    {action === "models" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Download className="size-3" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={Boolean(action)}
-                    onClick={() => onTestAll(supplier)}
-                    title={t.testAll}
-                  >
-                    {action === "test" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Activity className="size-3" />
-                    )}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={Boolean(action)}
-                    onClick={() => onEdit(supplier)}
-                    title={t.editSupplier}
-                  >
-                    <Edit2 className="size-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={Boolean(action)}
-                    onClick={() => onDelete(supplier)}
-                    className="text-red-500 hover:bg-red-500/10 hover:text-red-600"
-                    title={t.delete}
-                  >
-                    <Trash2 className="size-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+              <Icon className="size-3" />
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {suppliers.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-border bg-card py-12 text-center text-xs text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center text-xs text-muted-foreground">
           {t.emptySearch}
         </div>
-      ) : null}
+      ) : view === "cards" ? (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {suppliers.map((supplier) => (
+            <SupplierCard key={supplier.id} {...rowProps(supplier)} />
+          ))}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <table className="w-full text-left">
+            <thead className="border-b border-border/50 bg-muted/20 text-[9px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-2 font-bold">{t.supplierName}</th>
+                <th className="px-3 py-2 font-bold">{t.protocols}</th>
+                <th className="px-3 py-2 text-center font-bold">{t.accounts}</th>
+                <th className="px-3 py-2 text-center font-bold">{t.models}</th>
+                <th className="px-3 py-2 text-right font-bold">{t.latency}</th>
+                <th className="px-3 py-2 text-right font-bold">{t.actions}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((supplier) => (
+                <SupplierListRow key={supplier.id} {...rowProps(supplier)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <Dialog open={detail != null} onOpenChange={(open) => !open && setDetailId(null)}>
         <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-2xl">
@@ -385,12 +600,13 @@ export function SupplierPage({
                           key={model.model}
                           model={model}
                           protocols={
-                            detail.protocols.length ? detail.protocols : (["chat_completions", "responses", "messages"] as Protocol[])
+                            detail.protocols.length
+                              ? detail.protocols
+                              : (["chat_completions", "responses", "messages"] as Protocol[])
                           }
                           busy={Boolean(busy[detail.id])}
                           keyName={
-                            detail.keys.find((key) => key.id === model.tested_key_id)
-                              ?.name
+                            detail.keys.find((key) => key.id === model.tested_key_id)?.name
                           }
                           t={t}
                           onTest={(protocol) =>
