@@ -80,7 +80,69 @@ fn find_binary(name: &str, env: Env) -> Option<PathBuf> {
         }
     }
     let _ = env;
-    which::which(name).ok()
+    which::which(name).ok().or_else(|| {
+        let home = dirs::home_dir()?;
+        find_in_candidates(name, &home)
+    })
+}
+
+/// 各家安装脚本常把可执行文件放进自己的目录，且只写入交互式 shell 的配置。
+/// 这里补一份固定候选路径，避免非登录/非交互环境里 `which` 找不到。
+fn candidate_bins(name: &str) -> &'static [&'static str] {
+    match name {
+        "codex" => &[
+            "$HOME/.local/bin/codex",
+            "$HOME/.codex/bin/codex",
+            "/usr/local/bin/codex",
+        ],
+        "claude" => &[
+            "$HOME/.local/bin/claude",
+            "$HOME/.claude/local/claude",
+            "/usr/local/bin/claude",
+        ],
+        "grok" => &[
+            "$HOME/.grok/bin/grok",
+            "$HOME/.local/bin/grok",
+            "/usr/local/bin/grok",
+            "/usr/bin/grok",
+        ],
+        "opencode" => &[
+            "$HOME/.opencode/bin/opencode",
+            "$HOME/.local/bin/opencode",
+            "/usr/local/bin/opencode",
+        ],
+        _ => &[],
+    }
+}
+
+fn candidate_paths(name: &str, home: &std::path::Path) -> Vec<PathBuf> {
+    candidate_bins(name)
+        .iter()
+        .map(|raw| match raw.strip_prefix("$HOME/") {
+            Some(rest) => home.join(rest),
+            None => PathBuf::from(raw),
+        })
+        .collect()
+}
+
+fn find_in_candidates(name: &str, home: &std::path::Path) -> Option<PathBuf> {
+    candidate_paths(name, home)
+        .into_iter()
+        .find(|path| is_executable(path))
+}
+
+fn is_executable(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -120,8 +182,21 @@ fn wsl_available() -> bool {
 
 #[cfg(target_os = "windows")]
 fn wsl_which(name: &str) -> Option<PathBuf> {
+    // `wsl -e sh -lc` 只加载登录配置，安装脚本写进 .bashrc 的 PATH 不会生效。
+    let candidates = candidate_bins(name)
+        .iter()
+        .map(|raw| format!("\"{raw}\""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let script = if candidates.is_empty() {
+        format!("command -v {name}")
+    } else {
+        format!(
+            "command -v {name} || for p in {candidates}; do [ -x \"$p\" ] && {{ echo \"$p\"; break; }}; done"
+        )
+    };
     let output = std::process::Command::new("wsl")
-        .args(["-e", "sh", "-lc", &format!("command -v {name}")])
+        .args(["-e", "sh", "-lc", &script])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -157,5 +232,40 @@ mod tests {
         let agents = detect_all(&dirs);
         assert_eq!(agents.len(), AgentKind::ALL.len() * reachable_envs().len());
         assert!(agents.iter().any(|agent| agent.kind == AgentKind::Codex));
+    }
+
+    #[test]
+    fn grok_candidates_include_installer_location() {
+        let home = std::path::Path::new("/home/tester");
+        assert!(
+            candidate_paths("grok", home).contains(&home.join(".grok/bin/grok")),
+            "Grok Build 安装脚本默认放在 ~/.grok/bin"
+        );
+    }
+
+    #[test]
+    fn finds_binary_outside_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin_dir = temp.path().join(".grok/bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin = bin_dir.join("grok");
+        std::fs::write(&bin, b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(find_in_candidates("grok", temp.path()), Some(bin));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ignores_non_executable_candidate() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin_dir = temp.path().join(".grok/bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin = bin_dir.join("grok");
+        std::fs::write(&bin, b"not a binary").unwrap();
+        assert_eq!(find_in_candidates("grok", temp.path()), None);
     }
 }
