@@ -241,6 +241,39 @@ export default function App() {
     return result.result;
   };
 
+  /** 逐协议测试同一个模型，只弹一条汇总提示。 */
+  const testModelAllProtocols = async (
+    supplier: Supplier,
+    model: string,
+    protocols: Protocol[],
+    keyId?: string,
+  ) => {
+    if (protocols.length === 0) return;
+    setBusy((current) => ({ ...current, [supplier.id]: "test" }));
+    try {
+      let ok = 0;
+      let last: Config | null = null;
+      for (const protocol of protocols) {
+        const result = await api.testSupplierModel(supplier.id, model, protocol, keyId);
+        last = result.config;
+        if (result.result.ok) ok += 1;
+      }
+      if (last) setConfig(last);
+      showToast(
+        `${model} · ${ok}/${protocols.length} ${t.success}`,
+        ok > 0 ? "success" : "error",
+      );
+    } catch (error) {
+      showToast(errorText(error), "error");
+    } finally {
+      setBusy((current) => {
+        const next = { ...current };
+        delete next[supplier.id];
+        return next;
+      });
+    }
+  };
+
   const addBinding = async (input: AgentConfigInput, activate: boolean) => {
     setSaving(true);
     try {
@@ -413,6 +446,7 @@ export default function App() {
         onTestModel={(supplier, model, protocol, keyId) =>
           testModel(supplier.id, model, protocol, keyId)
         }
+        onTestModelAll={testModelAllProtocols}
       />
     );
   }, [

@@ -27,6 +27,12 @@ import type { Config, Protocol, Supplier, SupplierModel } from "@/lib/types";
 import { PROTOCOL_LABELS, effectiveKey } from "@/lib/types";
 import { CxcSelect } from "@/components/ui/select";
 
+export const PROTOCOL_BADGE_CLASSES: Record<Protocol, string> = {
+  chat_completions: "border-sky-200 bg-sky-50 text-sky-700",
+  responses: "border-purple-200 bg-purple-50 text-purple-700",
+  messages: "border-orange-200 bg-orange-50 text-orange-700",
+};
+
 export function ProtocolBadges({
   protocols,
   compact = false,
@@ -41,17 +47,12 @@ export function ProtocolBadges({
       </span>
     );
   }
-  const colors: Record<Protocol, string> = {
-    chat_completions: "border-sky-200 bg-sky-50 text-sky-700",
-    responses: "border-purple-200 bg-purple-50 text-purple-700",
-    messages: "border-orange-200 bg-orange-50 text-orange-700",
-  };
   return (
     <div className="flex flex-wrap items-center gap-1">
       {protocols.map((protocol) => (
         <span
           key={protocol}
-          className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${colors[protocol]} ${compact ? "" : "px-2"}`}
+          className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${PROTOCOL_BADGE_CLASSES[protocol]} ${compact ? "" : "px-2"}`}
         >
           {PROTOCOL_LABELS[protocol]}
         </span>
@@ -365,6 +366,12 @@ interface SupplierPageProps {
     protocol: Protocol,
     keyId?: string,
   ) => void;
+  onTestModelAll: (
+    supplier: Supplier,
+    model: string,
+    protocols: Protocol[],
+    keyId?: string,
+  ) => Promise<void>;
 }
 
 export function SupplierPage({
@@ -379,12 +386,19 @@ export function SupplierPage({
   onFetchModels,
   onTestAll,
   onTestModel,
+  onTestModelAll,
 }: SupplierPageProps) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [testKeyId, setTestKeyId] = useState<string | undefined>(undefined);
   const [view, setView] = useState<ViewMode>(initialView);
   const detail = config.suppliers.find((supplier) => supplier.id === detailId) ?? null;
   const testAccount = effectiveKey(detail ?? undefined, testKeyId);
+
+  const protocolsFor = (model: SupplierModel): Protocol[] => {
+    if (model.protocols.length) return model.protocols;
+    if (detail?.protocols.length) return detail.protocols;
+    return ["chat_completions", "responses", "messages"];
+  };
 
   const changeView = (next: ViewMode) => {
     setView(next);
@@ -500,7 +514,7 @@ export function SupplierPage({
       )}
 
       <Dialog open={detail != null} onOpenChange={(open) => !open && setDetailId(null)}>
-        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-2xl">
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-3xl">
           <DialogHeader className="mb-4 shrink-0 gap-1.5 border-b border-border/30 pb-4">
             <DialogTitle className="flex items-center gap-2 text-base font-bold tracking-tight">
               <Server className="size-4 text-primary" />
@@ -513,42 +527,50 @@ export function SupplierPage({
 
           {detail ? (
             <div className="min-h-0 overflow-y-auto pr-1">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="mb-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <ProtocolBadges protocols={detail.protocols} />
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="whitespace-nowrap text-[10px] text-muted-foreground">
                     {detail.models.length} {t.modelsCount}
                   </span>
+                  <span className="text-[10px] text-muted-foreground/40">·</span>
+                  <span className="whitespace-nowrap text-[10px] text-muted-foreground">
+                    {detail.keys.length} {t.accountsCount}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={Boolean(busy[detail.id])}
-                    onClick={() => onProbe(detail)}
-                  >
-                    {busy[detail.id] === "probe" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="size-3" />
-                    )}
-                    {t.probe}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={Boolean(busy[detail.id])}
-                    onClick={() => onFetchModels(detail)}
-                  >
-                    {busy[detail.id] === "models" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Download className="size-3" />
-                    )}
-                    {t.fetchModels}
-                  </Button>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={Boolean(busy[detail.id])}
+                      onClick={() => onProbe(detail)}
+                    >
+                      {busy[detail.id] === "probe" ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-3" />
+                      )}
+                      {t.probe}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={Boolean(busy[detail.id])}
+                      onClick={() => onFetchModels(detail)}
+                    >
+                      {busy[detail.id] === "models" ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Download className="size-3" />
+                      )}
+                      {t.fetchModels}
+                    </Button>
+                  </div>
+
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                    <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-wider text-muted-foreground/70">
                       {t.testAccount}
                     </span>
                     <div className="w-24">
@@ -562,19 +584,19 @@ export function SupplierPage({
                         size="xs"
                       />
                     </div>
+                    <Button
+                      size="sm"
+                      disabled={Boolean(busy[detail.id])}
+                      onClick={() => onTestAll(detail, testAccount?.id)}
+                    >
+                      {busy[detail.id] === "test" ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Activity className="size-3" />
+                      )}
+                      {t.testAll}
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    disabled={Boolean(busy[detail.id])}
-                    onClick={() => onTestAll(detail, testAccount?.id)}
-                  >
-                    {busy[detail.id] === "test" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Activity className="size-3" />
-                    )}
-                    {t.testAll}
-                  </Button>
                 </div>
               </div>
 
@@ -583,40 +605,49 @@ export function SupplierPage({
                   {t.noModels}
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-border/60">
-                  <table className="w-full text-left text-[11px]">
-                    <thead className="bg-muted/30 text-[9px] uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-2 font-bold">{t.model}</th>
-                        <th className="px-3 py-2 font-bold">{t.protocols}</th>
-                        <th className="px-3 py-2 font-bold">{t.latency}</th>
-                        <th className="px-3 py-2 font-bold">{t.status}</th>
-                        <th className="px-3 py-2 text-right font-bold">{t.test}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.models.map((model) => (
-                        <ModelRow
-                          key={model.model}
-                          model={model}
-                          protocols={
-                            detail.protocols.length
-                              ? detail.protocols
-                              : (["chat_completions", "responses", "messages"] as Protocol[])
-                          }
-                          busy={Boolean(busy[detail.id])}
-                          keyName={
-                            detail.keys.find((key) => key.id === model.tested_key_id)?.name
-                          }
-                          t={t}
-                          onTest={(protocol) =>
-                            onTestModel(detail, model.model, protocol, testAccount?.id)
-                          }
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <p className="mb-1.5 text-right text-[9px] text-muted-foreground/60">
+                    {t.clickProtocolToTest}
+                  </p>
+                  <div className="overflow-hidden rounded-xl border border-border/60">
+                    <table className="w-full table-fixed text-left text-[11px]">
+                      <thead className="bg-muted/30 text-[9px] uppercase tracking-wider text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-bold">{t.model}</th>
+                          <th className="w-[152px] px-3 py-2 font-bold">{t.status}</th>
+                          <th className="w-11 px-2 py-2 text-right font-bold">
+                            <span className="sr-only">{t.test}</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.models.map((model) => (
+                          <ModelRow
+                            key={model.model}
+                            model={model}
+                            protocols={protocolsFor(model)}
+                            busy={Boolean(busy[detail.id])}
+                            keyName={
+                              detail.keys.find((key) => key.id === model.tested_key_id)?.name
+                            }
+                            t={t}
+                            onTest={(protocol) =>
+                              onTestModel(detail, model.model, protocol, testAccount?.id)
+                            }
+                            onTestAll={() =>
+                              onTestModelAll(
+                                detail,
+                                model.model,
+                                protocolsFor(model),
+                                testAccount?.id,
+                              )
+                            }
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           ) : null}
@@ -633,6 +664,7 @@ function ModelRow({
   keyName,
   t,
   onTest,
+  onTestAll,
 }: {
   model: SupplierModel;
   protocols: Protocol[];
@@ -640,56 +672,75 @@ function ModelRow({
   keyName?: string;
   t: Messages;
   onTest: (protocol: Protocol) => void;
+  onTestAll: () => void;
 }) {
   return (
-    <tr className="border-t border-border/40 align-top">
-      <td className="max-w-56 px-3 py-2 font-mono text-[10.5px] text-foreground/85">
-        <span className="line-clamp-2">{model.model}</span>
+    <tr className="border-t border-border/40 align-middle">
+      <td className="px-3 py-2">
+        <span
+          className="block truncate font-mono text-[10.5px] text-foreground/85"
+          title={model.model}
+        >
+          {model.model}
+        </span>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {protocols.map((protocol) => (
+            <button
+              key={protocol}
+              type="button"
+              disabled={busy}
+              onClick={() => onTest(protocol)}
+              title={`${t.test} ${PROTOCOL_LABELS[protocol]}`}
+              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-all hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${PROTOCOL_BADGE_CLASSES[protocol]}`}
+            >
+              {PROTOCOL_LABELS[protocol]}
+            </button>
+          ))}
+        </div>
       </td>
       <td className="px-3 py-2">
-        <ProtocolBadges protocols={model.protocols} compact />
-      </td>
-      <td className={`px-3 py-2 font-bold ${latencyClass(model.latency_ms)}`}>
-        {model.latency_ms != null ? `${model.latency_ms} ms` : "—"}
-      </td>
-      <td className="px-3 py-2">
-        {model.last_ok == null ? (
-          <span className="flex items-center gap-1 text-muted-foreground/50">
-            <AlertCircle className="size-3" />
-            {t.never}
+        <div
+          className="flex items-center gap-1 whitespace-nowrap"
+          title={model.last_ok === false ? model.last_error : undefined}
+        >
+          {model.last_ok == null ? (
+            <AlertCircle className="size-3 shrink-0 text-muted-foreground/40" />
+          ) : model.last_ok ? (
+            <CheckCircle2 className="size-3 shrink-0 text-sticker-green" />
+          ) : (
+            <XCircle className="size-3 shrink-0 text-red-500" />
+          )}
+          <span className="text-[10.5px] text-muted-foreground">
+            {model.last_ok == null ? t.never : model.last_ok ? t.success : t.failed}
           </span>
-        ) : model.last_ok ? (
-          <span className="flex items-center gap-1 text-sticker-green">
-            <CheckCircle2 className="size-3" />
-            {t.success}
-          </span>
-        ) : (
-          <span className="flex items-center gap-1 text-red-500" title={model.last_error}>
-            <XCircle className="size-3" />
-            {t.failed}
-          </span>
-        )}
+          {model.latency_ms != null ? (
+            <span
+              className={`font-mono text-[10px] font-bold tabular-nums ${latencyClass(model.latency_ms)}`}
+            >
+              {model.latency_ms} ms
+            </span>
+          ) : null}
+        </div>
         {keyName ? (
-          <span className="mt-0.5 block text-[9px] text-muted-foreground/60">
+          <span className="mt-0.5 block truncate text-[9px] text-muted-foreground/60">
             {keyName}
           </span>
         ) : null}
       </td>
-      <td className="px-3 py-2">
-        <div className="flex flex-wrap justify-end gap-1">
-          {protocols.map((protocol) => (
-            <Button
-              key={protocol}
-              size="xs"
-              variant="outline"
-              disabled={busy}
-              onClick={() => onTest(protocol)}
-              title={`${t.test} ${PROTOCOL_LABELS[protocol]}`}
-            >
-              {PROTOCOL_LABELS[protocol]}
-            </Button>
-          ))}
-        </div>
+      <td className="px-2 py-2 text-right">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={busy}
+          onClick={onTestAll}
+          title={t.testThisModel}
+        >
+          {busy ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Activity className="size-3" />
+          )}
+        </Button>
       </td>
     </tr>
   );
