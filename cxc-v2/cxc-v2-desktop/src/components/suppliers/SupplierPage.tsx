@@ -296,10 +296,10 @@ function SupplierListRow({
 
   return (
     <tr
-      className="cursor-pointer border-t border-border/40 transition-colors first:border-t-0 hover:bg-muted/10"
+      className="group cursor-pointer border-t border-border/40 transition-colors first:border-t-0 hover:bg-muted/40"
       onClick={onOpen}
     >
-      <td className="px-4 py-2.5">
+      <td className="border-l-2 border-transparent px-4 py-2.5 transition-colors group-hover:border-primary/60">
         <div className="flex items-center gap-2">
           <span className={`size-2 shrink-0 rounded-full ${statusDotClass(status)}`} />
           <div className="min-w-0">
