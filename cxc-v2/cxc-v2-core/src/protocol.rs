@@ -141,7 +141,11 @@ pub enum ProtocolError {
     Parse(String),
 }
 
-pub async fn probe_supplier(supplier: &Supplier, client: &reqwest::Client) -> ProbeReport {
+pub async fn probe_supplier(
+    supplier: &Supplier,
+    api_key: &str,
+    client: &reqwest::Client,
+) -> ProbeReport {
     let model = supplier
         .models
         .first()
@@ -150,9 +154,9 @@ pub async fn probe_supplier(supplier: &Supplier, client: &reqwest::Client) -> Pr
         .unwrap_or_else(|| "cxc-probe".to_string());
 
     let (chat, responses, messages) = tokio::join!(
-        probe_one(client, supplier, Protocol::ChatCompletions, &model),
-        probe_one(client, supplier, Protocol::Responses, &model),
-        probe_one(client, supplier, Protocol::Messages, &model),
+        probe_one(client, supplier, api_key, Protocol::ChatCompletions, &model),
+        probe_one(client, supplier, api_key, Protocol::Responses, &model),
+        probe_one(client, supplier, api_key, Protocol::Messages, &model),
     );
 
     let results = vec![chat, responses, messages];
@@ -178,6 +182,7 @@ pub async fn probe_supplier(supplier: &Supplier, client: &reqwest::Client) -> Pr
 async fn probe_one(
     client: &reqwest::Client,
     supplier: &Supplier,
+    api_key: &str,
     protocol: Protocol,
     model: &str,
 ) -> ProtocolProbeResult {
@@ -186,7 +191,7 @@ async fn probe_one(
         .post(&url)
         .timeout(Duration::from_secs(10))
         .json(&protocol.request_body(model, true));
-    let request = protocol.apply_headers(request, &supplier.api_key);
+    let request = protocol.apply_headers(request, api_key);
 
     match request.send().await {
         Ok(response) => {
@@ -330,7 +335,13 @@ mod tests {
             id: "supplier-1".to_string(),
             name: "relay".to_string(),
             base_url,
-            api_key: "sk-test".to_string(),
+            keys: vec![crate::supplier::SupplierKey {
+                id: "k1".to_string(),
+                name: "默认".to_string(),
+                api_key: "sk-test".to_string(),
+                remark: None,
+            }],
+            default_key_id: Some("k1".to_string()),
             protocols: Vec::new(),
             remark: None,
             last_probe: None,
@@ -354,7 +365,12 @@ mod tests {
                 .await;
         }
 
-        let report = probe_supplier(&test_supplier(server.uri()), &reqwest::Client::new()).await;
+        let report = probe_supplier(
+            &test_supplier(server.uri()),
+            "sk-test",
+            &reqwest::Client::new(),
+        )
+        .await;
         assert!(report.results.iter().all(|result| result.confirmed));
         assert_eq!(report.added, Protocol::ALL.to_vec());
         assert_eq!(report.protocols, Protocol::ALL.to_vec());
@@ -385,7 +401,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let report = probe_supplier(&test_supplier(server.uri()), &reqwest::Client::new()).await;
+        let report = probe_supplier(
+            &test_supplier(server.uri()),
+            "sk-test",
+            &reqwest::Client::new(),
+        )
+        .await;
         let chat = report
             .results
             .iter()

@@ -31,6 +31,7 @@ import {
   ENV_LABELS,
   PROTOCOL_FULL_LABELS,
   REASONING_OPTIONS,
+  effectiveKey,
 } from "@/lib/types";
 
 interface BindingDialogProps {
@@ -69,6 +70,7 @@ export function BindingDialog({
   const capabilities = CAPABILITIES[agent];
   const [protocol, setProtocol] = useState<Protocol>(capabilities.protocols[0]);
   const [supplierId, setSupplierId] = useState("");
+  const [keyId, setKeyId] = useState<string>("");
   const [model, setModel] = useState("");
   const [reasoning, setReasoning] = useState("");
   const [planReasoning, setPlanReasoning] = useState("");
@@ -109,6 +111,7 @@ export function BindingDialog({
 
     setProtocol(initialProtocol);
     setSupplierId(initialSupplier?.id ?? "");
+    setKeyId(binding?.key_id ?? "");
     setModel(binding?.model ?? initialSupplier?.models[0]?.model ?? "");
     setReasoning(binding?.reasoning_effort ?? "");
     setPlanReasoning(binding?.plan_reasoning_effort ?? "");
@@ -141,11 +144,15 @@ export function BindingDialog({
 
   const chooseSupplier = (nextId: string) => {
     setSupplierId(nextId);
+    // 换中转站后账号列表整体变化，回到「跟随默认」。
+    setKeyId("");
     const next = suppliers.find((item) => item.id === nextId);
     if (next && !next.models.some((item) => item.model === model)) {
       setModel(next.models[0]?.model ?? "");
     }
   };
+
+  const defaultAccount = effectiveKey(supplier, undefined);
 
   const buildInput = (): AgentConfigInput | null => {
     if (!supplierId) {
@@ -171,6 +178,7 @@ export function BindingDialog({
     setError(null);
     return {
       supplier_id: supplierId,
+      key_id: keyId || undefined,
       protocol,
       model: model.trim(),
       reasoning_effort: reasoning || undefined,
@@ -267,8 +275,32 @@ export function BindingDialog({
             </div>
           </div>
 
+          {supplier && supplier.keys.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
+                {t.selectAccount}
+              </Label>
+              <CxcSelect
+                value={keyId}
+                onValueChange={setKeyId}
+                options={[
+                  {
+                    value: "",
+                    label: defaultAccount
+                      ? `${t.followDefault}（${defaultAccount.name}）`
+                      : t.followDefault,
+                  },
+                  ...supplier.keys.map((key) => ({
+                    value: key.id,
+                    label: key.name,
+                  })),
+                ]}
+              />
+            </div>
+          ) : null}
+
           {compatibleSuppliers.length === 0 ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
               {t.protocolMissing}
             </p>
           ) : null}

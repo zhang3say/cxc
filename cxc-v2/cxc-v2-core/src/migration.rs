@@ -149,10 +149,12 @@ pub fn import_into_config(
     };
     let mut supplier_ids: HashMap<(String, String), String> = HashMap::new();
     for supplier in &cfg.suppliers {
-        supplier_ids.insert(
-            (supplier.base_url.clone(), supplier.api_key.clone()),
-            supplier.id.clone(),
-        );
+        if let Some(key) = supplier.default_key() {
+            supplier_ids.insert(
+                (supplier.base_url.clone(), key.api_key.clone()),
+                supplier.id.clone(),
+            );
+        }
     }
 
     if cfg.custom_dirs.codex.wsl.is_empty() {
@@ -315,13 +317,13 @@ fn build_config(
         let name = unique_supplier_name(cfg, &provider.name, &base_url);
         let supplier = match supplier::add_supplier(
             cfg,
-            SupplierInput {
+            SupplierInput::single_key(
                 name,
-                base_url: base_url.clone(),
-                api_key: api_key.to_string(),
-                remark: provider.remark.clone(),
-                protocols: Some(vec![protocol]),
-            },
+                base_url.clone(),
+                api_key.to_string(),
+                provider.remark.clone(),
+                Some(vec![protocol]),
+            ),
         ) {
             Ok(supplier) => supplier,
             Err(error) => {
@@ -355,6 +357,7 @@ fn build_config(
 
     let input = AgentConfigInput {
         supplier_id: supplier_id.clone(),
+        key_id: None,
         protocol,
         model: model.to_string(),
         reasoning_effort: provider.reasoning_effort.clone(),

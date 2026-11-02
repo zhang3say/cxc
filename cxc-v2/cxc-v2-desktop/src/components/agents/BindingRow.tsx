@@ -49,6 +49,10 @@ export function BindingRow({
 }: BindingRowProps) {
   const model = binding.model.trim();
   const test = latencyOf(supplier, model);
+  // 只有显式指定账号时才显示账号名；跟随默认时不显示，避免和卡片重复。
+  const accountName = binding.key_id
+    ? supplier?.keys.find((key) => key.id === binding.key_id)?.name
+    : undefined;
 
   return (
     <div
@@ -83,6 +87,7 @@ export function BindingRow({
 
         <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
           {supplier?.name ?? t.unknownSupplier} · {PROTOCOL_LABELS[binding.protocol]}
+          {accountName ? ` · ${accountName}` : ""}
         </p>
 
         {chips(binding, t).length ? (

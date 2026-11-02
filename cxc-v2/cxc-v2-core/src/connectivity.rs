@@ -27,6 +27,7 @@ pub struct ModelTestOutcome {
 
 pub async fn test_model(
     supplier: &Supplier,
+    api_key: &str,
     model: &str,
     protocol: Protocol,
     client: &reqwest::Client,
@@ -37,7 +38,7 @@ pub async fn test_model(
         .post(&url)
         .timeout(Duration::from_secs(20))
         .json(&protocol.request_body(model, false));
-    let request = protocol.apply_headers(request, &supplier.api_key);
+    let request = protocol.apply_headers(request, api_key);
 
     match request.send().await {
         Ok(response) => {
@@ -83,6 +84,7 @@ pub async fn test_model(
 /// 批量测试供应商模型。并发上限 4。
 pub async fn test_supplier_models(
     supplier: &Supplier,
+    api_key: &str,
     client: &reqwest::Client,
 ) -> Vec<ModelTestOutcome> {
     let mut tasks: Vec<(String, Protocol)> = Vec::new();
@@ -110,10 +112,11 @@ pub async fn test_supplier_models(
     for (model, protocol) in tasks {
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         let supplier = supplier.clone();
+        let api_key = api_key.to_string();
         let client = client.clone();
         set.spawn(async move {
             let _permit = permit;
-            let result = test_model(&supplier, &model, protocol, &client).await;
+            let result = test_model(&supplier, &api_key, &model, protocol, &client).await;
             ModelTestOutcome {
                 model,
                 protocol,
@@ -282,7 +285,13 @@ mod tests {
             id: "supplier-1".to_string(),
             name: "relay".to_string(),
             base_url,
-            api_key: "sk-test".to_string(),
+            keys: vec![crate::supplier::SupplierKey {
+                id: "k1".to_string(),
+                name: "默认".to_string(),
+                api_key: "sk-test".to_string(),
+                remark: None,
+            }],
+            default_key_id: Some("k1".to_string()),
             protocols: vec![Protocol::ChatCompletions],
             remark: None,
             last_probe: None,
@@ -303,6 +312,7 @@ mod tests {
 
         let result = test_model(
             &test_supplier(server.uri()),
+            "sk-test",
             "test-model",
             Protocol::ChatCompletions,
             &reqwest::Client::new(),
@@ -326,6 +336,7 @@ mod tests {
 
         let result = test_model(
             &test_supplier(server.uri()),
+            "sk-test",
             "test-model",
             Protocol::ChatCompletions,
             &reqwest::Client::new(),

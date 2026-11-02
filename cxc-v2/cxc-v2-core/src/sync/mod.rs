@@ -13,7 +13,7 @@ use crate::supplier::{Supplier, SupplierModel};
 use crypto::{decrypt_aes_gcm, encrypt_aes_gcm};
 pub use gist::{GistClient, GistError};
 
-pub const CURRENT_SYNC_VERSION: u32 = 4;
+pub const CURRENT_SYNC_VERSION: u32 = 5;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -70,11 +70,21 @@ struct SyncEnvelope {
 }
 
 #[derive(Deserialize)]
+struct LegacySyncPayloadV4 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: Agents,
+}
+
+#[derive(Deserialize)]
 struct LegacySyncPayloadV3 {
     #[serde(default)]
     updated_at: Option<DateTime<Local>>,
     #[serde(default)]
-    suppliers: Vec<Supplier>,
+    suppliers: Vec<crate::supplier::LegacySupplier>,
     #[serde(default)]
     agents: config::LegacyAgentsV3,
 }
@@ -84,7 +94,7 @@ struct LegacySyncPayloadV2 {
     #[serde(default)]
     updated_at: Option<DateTime<Local>>,
     #[serde(default)]
-    suppliers: Vec<Supplier>,
+    suppliers: Vec<crate::supplier::LegacySupplier>,
     #[serde(default)]
     agents: config::LegacyAgentsV2,
 }
@@ -115,7 +125,8 @@ fn sanitize_supplier(supplier: &Supplier) -> Supplier {
         id: supplier.id.clone(),
         name: supplier.name.clone(),
         base_url: supplier.base_url.clone(),
-        api_key: supplier.api_key.clone(),
+        keys: supplier.keys.clone(),
+        default_key_id: supplier.default_key_id.clone(),
         protocols: supplier.protocols.clone(),
         remark: supplier.remark.clone(),
         last_probe: None,
@@ -129,6 +140,7 @@ fn sanitize_supplier(supplier: &Supplier) -> Supplier {
                 latency_ms: None,
                 last_ok: None,
                 last_error: None,
+                tested_key_id: None,
             })
             .collect(),
     }
@@ -191,10 +203,30 @@ fn parse_payload_value(value: Value) -> Result<SyncPayload, SyncError> {
         return Ok(serde_json::from_value(value)?);
     }
 
+    if version == 4 {
+        let legacy: LegacySyncPayloadV4 = serde_json::from_value(value)?;
+        let cfg = Config {
+            suppliers: legacy
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: legacy.agents,
+            ..Config::default()
+        };
+        let mut payload = build_payload(&cfg);
+        payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
+        return Ok(payload);
+    }
+
     if version == 3 {
         let legacy: LegacySyncPayloadV3 = serde_json::from_value(value)?;
         let cfg = Config {
-            suppliers: legacy.suppliers,
+            suppliers: legacy
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
             agents: config::agents_from_v3(&legacy.agents),
             ..Config::default()
         };
@@ -206,7 +238,11 @@ fn parse_payload_value(value: Value) -> Result<SyncPayload, SyncError> {
     if version == 2 {
         let legacy: LegacySyncPayloadV2 = serde_json::from_value(value)?;
         let cfg = Config {
-            suppliers: legacy.suppliers,
+            suppliers: legacy
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
             agents: config::agents_from_v2(&legacy.agents, None),
             ..Config::default()
         };
@@ -314,6 +350,7 @@ mod tests {
         AgentConfig {
             id: id.to_string(),
             supplier_id: "s1".to_string(),
+            key_id: None,
             protocol: Protocol::Responses,
             model: model.to_string(),
             reasoning_effort: None,
@@ -329,13 +366,13 @@ mod tests {
         let mut cfg = Config::default();
         let supplier = add_supplier(
             &mut cfg,
-            SupplierInput {
-                name: "relay".to_string(),
-                base_url: "https://api.example.com/v1".to_string(),
-                api_key: "sk-1".to_string(),
-                remark: None,
-                protocols: Some(vec![Protocol::Responses]),
-            },
+            SupplierInput::single_key(
+                "relay".to_string(),
+                "https://api.example.com/v1".to_string(),
+                "sk-1".to_string(),
+                None,
+                Some(vec![Protocol::Responses]),
+            ),
         )
         .unwrap();
         let mut first = binding("b1", "gpt-5");
@@ -358,7 +395,7 @@ mod tests {
         let payload = build_payload(&cfg);
         let raw = pack_payload(&payload, None).unwrap();
         let restored = unpack_payload(&raw, None).unwrap();
-        assert_eq!(restored.version, 4);
+        assert_eq!(restored.version, 5);
         assert_eq!(restored.suppliers.len(), 1);
         let slot = restored.agents.codex.wsl.as_ref().unwrap();
         assert_eq!(slot.bindings.len(), 2);
@@ -424,7 +461,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(payload.version, 4);
+        assert_eq!(payload.version, 5);
         let slot = payload.agents.codex.wsl.as_ref().unwrap();
         assert_eq!(slot.bindings.len(), 1);
         assert_eq!(slot.active_binding().unwrap().model, "gpt-5");
@@ -473,7 +510,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(payload.version, 4);
+        assert_eq!(payload.version, 5);
         let slot = payload.agents.codex.wsl.as_ref().unwrap();
         assert_eq!(slot.bindings.len(), 2);
         assert_eq!(slot.active_binding().unwrap().model, "gpt-5");

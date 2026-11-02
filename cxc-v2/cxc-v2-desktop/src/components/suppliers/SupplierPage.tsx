@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/dialog";
 import type { Messages } from "@/lib/i18n";
 import type { Config, Protocol, Supplier, SupplierModel } from "@/lib/types";
-import { PROTOCOL_LABELS } from "@/lib/types";
+import { PROTOCOL_LABELS, effectiveKey } from "@/lib/types";
+import { CxcSelect } from "@/components/ui/select";
 
 export function ProtocolBadges({
   protocols,
@@ -89,8 +90,13 @@ interface SupplierPageProps {
   onDelete: (supplier: Supplier) => void;
   onProbe: (supplier: Supplier) => void;
   onFetchModels: (supplier: Supplier) => void;
-  onTestAll: (supplier: Supplier) => void;
-  onTestModel: (supplier: Supplier, model: string, protocol: Protocol) => void;
+  onTestAll: (supplier: Supplier, keyId?: string) => void;
+  onTestModel: (
+    supplier: Supplier,
+    model: string,
+    protocol: Protocol,
+    keyId?: string,
+  ) => void;
 }
 
 export function SupplierPage({
@@ -107,7 +113,9 @@ export function SupplierPage({
   onTestModel,
 }: SupplierPageProps) {
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [testKeyId, setTestKeyId] = useState<string | undefined>(undefined);
   const detail = config.suppliers.find((supplier) => supplier.id === detailId) ?? null;
+  const testAccount = effectiveKey(detail ?? undefined, testKeyId);
 
   const suppliers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -173,6 +181,9 @@ export function SupplierPage({
                       {supplier.remark}
                     </p>
                   ) : null}
+                  <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+                    {supplier.keys.length} {t.accountsCount}
+                  </p>
                 </div>
                 <ProtocolBadges protocols={supplier.protocols} />
               </div>
@@ -321,10 +332,26 @@ export function SupplierPage({
                     )}
                     {t.fetchModels}
                   </Button>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                      {t.testAccount}
+                    </span>
+                    <div className="w-24">
+                      <CxcSelect
+                        value={testAccount?.id ?? ""}
+                        onValueChange={(value) => setTestKeyId(value)}
+                        options={detail.keys.map((key) => ({
+                          value: key.id,
+                          label: key.name,
+                        }))}
+                        size="xs"
+                      />
+                    </div>
+                  </div>
                   <Button
                     size="sm"
                     disabled={Boolean(busy[detail.id])}
-                    onClick={() => onTestAll(detail)}
+                    onClick={() => onTestAll(detail, testAccount?.id)}
                   >
                     {busy[detail.id] === "test" ? (
                       <Loader2 className="size-3 animate-spin" />
@@ -361,8 +388,14 @@ export function SupplierPage({
                             detail.protocols.length ? detail.protocols : (["chat_completions", "responses", "messages"] as Protocol[])
                           }
                           busy={Boolean(busy[detail.id])}
+                          keyName={
+                            detail.keys.find((key) => key.id === model.tested_key_id)
+                              ?.name
+                          }
                           t={t}
-                          onTest={(protocol) => onTestModel(detail, model.model, protocol)}
+                          onTest={(protocol) =>
+                            onTestModel(detail, model.model, protocol, testAccount?.id)
+                          }
                         />
                       ))}
                     </tbody>
@@ -381,12 +414,14 @@ function ModelRow({
   model,
   protocols,
   busy,
+  keyName,
   t,
   onTest,
 }: {
   model: SupplierModel;
   protocols: Protocol[];
   busy: boolean;
+  keyName?: string;
   t: Messages;
   onTest: (protocol: Protocol) => void;
 }) {
@@ -418,6 +453,11 @@ function ModelRow({
             {t.failed}
           </span>
         )}
+        {keyName ? (
+          <span className="mt-0.5 block text-[9px] text-muted-foreground/60">
+            {keyName}
+          </span>
+        ) : null}
       </td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap justify-end gap-1">

@@ -40,15 +40,22 @@ export const api = {
     call<{ config: Config; report: ProbeReport }>("probe_supplier", { id }),
   fetchSupplierModels: (id: string) =>
     call<{ config: Config; models: string[] }>("fetch_supplier_models", { id }),
-  testSupplierModel: (id: string, model: string, protocol: Protocol) =>
+  testSupplierModel: (
+    id: string,
+    model: string,
+    protocol: Protocol,
+    keyId?: string,
+  ) =>
     call<{ config: Config; result: ModelTestResult }>("test_supplier_model", {
       id,
       model,
       protocol,
+      keyId,
     }),
-  testSupplierModels: (id: string) =>
+  testSupplierModels: (id: string, keyId?: string) =>
     call<{ config: Config; outcomes: ModelTestOutcome[] }>("test_supplier_models", {
       id,
+      keyId,
     }),
 
   addBinding: (agent: AgentKind, env: Env, input: AgentConfigInput, activate: boolean) =>

@@ -9,13 +9,22 @@ export interface SupplierModel {
   latency_ms?: number;
   last_ok?: boolean;
   last_error?: string;
+  tested_key_id?: string;
+}
+
+export interface SupplierKey {
+  id: string;
+  name: string;
+  api_key: string;
+  remark?: string;
 }
 
 export interface Supplier {
   id: string;
   name: string;
   base_url: string;
-  api_key: string;
+  keys: SupplierKey[];
+  default_key_id?: string;
   protocols: Protocol[];
   remark?: string;
   last_probe?: string;
@@ -39,6 +48,8 @@ export type GrokWebSearch =
 export interface AgentConfig {
   id: string;
   supplier_id: string;
+  /** 不设置表示跟随中转站的默认账号。 */
+  key_id?: string;
   protocol: Protocol;
   model: string;
   reasoning_effort?: string;
@@ -162,16 +173,25 @@ export interface UpdateInfo {
   download_url?: string;
 }
 
+export interface SupplierKeyInput {
+  id?: string;
+  name: string;
+  api_key: string;
+  remark?: string;
+}
+
 export interface SupplierInput {
   name: string;
   base_url: string;
-  api_key: string;
   remark?: string;
   protocols?: Protocol[];
+  keys: SupplierKeyInput[];
+  default_key_id?: string;
 }
 
 export interface AgentConfigInput {
   supplier_id: string;
+  key_id?: string;
   protocol: Protocol;
   model: string;
   reasoning_effort?: string;
@@ -254,6 +274,20 @@ export const REASONING_OPTIONS: Record<AgentKind, string[]> = {
   grok: ["minimal", "low", "medium", "high", "xhigh", "max"],
   opencode: ["minimal", "low", "medium", "high", "xhigh"],
 };
+
+/** 解析绑定实际使用的账号：显式指定 → 中转站默认 → 第一个账号。 */
+export function effectiveKey(
+  supplier: Supplier | undefined,
+  keyId?: string,
+): SupplierKey | undefined {
+  if (!supplier) return undefined;
+  const explicit = keyId ? supplier.keys.find((key) => key.id === keyId) : undefined;
+  if (explicit) return explicit;
+  const fallback = supplier.default_key_id
+    ? supplier.keys.find((key) => key.id === supplier.default_key_id)
+    : undefined;
+  return fallback ?? supplier.keys[0];
+}
 
 export function slotOf(
   config: Config,

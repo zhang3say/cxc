@@ -206,6 +206,9 @@ pub struct AgentConfig {
     #[serde(default)]
     pub id: String,
     pub supplier_id: String,
+    /// `None` 表示跟随中转站的默认账号。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
     #[serde(default)]
     pub protocol: Protocol,
     pub model: String,
@@ -253,6 +256,8 @@ impl AgentConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentConfigInput {
     pub supplier_id: String,
+    #[serde(default)]
+    pub key_id: Option<String>,
     pub protocol: Protocol,
     pub model: String,
     #[serde(default)]
@@ -273,6 +278,7 @@ impl Default for AgentConfigInput {
     fn default() -> Self {
         Self {
             supplier_id: String::new(),
+            key_id: None,
             protocol: Protocol::ChatCompletions,
             model: String::new(),
             reasoning_effort: None,
@@ -471,6 +477,10 @@ pub enum AgentError {
     BindingNotFound(String),
     #[error("供应商不存在：{0}")]
     SupplierNotFound(String),
+    #[error("账号不存在：{0}")]
+    KeyNotFound(String),
+    #[error("中转站没有可用账号")]
+    NoKey,
     #[error("{agent} 不支持 {protocol} 协议")]
     UnsupportedProtocol {
         agent: &'static str,
@@ -624,8 +634,10 @@ fn apply_binding(
         .supplier(&binding.supplier_id)
         .ok_or_else(|| AgentError::SupplierNotFound(binding.supplier_id.clone()))?;
     validate_protocol(kind, supplier, binding.protocol)?;
+    let key = crate::supplier::effective_key(supplier, binding.key_id.as_deref())
+        .ok_or(AgentError::NoKey)?;
     adapter
-        .apply(supplier, binding, cfg.custom_dirs.get(kind, env), env)
+        .apply(supplier, key, binding, cfg.custom_dirs.get(kind, env), env)
         .map_err(|error| AgentError::Write(error.to_string()))
 }
 
@@ -650,6 +662,11 @@ fn normalize_config(
         .supplier(&input.supplier_id)
         .ok_or_else(|| AgentError::SupplierNotFound(input.supplier_id.clone()))?;
     validate_protocol(kind, supplier, input.protocol)?;
+    if let Some(key_id) = input.key_id.as_deref()
+        && supplier.key(key_id).is_none()
+    {
+        return Err(AgentError::KeyNotFound(key_id.to_string()));
+    }
 
     let model = input.model.trim();
     if model.is_empty() {
@@ -697,6 +714,7 @@ fn normalize_config(
     Ok(AgentConfig {
         id: String::new(),
         supplier_id: input.supplier_id,
+        key_id: input.key_id,
         protocol: input.protocol,
         model: model.to_string(),
         reasoning_effort,
@@ -811,13 +829,13 @@ mod tests {
     fn supplier(cfg: &mut Config, protocols: Vec<Protocol>) -> Supplier {
         add_supplier(
             cfg,
-            SupplierInput {
-                name: "relay".to_string(),
-                base_url: "https://api.example.com/v1".to_string(),
-                api_key: "sk-1".to_string(),
-                remark: None,
-                protocols: Some(protocols),
-            },
+            SupplierInput::single_key(
+                "relay".to_string(),
+                "https://api.example.com/v1".to_string(),
+                "sk-1".to_string(),
+                None,
+                Some(protocols),
+            ),
         )
         .unwrap()
     }
@@ -851,6 +869,7 @@ mod tests {
         fn apply(
             &self,
             _supplier: &Supplier,
+            _account: &crate::supplier::SupplierKey,
             _config: &AgentConfig,
             _custom_dir: Option<&Path>,
             _env: Env,

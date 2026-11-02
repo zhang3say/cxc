@@ -5,7 +5,7 @@ use toml_edit::{DocumentMut, Item, Table, Value};
 use crate::agent::{AgentConfig, AgentKind, GrokWebSearch};
 use crate::config::Env;
 use crate::protocol::Protocol;
-use crate::supplier::Supplier;
+use crate::supplier::{Supplier, SupplierKey};
 
 use super::{
     AgentAdapter, TargetError, backup, provider_key, read_to_string, resolve_config_dir,
@@ -51,6 +51,7 @@ impl AgentAdapter for GrokAdapter {
     fn apply(
         &self,
         supplier: &Supplier,
+        account: &SupplierKey,
         config: &AgentConfig,
         custom_dir: Option<&Path>,
         env: Env,
@@ -80,7 +81,7 @@ impl AgentAdapter for GrokAdapter {
             &mut doc,
             &key,
             supplier.base_url.trim(),
-            supplier.api_key.trim(),
+            account.api_key.trim(),
             Self::api_backend(config.protocol),
         );
 
@@ -242,15 +243,25 @@ fn apply_session_compact(doc: &mut DocumentMut, ratio: Option<u8>) {
 mod tests {
     use super::*;
     use crate::protocol::Protocol;
-    use crate::supplier::Supplier;
+    use crate::supplier::{Supplier, SupplierKey};
     use tempfile::TempDir;
+
+    fn key() -> SupplierKey {
+        SupplierKey {
+            id: "k1".to_string(),
+            name: "默认".to_string(),
+            api_key: "sk-test".to_string(),
+            remark: None,
+        }
+    }
 
     fn supplier() -> Supplier {
         Supplier {
             id: "abcdef1234567890".to_string(),
             name: "relay".to_string(),
             base_url: "https://api.example.com/v1".to_string(),
-            api_key: "sk-test".to_string(),
+            keys: vec![key()],
+            default_key_id: Some("k1".to_string()),
             protocols: vec![Protocol::Responses],
             remark: None,
             last_probe: None,
@@ -262,6 +273,7 @@ mod tests {
         AgentConfig {
             id: "b1".to_string(),
             supplier_id: "abcdef1234567890".to_string(),
+            key_id: None,
             protocol: Protocol::Responses,
             model: "grok-4.5".to_string(),
             reasoning_effort: Some("high".to_string()),
@@ -282,7 +294,7 @@ mod tests {
         )
         .unwrap();
         GrokAdapter::new()
-            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let doc: DocumentMut = fs::read_to_string(dir.path().join("config.toml"))
@@ -325,7 +337,7 @@ mod tests {
             model: "grok-search".to_string(),
         });
         GrokAdapter::new()
-            .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config, Some(dir.path()), Env::Wsl)
             .unwrap();
         let doc: DocumentMut = fs::read_to_string(dir.path().join("config.toml"))
             .unwrap()

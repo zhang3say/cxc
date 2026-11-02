@@ -202,10 +202,10 @@ export default function App() {
     }
   };
 
-  const testAll = async (supplier: Supplier) => {
+  const testAll = async (supplier: Supplier, keyId?: string) => {
     setBusy((current) => ({ ...current, [supplier.id]: "test" }));
     try {
-      const result = await api.testSupplierModels(supplier.id);
+      const result = await api.testSupplierModels(supplier.id, keyId);
       setConfig(result.config);
       const ok = result.outcomes.filter((outcome) => outcome.result.ok).length;
       showToast(`${t.testDone}: ${ok}/${result.outcomes.length}`, "success");
@@ -230,8 +230,9 @@ export default function App() {
     supplierId: string,
     model: string,
     protocol: Protocol,
+    keyId?: string,
   ): Promise<ModelTestResult> => {
-    const result = await api.testSupplierModel(supplierId, model, protocol);
+    const result = await api.testSupplierModel(supplierId, model, protocol, keyId);
     setConfig(result.config);
     showToast(
       `${model} · ${result.result.ok ? t.success : t.failed} · ${result.result.latency_ms} ms`,
@@ -409,8 +410,8 @@ export default function App() {
         onProbe={probeSupplier}
         onFetchModels={fetchModels}
         onTestAll={testAll}
-        onTestModel={(supplier, model, protocol) =>
-          testModel(supplier.id, model, protocol)
+        onTestModel={(supplier, model, protocol, keyId) =>
+          testModel(supplier.id, model, protocol, keyId)
         }
       />
     );

@@ -35,6 +35,7 @@ interface AgentPageProps {
     supplierId: string,
     model: string,
     protocol: Protocol,
+    keyId?: string,
   ) => Promise<ModelTestResult>;
   onRefreshModels: (supplierId: string) => Promise<void>;
 }
@@ -117,7 +118,12 @@ export function AgentPage({
   const test = async (binding: AgentConfig) => {
     setTestingId(binding.id);
     try {
-      await onTest(binding.supplier_id, binding.model, binding.protocol);
+      await onTest(
+        binding.supplier_id,
+        binding.model,
+        binding.protocol,
+        binding.key_id,
+      );
     } finally {
       setTestingId(null);
     }

@@ -10,7 +10,7 @@ use crate::sync::SyncConfig;
 
 pub const CONFIG_DIR_NAME: &str = "cxc-v2";
 pub const CONFIG_FILE_NAME: &str = "config.yaml";
-pub const CONFIG_VERSION: u32 = 4;
+pub const CONFIG_VERSION: u32 = 5;
 
 /// Agent 所在的运行环境。环境是 Agent 身份的一部分：
 /// `Grok (WSL)` 与 `Grok (Windows)` 是两个独立 Agent。
@@ -179,6 +179,11 @@ pub fn load_from(path: &Path) -> Result<Config, ConfigError> {
         return Ok(cfg);
     }
 
+    if version == 4 {
+        let legacy: LegacyConfigV4 = serde_yaml::from_value(value)?;
+        return Ok(legacy.into_config());
+    }
+
     if version == 3 {
         let legacy: LegacyConfigV3 = serde_yaml::from_value(value)?;
         return Ok(legacy.into_config());
@@ -279,15 +284,47 @@ pub fn now() -> DateTime<Local> {
 }
 
 // ---------------------------------------------------------------------------
-// 旧配置 → 版本 4
+// 旧配置 → 版本 5
+//   v4：中转站单 Key → 一个「默认」账号，绑定跟随默认
 //   v3：每个 (工具, 环境) 一份配置 → 一条绑定，并设为使用中
 //   v2：每个工具一份共享绑定列表 + 全局来源 → 主环境保留全部绑定，另一环境只保留激活项
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Default)]
+struct LegacyConfigV4 {
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: Agents,
+    #[serde(default)]
+    custom_dirs: CustomDirs,
+    #[serde(default)]
+    sync: Option<SyncConfig>,
+    #[serde(default)]
+    migrated_from_v1: bool,
+}
+
+impl LegacyConfigV4 {
+    fn into_config(self) -> Config {
+        Config {
+            version: CONFIG_VERSION,
+            suppliers: self
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: self.agents,
+            custom_dirs: self.custom_dirs,
+            sync: self.sync,
+            migrated_from_v1: self.migrated_from_v1,
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
 struct LegacyConfigV3 {
     #[serde(default)]
-    suppliers: Vec<Supplier>,
+    suppliers: Vec<crate::supplier::LegacySupplier>,
     #[serde(default)]
     agents: LegacyAgentsV3,
     #[serde(default)]
@@ -322,7 +359,11 @@ impl LegacyConfigV3 {
     fn into_config(self) -> Config {
         Config {
             version: CONFIG_VERSION,
-            suppliers: self.suppliers,
+            suppliers: self
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
             agents: agents_from_v3(&self.agents),
             custom_dirs: self.custom_dirs,
             sync: self.sync,
@@ -372,7 +413,7 @@ pub(crate) fn agents_from_v3(legacy: &LegacyAgentsV3) -> Agents {
 #[derive(Deserialize, Default)]
 struct LegacyConfigV2 {
     #[serde(default)]
-    suppliers: Vec<Supplier>,
+    suppliers: Vec<crate::supplier::LegacySupplier>,
     #[serde(default)]
     agents: LegacyAgentsV2,
     #[serde(default)]
@@ -434,7 +475,11 @@ impl LegacyConfigV2 {
 
         Config {
             version: CONFIG_VERSION,
-            suppliers: self.suppliers,
+            suppliers: self
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
             agents,
             custom_dirs,
             sync: self.sync,
@@ -529,6 +574,7 @@ mod tests {
         AgentConfig {
             id: id.to_string(),
             supplier_id: "s1".to_string(),
+            key_id: None,
             protocol: Protocol::Responses,
             model: model.to_string(),
             reasoning_effort: None,
@@ -546,6 +592,58 @@ mod tests {
         assert_eq!(Env::parse("windows"), Env::Windows);
         assert_eq!(Env::parse("wsl"), Env::Wsl);
         assert_eq!(Env::parse(""), Env::Wsl);
+    }
+
+    #[test]
+    fn upgrades_v4_single_key_into_default_account() {
+        let yaml = r#"
+version: 4
+suppliers:
+  - id: s1
+    name: relay
+    base_url: https://api.example.com/v1
+    api_key: sk-old
+    protocols: [responses]
+    models:
+      - model: gpt-5
+        protocols: [responses]
+agents:
+  codex:
+    wsl:
+      active: b1
+      bindings:
+        - id: b1
+          supplier_id: s1
+          protocol: responses
+          model: gpt-5
+  claude: {}
+  grok: {}
+  opencode: {}
+custom_dirs:
+  codex: { wsl: '', windows: '' }
+  claude: { wsl: '', windows: '' }
+  grok: { wsl: '', windows: '' }
+  opencode: { wsl: '', windows: '' }
+migrated_from_v1: true
+"#;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        fs::write(&path, yaml).unwrap();
+
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.version, CONFIG_VERSION);
+
+        let supplier = cfg.supplier("s1").unwrap();
+        assert_eq!(supplier.keys.len(), 1);
+        assert_eq!(supplier.keys[0].name, "默认");
+        assert_eq!(supplier.keys[0].api_key, "sk-old");
+        assert_eq!(
+            supplier.default_key_id.as_deref(),
+            Some(supplier.keys[0].id.as_str())
+        );
+
+        let binding = cfg.config_of(AgentKind::Codex, Env::Wsl).unwrap();
+        assert_eq!(binding.key_id, None);
     }
 
     #[test]

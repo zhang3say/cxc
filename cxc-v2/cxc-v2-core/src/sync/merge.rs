@@ -121,8 +121,8 @@ fn count_bindings(agents: &Agents) -> usize {
 fn merge_supplier(local: &mut Supplier, remote: &Supplier) {
     local.name = remote.name.clone();
     local.base_url = remote.base_url.clone();
-    local.api_key = remote.api_key.clone();
     local.remark = remote.remark.clone();
+    merge_keys(local, remote);
     local.protocols = Protocol::normalize_all(
         local
             .protocols
@@ -154,9 +154,43 @@ fn merge_supplier(local: &mut Supplier, remote: &Supplier) {
     }
 }
 
+/// 账号按 id 合并：远端新增的账号加入，同名同 Key 的账号去重，本地独有账号保留。
+fn merge_keys(local: &mut Supplier, remote: &Supplier) {
+    for remote_key in &remote.keys {
+        let same_id = local.keys.iter_mut().find(|key| key.id == remote_key.id);
+        if let Some(key) = same_id {
+            key.name = remote_key.name.clone();
+            key.api_key = remote_key.api_key.clone();
+            key.remark = remote_key.remark.clone();
+            continue;
+        }
+        let same_key = local
+            .keys
+            .iter()
+            .any(|key| key.api_key.trim() == remote_key.api_key.trim());
+        if !same_key {
+            local.keys.push(remote_key.clone());
+        }
+    }
+    if local.default_key_id.is_none() {
+        local.default_key_id = remote.default_key_id.clone();
+    }
+    if local
+        .default_key_id
+        .as_deref()
+        .is_none_or(|id| local.key(id).is_none())
+    {
+        local.default_key_id = local.keys.first().map(|key| key.id.clone());
+    }
+}
+
 fn same_endpoint(left: &Supplier, right: &Supplier) -> bool {
     left.base_url.trim().trim_end_matches('/') == right.base_url.trim().trim_end_matches('/')
-        && left.api_key.trim() == right.api_key.trim()
+        && left
+            .default_key()
+            .map(|key| key.api_key.trim())
+            .zip(right.default_key().map(|key| key.api_key.trim()))
+            .is_some_and(|(a, b)| a == b)
 }
 
 #[allow(dead_code)]
@@ -172,6 +206,7 @@ mod tests {
         AgentConfig {
             id: id.to_string(),
             supplier_id: "local-supplier".to_string(),
+            key_id: None,
             protocol: Protocol::Responses,
             model: model.to_string(),
             reasoning_effort: None,
@@ -187,13 +222,13 @@ mod tests {
         let mut cfg = Config::default();
         let supplier = add_supplier(
             &mut cfg,
-            SupplierInput {
-                name: "relay".to_string(),
-                base_url: "https://api.example.com/v1".to_string(),
-                api_key: "sk-1".to_string(),
-                remark: None,
-                protocols: Some(vec![Protocol::Responses]),
-            },
+            SupplierInput::single_key(
+                "relay".to_string(),
+                "https://api.example.com/v1".to_string(),
+                "sk-1".to_string(),
+                None,
+                Some(vec![Protocol::Responses]),
+            ),
         )
         .unwrap();
         let id = supplier.id.clone();

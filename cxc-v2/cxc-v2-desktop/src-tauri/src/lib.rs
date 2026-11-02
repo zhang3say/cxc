@@ -140,8 +140,11 @@ async fn probe_supplier(app: tauri::AppHandle, id: String) -> Result<ProbeRespon
         .supplier(&id)
         .cloned()
         .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let key = supplier
+        .default_key()
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
     let client = http_client()?;
-    let report = protocol::probe_supplier(&supplier, &client).await;
+    let report = protocol::probe_supplier(&supplier, &key.api_key, &client).await;
 
     if let Some(target) = cfg.supplier_mut(&id) {
         target.protocols = report.protocols.clone();
@@ -162,8 +165,11 @@ async fn fetch_supplier_models(id: String) -> Result<ModelsResponse, String> {
         .supplier(&id)
         .cloned()
         .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let key = supplier
+        .default_key()
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
     let client = http_client()?;
-    let models = connectivity::fetch_models(&supplier.base_url, &supplier.api_key, &client)
+    let models = connectivity::fetch_models(&supplier.base_url, &key.api_key, &client)
         .await
         .map_err(|error| error.to_string())?;
     if let Some(target) = cfg.supplier_mut(&id) {
@@ -181,6 +187,7 @@ async fn test_supplier_model(
     id: String,
     model: String,
     protocol: String,
+    key_id: Option<String>,
 ) -> Result<ModelTestResponse, String> {
     let mut cfg = load_config()?;
     let supplier = cfg
@@ -188,13 +195,16 @@ async fn test_supplier_model(
         .cloned()
         .ok_or_else(|| format!("供应商不存在：{id}"))?;
     let protocol = parse_protocol(&protocol)?;
+    let key = supplier::effective_key(&supplier, key_id.as_deref())
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
     let client = http_client()?;
-    let result = connectivity::test_model(&supplier, &model, protocol, &client).await;
+    let result = connectivity::test_model(&supplier, &key.api_key, &model, protocol, &client).await;
     supplier::record_model_test(
         &mut cfg,
         &id,
         &model,
         protocol,
+        Some(&key.id),
         result.ok,
         result.latency_ms,
         result.error.clone(),
@@ -208,20 +218,26 @@ async fn test_supplier_model(
 }
 
 #[tauri::command]
-async fn test_supplier_models(id: String) -> Result<BulkTestResponse, String> {
+async fn test_supplier_models(
+    id: String,
+    key_id: Option<String>,
+) -> Result<BulkTestResponse, String> {
     let mut cfg = load_config()?;
     let supplier = cfg
         .supplier(&id)
         .cloned()
         .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let key = supplier::effective_key(&supplier, key_id.as_deref())
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
     let client = http_client()?;
-    let outcomes = connectivity::test_supplier_models(&supplier, &client).await;
+    let outcomes = connectivity::test_supplier_models(&supplier, &key.api_key, &client).await;
     for outcome in &outcomes {
         let _ = supplier::record_model_test(
             &mut cfg,
             &id,
             &outcome.model,
             outcome.protocol,
+            Some(&key.id),
             outcome.result.ok,
             outcome.result.latency_ms,
             outcome.result.error.clone(),

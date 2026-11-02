@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::agent::{AgentConfig, AgentKind, ClaudeModels, claude_model_for_context};
 use crate::config::Env;
-use crate::supplier::Supplier;
+use crate::supplier::{Supplier, SupplierKey};
 
 use super::{
     AgentAdapter, TargetError, backup, read_to_string, resolve_config_dir, write_secure_file,
@@ -36,6 +36,7 @@ impl AgentAdapter for ClaudeAdapter {
     fn apply(
         &self,
         supplier: &Supplier,
+        account: &SupplierKey,
         config: &AgentConfig,
         custom_dir: Option<&Path>,
         env: Env,
@@ -74,7 +75,7 @@ impl AgentAdapter for ClaudeAdapter {
         );
         env_obj.insert(
             "ANTHROPIC_AUTH_TOKEN".to_string(),
-            json!(supplier.api_key.trim()),
+            json!(account.api_key.trim()),
         );
         env_obj.remove("ANTHROPIC_API_KEY");
 
@@ -194,15 +195,25 @@ mod tests {
     use super::*;
     use crate::agent::ClaudeModels;
     use crate::protocol::Protocol;
-    use crate::supplier::Supplier;
+    use crate::supplier::{Supplier, SupplierKey};
     use tempfile::TempDir;
+
+    fn key() -> SupplierKey {
+        SupplierKey {
+            id: "k1".to_string(),
+            name: "默认".to_string(),
+            api_key: "sk-ant-test".to_string(),
+            remark: None,
+        }
+    }
 
     fn supplier() -> Supplier {
         Supplier {
             id: "abcdef1234567890".to_string(),
             name: "relay".to_string(),
             base_url: "https://api.example.com/v1".to_string(),
-            api_key: "sk-ant-test".to_string(),
+            keys: vec![key()],
+            default_key_id: Some("k1".to_string()),
             protocols: vec![Protocol::Messages],
             remark: None,
             last_probe: None,
@@ -214,6 +225,7 @@ mod tests {
         AgentConfig {
             id: "b1".to_string(),
             supplier_id: "abcdef1234567890".to_string(),
+            key_id: None,
             protocol: Protocol::Messages,
             model: "claude-sonnet".to_string(),
             reasoning_effort: Some("high".to_string()),
@@ -239,7 +251,7 @@ mod tests {
         )
         .unwrap();
         ClaudeAdapter::new()
-            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let settings: Value =
@@ -279,7 +291,7 @@ mod tests {
         config.protocol = Protocol::Responses;
         assert!(
             ClaudeAdapter::new()
-                .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
+                .apply(&supplier(), &key(), &config, Some(dir.path()), Env::Wsl)
                 .is_err()
         );
     }

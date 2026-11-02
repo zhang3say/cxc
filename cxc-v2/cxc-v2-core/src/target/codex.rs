@@ -6,7 +6,7 @@ use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 use crate::agent::{AgentConfig, AgentKind};
 use crate::config::Env;
 use crate::protocol::Protocol;
-use crate::supplier::Supplier;
+use crate::supplier::{Supplier, SupplierKey};
 
 use super::{
     AgentAdapter, TargetError, backup, provider_key, read_to_string, resolve_config_dir,
@@ -49,6 +49,7 @@ impl AgentAdapter for CodexAdapter {
     fn apply(
         &self,
         supplier: &Supplier,
+        account: &SupplierKey,
         config: &AgentConfig,
         custom_dir: Option<&Path>,
         env: Env,
@@ -119,7 +120,7 @@ impl AgentAdapter for CodexAdapter {
         };
         let mut auth: Value = serde_json::from_str(&auth_data)
             .map_err(|error| TargetError::ParseError(error.to_string()))?;
-        auth["OPENAI_API_KEY"] = Value::String(supplier.api_key.clone());
+        auth["OPENAI_API_KEY"] = Value::String(account.api_key.clone());
         let auth_output = serde_json::to_string_pretty(&auth)
             .map_err(|error| TargetError::SerializeError(error.to_string()))?;
         write_secure_file(&auth_path, auth_output.as_bytes()).map_err(|error| {
@@ -182,15 +183,25 @@ fn ensure_standard_table(doc: &mut DocumentMut, section: &str, key: &str) {
 mod tests {
     use super::*;
     use crate::agent::{AgentConfig, AgentKind};
-    use crate::supplier::Supplier;
+    use crate::supplier::{Supplier, SupplierKey};
     use tempfile::TempDir;
+
+    fn key() -> SupplierKey {
+        SupplierKey {
+            id: "k1".to_string(),
+            name: "默认".to_string(),
+            api_key: "sk-test".to_string(),
+            remark: None,
+        }
+    }
 
     fn supplier() -> Supplier {
         Supplier {
             id: "abcdef1234567890".to_string(),
             name: "relay".to_string(),
             base_url: "https://api.example.com/v1".to_string(),
-            api_key: "sk-test".to_string(),
+            keys: vec![key()],
+            default_key_id: Some("k1".to_string()),
             protocols: vec![Protocol::Responses],
             remark: None,
             last_probe: None,
@@ -202,6 +213,7 @@ mod tests {
         AgentConfig {
             id: "b1".to_string(),
             supplier_id: "abcdef1234567890".to_string(),
+            key_id: None,
             protocol: Protocol::Responses,
             model: "gpt-5".to_string(),
             reasoning_effort: Some("high".to_string()),
@@ -218,7 +230,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let adapter = CodexAdapter::new();
         adapter
-            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let config = fs::read_to_string(dir.path().join("config.toml")).unwrap();
@@ -257,7 +269,7 @@ mod tests {
         config.context_length = None;
         config.compact_ratio = None;
         CodexAdapter::new()
-            .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config, Some(dir.path()), Env::Wsl)
             .unwrap();
         let doc: DocumentMut = fs::read_to_string(dir.path().join("config.toml"))
             .unwrap()
@@ -276,7 +288,7 @@ mod tests {
         config.protocol = Protocol::Messages;
         assert!(
             CodexAdapter::new()
-                .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
+                .apply(&supplier(), &key(), &config, Some(dir.path()), Env::Wsl)
                 .is_err()
         );
     }

@@ -113,7 +113,15 @@ Agent 所在的运行环境，取值为 `wsl` 或 `windows`。环境是 Agent �
 
 ## Supplier (全局中转站)
 
-CXC 2 中只保存一份的中转站凭证：`id`、名称、Base URL、API Key、协议集合、备注和模型目录。所有 Agent 共用同一批 Supplier；Agent 配置通过 `supplier_id` 引用它。删除被引用的 Supplier 会被拒绝。
+CXC 2 中只保存一份的中转站端点：`id`、名称、Base URL、账号列表、默认账号、协议集合、备注和模型目录。所有 Agent 共用同一批 Supplier；Agent 配置通过 `supplier_id` 引用它。删除被引用的 Supplier 会被拒绝。
+
+## Supplier Key (中转站账号)
+
+中转站下的一个 API Key：`id`、名称、Key、备注。一个中转站至少一个账号，可以有多个。协议集合与模型目录属于端点，账号共享。绑定可以显式指定账号，也可以跟随中转站默认账号。
+
+## Effective Key (生效账号)
+
+绑定实际使用的账号，解析顺序：绑定显式指定的 `key_id`（存在且有效）→ 中转站 `default_key_id`（有效）→ 账号列表第一个。写入目标文件、绑定测试都用它。删除被绑定显式引用的账号会被拒绝；删除默认账号后回退到第一个。
 
 ## Binding (Agent 绑定)
 

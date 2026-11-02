@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::agent::{AgentConfig, AgentKind};
 use crate::config::Env;
-use crate::supplier::Supplier;
+use crate::supplier::{Supplier, SupplierKey};
 
 #[derive(Error, Debug)]
 pub enum TargetError {
@@ -43,6 +43,7 @@ pub trait AgentAdapter {
     fn apply(
         &self,
         supplier: &Supplier,
+        account: &SupplierKey,
         config: &AgentConfig,
         custom_dir: Option<&Path>,
         env: Env,

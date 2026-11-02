@@ -14,21 +14,36 @@ import type {
   Protocol,
   Supplier,
   SupplierInput,
+  SupplierKey,
+  SupplierKeyInput,
   SyncConfig,
 } from "./types";
-import { AGENT_KINDS, ENVS, emptyDirs } from "./types";
+import { AGENT_KINDS, ENVS, effectiveKey, emptyDirs } from "./types";
 
 const STORAGE_KEY = "cxc-v2-mock-config";
 
 function seed(): Config {
   return {
-    version: 4,
+    version: 5,
     suppliers: [
       {
         id: "a1b2c3d4e5f60718",
         name: "openrouter",
         base_url: "https://openrouter.ai/api/v1",
-        api_key: "sk-or-v1-demo",
+        keys: [
+          {
+            id: "key-or-1",
+            name: "个人",
+            api_key: "sk-or-v1-demo",
+          },
+          {
+            id: "key-or-2",
+            name: "团队",
+            api_key: "sk-or-v1-team",
+            remark: "团队额度",
+          },
+        ],
+        default_key_id: "key-or-1",
         protocols: ["chat_completions", "messages"],
         remark: "主力中转，覆盖 Claude 与通用模型",
         last_probe: new Date().toISOString(),
@@ -68,7 +83,8 @@ function seed(): Config {
         id: "b2c3d4e5f6071829",
         name: "codex-relay",
         base_url: "https://codex.example.com/v1",
-        api_key: "sk-codex-demo",
+        keys: [{ id: "key-codex-1", name: "默认", api_key: "sk-codex-demo" }],
+        default_key_id: "key-codex-1",
         protocols: ["responses", "chat_completions"],
         remark: "Codex 专用 Responses 端点",
         last_probe: new Date().toISOString(),
@@ -92,7 +108,8 @@ function seed(): Config {
         id: "c3d4e5f60718293a",
         name: "anthropic-direct",
         base_url: "https://api.anthropic.com",
-        api_key: "sk-ant-demo",
+        keys: [{ id: "key-ant-1", name: "默认", api_key: "sk-ant-demo" }],
+        default_key_id: "key-ant-1",
         protocols: ["messages"],
         remark: "官方 Anthropic 端点",
         last_probe: new Date().toISOString(),
@@ -204,6 +221,7 @@ function seed(): Config {
             {
               id: "bind-opencode-1",
               supplier_id: "a1b2c3d4e5f60718",
+              key_id: "key-or-2",
               protocol: "chat_completions",
               model: "openai/gpt-5",
               reasoning_effort: "medium",
@@ -224,7 +242,7 @@ function load(): Config {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Config;
-      if (parsed.version === 4) return parsed;
+      if (parsed.version === 5) return parsed;
     }
   } catch {
     // ignore
@@ -327,6 +345,7 @@ function buildConfig(
   return {
     id,
     supplier_id: input.supplier_id,
+    key_id: input.key_id,
     protocol: input.protocol,
     model,
     reasoning_effort: input.reasoning_effort || undefined,
@@ -336,6 +355,42 @@ function buildConfig(
     claude_models: normalizeClaudeModels(input.claude_models),
     grok_web_search: normalizeWebSearch(input.grok_web_search),
   };
+}
+
+function resolveKeys(
+  existing: SupplierKey[],
+  inputs: SupplierKeyInput[],
+): SupplierKey[] {
+  const keys: SupplierKey[] = [];
+  for (const input of inputs) {
+    const name = input.name.trim();
+    if (!name) throw new Error("账号名称不能为空");
+    if (keys.some((key) => key.name === name)) {
+      throw new Error(`账号名称已存在：${name}`);
+    }
+    const existingKey = input.id
+      ? existing.find((key) => key.id === input.id)
+      : undefined;
+    const apiKey = input.api_key.trim() || existingKey?.api_key;
+    if (!apiKey) throw new Error("API Key 不能为空");
+    keys.push({
+      id: existingKey?.id ?? `key-${id().slice(0, 8)}`,
+      name,
+      api_key: apiKey,
+      remark: input.remark?.trim() || undefined,
+    });
+  }
+  if (keys.length === 0) throw new Error("中转站至少要有一个账号");
+  return keys;
+}
+
+function resolveDefaultKeyId(
+  keys: SupplierKey[],
+  requested?: string,
+): string | undefined {
+  return (
+    keys.find((key) => key.id === requested)?.id ?? keys[0]?.id
+  );
 }
 
 const VENDORS = ["openai", "anthropic", "google", "meta-llama", "mistralai", "x-ai", "qwen", "deepseek"];
@@ -421,11 +476,13 @@ export async function mockInvoke<T>(
       if (config.suppliers.some((supplier) => supplier.name === input.name.trim())) {
         throw new Error(`供应商名称已存在：${input.name}`);
       }
+      const keys = resolveKeys([], input.keys);
       const supplier: Supplier = {
         id: id(),
         name: input.name.trim(),
         base_url: input.base_url.trim(),
-        api_key: input.api_key.trim(),
+        keys,
+        default_key_id: resolveDefaultKeyId(keys, input.default_key_id),
         protocols: input.protocols ?? [],
         remark: input.remark?.trim() || undefined,
         models: [],
@@ -438,9 +495,29 @@ export async function mockInvoke<T>(
     case "edit_supplier": {
       const supplier = supplierOf(config, payload.id as string);
       const input = payload.input as SupplierInput;
+      const keys = resolveKeys(supplier.keys, input.keys);
+      const removed = supplier.keys.filter(
+        (key) => !keys.some((next) => next.id === key.id),
+      );
+      for (const key of removed) {
+        const users = AGENT_KINDS.filter((kind) =>
+          ENVS.some((env) =>
+            (config.agents[kind]?.[env]?.bindings ?? []).some(
+              (binding) =>
+                binding.supplier_id === supplier.id && binding.key_id === key.id,
+            ),
+          ),
+        );
+        if (users.length) {
+          throw new Error(
+            `账号「${key.name}」仍被以下 Agent 的绑定引用：${users.join("、")}`,
+          );
+        }
+      }
       supplier.name = input.name.trim();
       supplier.base_url = input.base_url.trim();
-      if (input.api_key.trim()) supplier.api_key = input.api_key.trim();
+      supplier.keys = keys;
+      supplier.default_key_id = resolveDefaultKeyId(keys, input.default_key_id);
       supplier.remark = input.remark?.trim() || undefined;
       if (input.protocols) supplier.protocols = input.protocols;
       save(config);
@@ -486,6 +563,8 @@ export async function mockInvoke<T>(
       const supplier = supplierOf(config, payload.id as string);
       const model = payload.model as string;
       const protocol = payload.protocol as Protocol;
+      const account = effectiveKey(supplier, payload.keyId as string | undefined);
+      if (!account) throw new Error("中转站没有可用账号");
       const ok = !model.toLowerCase().includes("bad");
       const result = {
         ok,
@@ -502,6 +581,7 @@ export async function mockInvoke<T>(
       entry.latency_ms = result.latency_ms;
       entry.last_ok = ok;
       entry.last_error = result.error;
+      entry.tested_key_id = account.id;
       if (ok && !entry.protocols.includes(protocol)) entry.protocols.push(protocol);
       save(config);
       return { config: clone(config), result } as T;
@@ -510,6 +590,8 @@ export async function mockInvoke<T>(
     case "test_supplier_models": {
       await delay(1400);
       const supplier = supplierOf(config, payload.id as string);
+      const account = effectiveKey(supplier, payload.keyId as string | undefined);
+      if (!account) throw new Error("中转站没有可用账号");
       const outcomes: ModelTestOutcome[] = [];
       for (const entry of supplier.models) {
         const protocols = entry.protocols.length ? entry.protocols : supplier.protocols;
@@ -525,6 +607,7 @@ export async function mockInvoke<T>(
           entry.latency_ms = result.latency_ms;
           entry.last_ok = ok;
           entry.last_error = result.error;
+          entry.tested_key_id = account.id;
           outcomes.push({ model: entry.model, protocol, result });
         }
       }

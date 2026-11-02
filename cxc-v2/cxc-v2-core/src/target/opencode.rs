@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::agent::{AgentConfig, AgentKind};
 use crate::config::Env;
 use crate::protocol::Protocol;
-use crate::supplier::Supplier;
+use crate::supplier::{Supplier, SupplierKey};
 
 use super::{
     AgentAdapter, TargetError, backup, provider_key, read_to_string, resolve_config_dir,
@@ -46,6 +46,7 @@ impl AgentAdapter for OpenCodeAdapter {
     fn apply(
         &self,
         supplier: &Supplier,
+        account: &SupplierKey,
         config: &AgentConfig,
         custom_dir: Option<&Path>,
         env: Env,
@@ -101,7 +102,7 @@ impl AgentAdapter for OpenCodeAdapter {
             "name": supplier.name,
             "options": {
                 "baseURL": supplier.base_url,
-                "apiKey": supplier.api_key
+                "apiKey": account.api_key
             },
             "models": Value::Object(models)
         });
@@ -137,15 +138,25 @@ impl AgentAdapter for OpenCodeAdapter {
 mod tests {
     use super::*;
     use crate::protocol::Protocol;
-    use crate::supplier::Supplier;
+    use crate::supplier::{Supplier, SupplierKey};
     use tempfile::TempDir;
+
+    fn key() -> SupplierKey {
+        SupplierKey {
+            id: "k1".to_string(),
+            name: "默认".to_string(),
+            api_key: "sk-test".to_string(),
+            remark: None,
+        }
+    }
 
     fn supplier() -> Supplier {
         Supplier {
             id: "abcdef1234567890".to_string(),
             name: "relay".to_string(),
             base_url: "https://api.example.com/v1".to_string(),
-            api_key: "sk-test".to_string(),
+            keys: vec![key()],
+            default_key_id: Some("k1".to_string()),
             protocols: vec![Protocol::ChatCompletions],
             remark: None,
             last_probe: None,
@@ -157,6 +168,7 @@ mod tests {
         AgentConfig {
             id: "b1".to_string(),
             supplier_id: "abcdef1234567890".to_string(),
+            key_id: None,
             protocol: Protocol::ChatCompletions,
             model: "gpt-5".to_string(),
             reasoning_effort: Some("high".to_string()),
@@ -177,7 +189,7 @@ mod tests {
         )
         .unwrap();
         OpenCodeAdapter::new()
-            .apply(&supplier(), &config(), Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config(), Some(dir.path()), Env::Wsl)
             .unwrap();
 
         let config: Value =
@@ -212,7 +224,7 @@ mod tests {
         let mut config = config();
         config.protocol = Protocol::Messages;
         OpenCodeAdapter::new()
-            .apply(&supplier(), &config, Some(dir.path()), Env::Wsl)
+            .apply(&supplier(), &key(), &config, Some(dir.path()), Env::Wsl)
             .unwrap();
         let config: Value =
             serde_json::from_str(&fs::read_to_string(dir.path().join("opencode.json")).unwrap())

@@ -6,7 +6,7 @@ CXC 第二代桌面端。与旧版并行开发，沿用旧版的视觉语言，�
 
 - **Agent = 工具 + 环境**：Codex / Claude Code / Grok CLI / OpenCode 各自在 WSL 与 Windows 下是独立 Agent，配置互不影响。
 - **Agent 自动识别**：按 PATH 探测每个 `(工具, 环境)`；不可达的环境不显示，未安装的工具仍可手动配置。
-- **全局中转站**：名称、Base URL、API Key、备注、协议集合、模型目录只保存一份。
+- **全局中转站 + 多账号**：中转站保存 Base URL、协议集合、模型目录；一个中转站下可以保存多个账号（Key），绑定时可以指定账号或跟随默认账号。
 - **三协议探测**：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses，逐个端点探测并写回。
 - **绑定列表**：每个 Agent 可以保存多条绑定（中转站 + 模型 + 参数），同一时刻只有一条使用中；列表里点「启用」即切换并写入目标文件，表单在对话框里编辑。
 - **模型选择器**：绑定对话框里可直接搜索、键盘选择、点击刷新重新拉取该中转站的模型；刷新为替换语义，下架模型连同测试结果一起移除，存活模型保留结果。
@@ -26,12 +26,15 @@ cxc-v2/
 配置文件：Linux / WSL `~/.config/cxc-v2/config.yaml`，Windows `%USERPROFILE%\.config\cxc-v2\config.yaml`。
 
 ```yaml
-version: 4
+version: 5
 suppliers:
   - id: "..."
     name: "openrouter"
     base_url: "https://openrouter.ai/api/v1"
-    api_key: "sk-..."
+    keys:
+      - { id: "k1", name: "个人", api_key: "sk-..." }
+      - { id: "k2", name: "团队", api_key: "sk-...", remark: "团队额度" }
+    default_key_id: "k1"
     protocols: [chat_completions, messages]
     models:
       - model: "anthropic/claude-sonnet-4.5"
@@ -43,6 +46,7 @@ agents:
       bindings:
         - id: "b1"
           supplier_id: "..."
+          key_id: null          # null = 跟随中转站默认账号
           protocol: responses
           model: "openai/gpt-5"
           reasoning_effort: high
@@ -69,7 +73,7 @@ custom_dirs:
   opencode: { wsl: "", windows: "" }
 ```
 
-旧版 `~/.config/cxc/config.yaml` 在首次启动时一次性导入；版本 2 / 3 的 `cxc-v2` 配置会自动收敛成绑定列表（旧配置成为唯一一条使用中的绑定）。旧文件只读，不会被修改。
+旧版 `~/.config/cxc/config.yaml` 在首次启动时一次性导入；版本 2 / 3 的 `cxc-v2` 配置会自动收敛成绑定列表，版本 4 的单 Key 会变成名为「默认」的账号。旧文件只读，不会被修改。
 
 ## 开发
 
@@ -107,3 +111,4 @@ npm run build
 - `docs/adr/0021-cxc-v2-config-and-migration.md`
 - `docs/adr/0022-agent-per-environment-single-config.md`
 - `docs/adr/0023-agent-binding-list.md`
+- `docs/adr/0024-supplier-multi-account.md`
