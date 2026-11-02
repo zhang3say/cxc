@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Loader2, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Messages } from "@/lib/i18n";
@@ -40,6 +40,7 @@ export function ModelPicker({
   const [highlight, setHighlight] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const previousRefreshing = useRef(refreshing);
   const [rect, setRect] = useState<{
@@ -51,7 +52,8 @@ export function ModelPicker({
   } | null>(null);
 
   const updateRect = useCallback(() => {
-    const node = anchorRef.current;
+    // 面板宽度对齐模型输入框本身，不含右侧刷新按钮。
+    const node = inputRef.current;
     if (!node) return;
     const box = node.getBoundingClientRect();
     const spaceBelow = window.innerHeight - box.bottom;
@@ -223,6 +225,8 @@ export function ModelPicker({
         top: rect.flip ? undefined : rect.top + 4,
         bottom: rect.flip ? window.innerHeight - rect.top + 4 : undefined,
         zIndex: 80,
+        // Radix Dialog 会把 body 设为 pointer-events: none，面板挂在 body 上需要显式恢复。
+        pointerEvents: "auto",
       }}
       className="overflow-hidden rounded-lg border border-border/60 bg-card shadow-xl"
     >
@@ -321,23 +325,37 @@ export function ModelPicker({
   return (
     <div className="relative">
       <div ref={anchorRef} className="flex items-center gap-1.5">
-        <Input
-          value={text}
-          disabled={disabled}
-          placeholder={placeholder}
-          onChange={(event) => {
-            setText(event.target.value);
-            setDirty(true);
-            setOpen(true);
-          }}
-          onFocus={() => {
-            setOpen(true);
-            setDirty(false);
-          }}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          className="h-9 rounded-md border-border/30 bg-muted/10 font-mono text-xs focus:border-primary/60 focus:bg-background/80 focus-visible:ring-primary/40"
-        />
+        <div className="relative min-w-0 flex-1">
+          <Input
+            ref={inputRef}
+            value={text}
+            disabled={disabled}
+            placeholder={placeholder}
+            onChange={(event) => {
+              setText(event.target.value);
+              setDirty(true);
+              setOpen(true);
+            }}
+            onFocus={() => {
+              setOpen(true);
+              setDirty(false);
+            }}
+            onClick={() => {
+              // Esc 收起后输入框仍有焦点，再点一次要能重新展开。
+              setOpen(true);
+              setDirty(false);
+            }}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            className="h-9 rounded-md border-border/30 bg-muted/10 pr-8 font-mono text-xs focus:border-primary/60 focus:bg-background/80 focus-visible:ring-primary/40"
+          />
+          <ChevronDown
+            aria-hidden
+            className={`pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50 transition-transform duration-150 ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </div>
         <Button
           type="button"
           variant="outline"
