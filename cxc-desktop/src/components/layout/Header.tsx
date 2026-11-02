@@ -37,10 +37,13 @@ export function Header({
   t,
 }: HeaderProps) {
   return (
-    <header className="cxc-drag sticky top-0 z-40 flex w-full items-center justify-between gap-3 border-b border-border/30 bg-background/40 px-5 py-3 backdrop-blur-xl">
-      <div className="cxc-no-drag flex min-w-0 items-center gap-3">
+    <header
+      data-tauri-drag-region
+      className="sticky top-0 z-40 flex w-full items-center justify-between gap-3 border-b border-border/30 bg-background/40 px-5 py-3 backdrop-blur-xl"
+    >
+      <div data-tauri-drag-region className="flex min-w-0 items-center gap-3">
         <WindowControls />
-        <div className="flex shrink-0 select-none items-center gap-1.5">
+        <div data-tauri-drag-region className="flex shrink-0 select-none items-center gap-1.5">
           <div className="relative flex size-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-card shadow-sm">
             <img src="/logo.png" alt="CXC" className="size-full object-cover" />
           </div>
@@ -71,7 +74,7 @@ export function Header({
 
       </div>
 
-      <div className="cxc-no-drag flex min-w-0 flex-1 items-center justify-end gap-2">
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-end gap-2">
         <div className="group relative min-w-0 max-w-56 flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/35 transition-colors group-focus-within:text-primary" />
           <Input

@@ -460,7 +460,11 @@ export default function App() {
   ]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background/55 text-foreground backdrop-blur-[24px]">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-[#f6f5f4]/80 text-foreground backdrop-blur-[20px] saturate-[1.1] dark:bg-[#151515]/85 dark:saturate-[1.15]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-tr from-primary/[0.04] via-transparent to-orange-500/[0.04]"
+      />
       <Header
         section={section}
         onSection={setSection}
@@ -474,7 +478,7 @@ export default function App() {
         t={t}
       />
 
-      <main className="mx-auto w-full max-w-[1200px] flex-1 overflow-y-auto px-5 py-5">
+      <main className="relative z-10 mx-auto w-full max-w-[1200px] flex-1 overflow-y-auto px-5 py-5">
         {content}
       </main>
 

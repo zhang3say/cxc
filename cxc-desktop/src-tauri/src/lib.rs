@@ -538,6 +538,58 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+// Tauri 只设置小图标，任务栏按钮读取的是大图标。这里从 exe 资源里再补一次。
+#[cfg(target_os = "windows")]
+fn apply_taskbar_icon(window: &tauri::WebviewWindow) {
+    const WM_SETICON: u32 = 0x0080;
+    const ICON_BIG: usize = 1;
+    const IMAGE_ICON: u32 = 1;
+    const LR_DEFAULTSIZE: u32 = 0x0040;
+    const LR_SHARED: u32 = 0x8000;
+    // tauri-build 以 IDI_APPLICATION(32512) 的编号把 icon.ico 写入 exe 资源。
+    const ICON_RESOURCE_ID: usize = 32512;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetModuleHandleW(name: *const u16) -> isize;
+    }
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn LoadImageW(
+            instance: isize,
+            name: *const u16,
+            kind: u32,
+            cx: i32,
+            cy: i32,
+            load: u32,
+        ) -> isize;
+        fn SendMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
+    }
+
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+
+    unsafe {
+        let instance = GetModuleHandleW(std::ptr::null());
+        if instance == 0 {
+            return;
+        }
+        let icon = LoadImageW(
+            instance,
+            ICON_RESOURCE_ID as *const u16,
+            IMAGE_ICON,
+            0,
+            0,
+            LR_DEFAULTSIZE | LR_SHARED,
+        );
+        if icon != 0 {
+            SendMessageW(hwnd.0 as isize, WM_SETICON, ICON_BIG, icon);
+        }
+    }
+}
+
 fn rewrite_from_tray(app: &tauri::AppHandle, agent: &str, env: &str) {
     let Ok(kind) = parse_agent(agent) else {
         return;
@@ -600,6 +652,16 @@ pub fn run() {
                 .build(app)?;
 
             let _ = update_tray_menu(&handle);
+
+            // 无边框窗口在 Windows 上偶尔拿不到任务栏图标，显式再设一次。
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
+                #[cfg(target_os = "windows")]
+                apply_taskbar_icon(&window);
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
