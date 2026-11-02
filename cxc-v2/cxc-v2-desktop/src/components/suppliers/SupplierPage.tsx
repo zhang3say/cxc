@@ -366,12 +366,6 @@ interface SupplierPageProps {
     protocol: Protocol,
     keyId?: string,
   ) => Promise<unknown>;
-  onTestModelAll: (
-    supplier: Supplier,
-    model: string,
-    protocols: Protocol[],
-    keyId?: string,
-  ) => Promise<void>;
 }
 
 export function SupplierPage({
@@ -386,7 +380,6 @@ export function SupplierPage({
   onFetchModels,
   onTestAll,
   onTestModel,
-  onTestModelAll,
 }: SupplierPageProps) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [testKeyId, setTestKeyId] = useState<string | undefined>(undefined);
@@ -615,9 +608,6 @@ export function SupplierPage({
                         <tr>
                           <th className="px-3 py-2 font-bold">{t.model}</th>
                           <th className="w-[152px] px-3 py-2 font-bold">{t.status}</th>
-                          <th className="w-11 px-2 py-2 text-right font-bold">
-                            <span className="sr-only">{t.test}</span>
-                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -633,14 +623,6 @@ export function SupplierPage({
                             t={t}
                             onTest={(protocol) =>
                               onTestModel(detail, model.model, protocol, testAccount?.id)
-                            }
-                            onTestAll={() =>
-                              onTestModelAll(
-                                detail,
-                                model.model,
-                                protocolsFor(model),
-                                testAccount?.id,
-                              )
                             }
                           />
                         ))}
@@ -664,7 +646,6 @@ function ModelRow({
   keyName,
   t,
   onTest,
-  onTestAll,
 }: {
   model: SupplierModel;
   protocols: Protocol[];
@@ -673,10 +654,9 @@ function ModelRow({
   keyName?: string;
   t: Messages;
   onTest: (protocol: Protocol) => Promise<unknown>;
-  onTestAll: () => Promise<void>;
 }) {
-  // 测试状态按行独立：只让被点的那一行 / 那个协议转圈。
-  const [testing, setTesting] = useState<Protocol | "all" | null>(null);
+  // 测试状态按行独立：只让被点的那一个协议徽章转圈。
+  const [testing, setTesting] = useState<Protocol | null>(null);
   const locked = busy || testing != null;
 
   const runTest = async (protocol: Protocol) => {
@@ -684,16 +664,6 @@ function ModelRow({
     setTesting(protocol);
     try {
       await onTest(protocol);
-    } finally {
-      setTesting(null);
-    }
-  };
-
-  const runAll = async () => {
-    if (locked) return;
-    setTesting("all");
-    try {
-      await onTestAll();
     } finally {
       setTesting(null);
     }
@@ -754,21 +724,6 @@ function ModelRow({
             {keyName}
           </span>
         ) : null}
-      </td>
-      <td className="px-2 py-2 text-right">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled={locked}
-          onClick={() => void runAll()}
-          title={t.testThisModel}
-        >
-          {testing === "all" ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <Activity className="size-3" />
-          )}
-        </Button>
       </td>
     </tr>
   );
