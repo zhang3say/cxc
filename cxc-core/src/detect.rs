@@ -152,7 +152,7 @@ fn windows_which(name: &str) -> Option<PathBuf> {
     } else {
         "cmd.exe"
     };
-    let output = std::process::Command::new(cmd)
+    let output = crate::process::command(cmd)
         .args(["/c", "where", name])
         .output()
         .ok()?;
@@ -173,7 +173,7 @@ fn windows_which(name: &str) -> Option<PathBuf> {
 
 #[cfg(target_os = "windows")]
 fn wsl_available() -> bool {
-    std::process::Command::new("wsl")
+    crate::process::command("wsl")
         .args(["-e", "true"])
         .output()
         .map(|output| output.status.success())
@@ -195,7 +195,7 @@ fn wsl_which(name: &str) -> Option<PathBuf> {
             "command -v {name} || for p in {candidates}; do [ -x \"$p\" ] && {{ echo \"$p\"; break; }}; done"
         )
     };
-    let output = std::process::Command::new("wsl")
+    let output = crate::process::command("wsl")
         .args(["-e", "sh", "-lc", &script])
         .output()
         .ok()?;

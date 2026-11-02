@@ -3,6 +3,7 @@ pub mod config;
 pub mod connectivity;
 pub mod detect;
 pub mod migration;
+pub mod process;
 pub mod protocol;
 pub mod supplier;
 pub mod sync;

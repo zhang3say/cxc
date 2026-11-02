@@ -159,7 +159,7 @@ fn windows_home_from_wsl(kind: AgentKind) -> Option<PathBuf> {
 
 #[cfg(target_os = "windows")]
 fn wsl_home_from_windows() -> Option<PathBuf> {
-    let output = std::process::Command::new("wsl")
+    let output = crate::process::command("wsl")
         .args(["-e", "sh", "-lc", "wslpath -w \"$HOME\""])
         .output()
         .ok()?;
