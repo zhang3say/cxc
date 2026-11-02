@@ -103,9 +103,9 @@ An optional directory path configuration in CXC. Used when the Grok config files
 
 面向同步数据的客户端主动安全加固机制。当用户设置了同步主密码时，同步载荷在上传到 GitHub Gist 前会在本地通过 AES-256-GCM 算法全量加密，确保 API Key 与机密中转凭证在云端永不以明文留存。
 
-## CXC 2 (第二代桌面端)
+## CXC (0.2.0 起)
 
-`cxc-v2/` 下的并行重写版本。沿用旧版视觉语言，使用独立配置 `~/.config/cxc-v2/config.yaml`，旧版配置只作为一次性导入来源。数据模型是「全局中转站 + 每个 Agent 一份配置」，Agent 的身份是「工具 + 环境」。
+当前主线实现，位于 `cxc-core/` 与 `cxc-desktop/`。数据模型是「全局中转站（含多账号）+ 每个 Agent 一份绑定列表」，Agent 的身份是「工具 + 环境」。自身配置存放在 `~/.config/cxc/config.yaml`（Windows 为 `%APPDATA%\cxc\config.yaml`）。
 
 ## Environment (环境)
 

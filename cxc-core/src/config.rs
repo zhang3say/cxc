@@ -1,1638 +1,1005 @@
+use chrono::{DateTime, Local};
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-use chrono::{DateTime, Local};
-use std::cell::RefCell;
 
-const CONFIG_FILE_NAME: &str = "config.yaml";
-const CONFIG_DIR_NAME: &str = "cxc";
-pub const SOURCE_APP: &str = "app";
-pub const SOURCE_WSL: &str = "wsl";
+use crate::agent::{AgentConfig, AgentEnvs, AgentKind, AgentSlot, Agents, CustomDirs};
+use crate::supplier::Supplier;
+use crate::sync::SyncConfig;
 
-thread_local! {
-    static TEST_CONFIG_DIR: RefCell<Option<PathBuf>> = RefCell::new(None);
+pub const CONFIG_DIR_NAME: &str = "cxc";
+pub const PREVIOUS_CONFIG_DIR_NAME: &str = "cxc-v2";
+pub const CONFIG_FILE_NAME: &str = "config.yaml";
+pub const CONFIG_VERSION: u32 = 5;
+
+/// Agent 所在的运行环境。环境是 Agent 身份的一部分：
+/// `Grok (WSL)` 与 `Grok (Windows)` 是两个独立 Agent。
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Env {
+    #[default]
+    Wsl,
+    Windows,
+}
+
+impl Env {
+    pub const ALL: [Env; 2] = [Env::Wsl, Env::Windows];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Env::Wsl => "wsl",
+            Env::Windows => "windows",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Env::Wsl => "WSL",
+            Env::Windows => "Windows",
+        }
+    }
+
+    /// 兼容旧字段：`app` 视为 Windows。
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "windows" | "app" | "win" => Env::Windows,
+            _ => Env::Wsl,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    #[error("Failed to find user config directory")]
+    #[error("找不到用户配置目录")]
     NoConfigDir,
-    #[error("Failed to read config file at {path}: {source}")]
+    #[error("读取配置文件失败 {path}: {source}")]
     ReadError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Failed to parse config file: {0}")]
+    #[error("解析配置文件失败: {0}")]
     ParseError(#[from] serde_yaml::Error),
-    #[error("Failed to serialize config: {0}")]
+    #[error("序列化配置失败: {0}")]
     SerializeError(serde_yaml::Error),
-    #[error("Failed to create config directory at {path}: {source}")]
+    #[error("创建配置目录失败 {path}: {source}")]
     CreateDirError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Failed to write config file to {path}: {source}")]
+    #[error("写入配置文件失败 {path}: {source}")]
     WriteError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Provider '{0}' already exists")]
-    ProviderExists(String),
-    #[error("Provider '{0}' not found")]
-    ProviderNotFound(String),
-    #[error("Cannot remove provider '{name}' for {target_tool}: active in {sources} — switch it first")]
-    CannotRemoveActive {
-        name: String,
-        target_tool: String,
-        sources: String,
-    },
-    #[error("Unknown target tool: '{0}' (expected codex, claude, or grok)")]
-    UnknownTargetTool(String),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct ClaudeModels {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub opus: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sonnet: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub haiku: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub subagent: Option<String>,
-}
-
-/// Grok 的 `[models].web_search` 处置策略。
-///
-/// 缺省为跟随本中转站的默认模型。`keep` 保持配置文件现状，`model` 指定模型，
-/// `unset` 删除字段，让搜索回到官方端点。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum GrokWebSearch {
-    /// 保持配置文件现状（CXC 不写也不删该字段）
-    Keep,
-    /// 跟随本中转站的默认模型
-    #[default]
-    Follow,
-    /// 指定模型（通常是本中转站下的某个模型）
-    Model { model: String },
-    /// 删除该字段，让 web_search 回到官方端点
-    Unset,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Provider {
-    pub name: String,
-    pub base_url: String,
-    pub api_key: String,
-    pub model: String,
-    #[serde(default = "default_wire_api")]
-    pub wire_api: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remark: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_test: Option<DateTime<Local>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latency_ms: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_ok: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub claude_models: Option<ClaudeModels>,
-    /// Grok：`[models].web_search` 的处置策略。未设置时按跟随默认模型写入。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grok_web_search: Option<GrokWebSearch>,
-    /// 推理档位。空着或 `none` 表示启用时删掉目标文件里对应的键。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning_effort: Option<String>,
-    /// Codex 计划模式推理档位。空着或 `none` 表示启用时删掉 `plan_mode_reasoning_effort`。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan_reasoning_effort: Option<String>,
-    /// 上下文长度，如 `1m`、`200k`、`500k`。空着表示启用时不改模型名上的 `[1m]`，并删掉各工具的上下文键。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_length: Option<String>,
-    /// 压缩比例，70–100 的整数百分比。空着或超出范围表示不设置。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub compact_ratio: Option<u8>,
-}
-
-impl Provider {
-    /// 去掉空白后的推理档位。空着或 `none` 表示不设置。
-    pub fn reasoning_effort_level(&self) -> Option<&str> {
-        trimmed_level(&self.reasoning_effort)
-    }
-
-    /// 去掉空白后的计划模式推理档位。空着或 `none` 表示不设置。
-    pub fn plan_reasoning_effort_level(&self) -> Option<&str> {
-        trimmed_level(&self.plan_reasoning_effort)
-    }
-
-    pub fn normalize_reasoning_effort(&mut self) {
-        self.reasoning_effort = self.reasoning_effort_level().map(str::to_string);
-        self.plan_reasoning_effort = self.plan_reasoning_effort_level().map(str::to_string);
-    }
-
-    pub fn normalize_context_settings(&mut self) {
-        self.context_length = self
-            .context_length
-            .as_deref()
-            .and_then(canonical_context_length);
-        self.compact_ratio = self.compact_ratio_percent();
-    }
-
-    /// Claude 只认 1M。其它长度（包括旧数据）按不设置处理。
-    pub fn normalize_claude_context(&mut self) {
-        self.context_length = self
-            .context_length
-            .take()
-            .filter(|length| length == "1m");
-    }
-
-    /// 解析后的上下文 token。空着或无法解析时为 `None`。
-    pub fn context_tokens(&self) -> Option<u64> {
-        self.context_length.as_deref().and_then(parse_context_tokens)
-    }
-
-    /// 70–100 的压缩比例。超出范围视为不设置。
-    pub fn compact_ratio_percent(&self) -> Option<u8> {
-        self.compact_ratio.filter(|ratio| (70..=100).contains(ratio))
-    }
-
-    /// Claude / Codex 的压缩 token。上下文或比例缺一则算不出来。
-    pub fn compact_token_limit(&self) -> Option<u64> {
-        let tokens = self.context_tokens()?;
-        let ratio = self.compact_ratio_percent()?;
-        Some(clamp_compact_tokens(tokens, ratio))
-    }
-}
-
-/// Claude 1M 上下文对应的 token 数。`1m`、`1000k`、`1000000` 都是这个值。
-pub const CLAUDE_1M_TOKENS: u64 = 1_000_000;
-const COMPACT_TOKEN_MIN: u64 = 100_000;
-const COMPACT_TOKEN_MAX: u64 = 1_000_000;
-
-/// `200k` = 200_000，`1m` = 1_000_000，纯数字照单接受。系数必须是正整数。
-pub fn parse_context_tokens(raw: &str) -> Option<u64> {
-    let text = raw.trim().to_ascii_lowercase();
-    if text.is_empty() || text == "none" {
-        return None;
-    }
-    let (coeff, multiplier) = if let Some(rest) = text.strip_suffix('k') {
-        (rest, 1_000u64)
-    } else if let Some(rest) = text.strip_suffix('m') {
-        (rest, 1_000_000u64)
-    } else {
-        (text.as_str(), 1u64)
-    };
-    if coeff.is_empty() || !coeff.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let number: u64 = coeff.parse().ok()?;
-    if number == 0 {
-        return None;
-    }
-    number.checked_mul(multiplier)
-}
-
-/// 能被 1_000_000 整除存 `1m`，否则能被 1_000 整除存 `200k`，其余存十进制。
-pub fn canonical_context_length(raw: &str) -> Option<String> {
-    parse_context_tokens(raw).map(format_context_length)
-}
-
-pub fn format_context_length(tokens: u64) -> String {
-    if tokens % 1_000_000 == 0 {
-        format!("{}m", tokens / 1_000_000)
-    } else if tokens % 1_000 == 0 {
-        format!("{}k", tokens / 1_000)
-    } else {
-        tokens.to_string()
-    }
-}
-
-pub fn clamp_compact_tokens(context_tokens: u64, ratio: u8) -> u64 {
-    let raw = context_tokens.saturating_mul(u64::from(ratio)) / 100;
-    raw.clamp(COMPACT_TOKEN_MIN, COMPACT_TOKEN_MAX)
-}
-
-/// 去掉模型名末尾重复的 `[1m]`，大小写不敏感。
-pub fn strip_trailing_1m(model: &str) -> String {
-    let mut name = model.to_string();
-    while name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case("[1m]") {
-        name.truncate(name.len() - 4);
-    }
-    name
-}
-
-/// 上下文未设置时原样保留模型名。设成 1M 时保证末尾有一个 `[1m]`，其他长度则去掉该后缀。
-pub fn claude_model_for_context(model: &str, context_tokens: Option<u64>) -> String {
-    let Some(tokens) = context_tokens else {
-        return model.to_string();
-    };
-    let base = strip_trailing_1m(model);
-    if tokens == CLAUDE_1M_TOKENS && !base.is_empty() {
-        format!("{base}[1m]")
-    } else {
-        base
-    }
-}
-
-/// 连通性测试用的模型名。只有 Claude 去掉末尾 `[1m]`。
-pub fn connectivity_model(model: &str, is_claude: bool) -> String {
-    if is_claude {
-        strip_trailing_1m(model)
-    } else {
-        model.to_string()
-    }
-}
-
-fn trimmed_level(value: &Option<String>) -> Option<&str> {
-    value
-        .as_deref()
-        .map(str::trim)
-        .filter(|level| !level.is_empty() && !level.eq_ignore_ascii_case("none"))
-}
-
-fn default_wire_api() -> String {
-    "responses".to_string()
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Config {
-    // Codex 配置
+    #[serde(default = "default_version")]
+    pub version: u32,
     #[serde(default)]
-    pub codex_active_app: String,
+    pub suppliers: Vec<Supplier>,
     #[serde(default)]
-    pub codex_active_wsl: String,
+    pub agents: Agents,
     #[serde(default)]
-    pub codex_providers: Vec<Provider>,
-    #[serde(default)]
-    pub codex_source: Option<String>,
-    #[serde(default)]
-    pub codex_custom_dir: String,
-
-    // Claude CLI 配置
-    #[serde(default)]
-    pub claude_active_app: String,
-    #[serde(default)]
-    pub claude_active_wsl: String,
-    #[serde(default)]
-    pub claude_providers: Vec<Provider>,
-    #[serde(default)]
-    pub claude_source: Option<String>,
-    #[serde(default)]
-    pub claude_custom_dir: String,
-
-    // Grok CLI 配置
-    #[serde(default)]
-    pub grok_active_app: String,
-    #[serde(default)]
-    pub grok_active_wsl: String,
-    #[serde(default)]
-    pub grok_providers: Vec<Provider>,
-    #[serde(default)]
-    pub grok_source: Option<String>,
-    #[serde(default)]
-    pub grok_custom_dir: String,
-    /// 已把 Grok web_search 的旧缺省（未设置 / keep）迁成 follow。只存在本机配置里。
-    #[serde(default)]
-    pub grok_web_search_default_migrated: bool,
-
-    // 同步配置
+    pub custom_dirs: CustomDirs,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync: Option<crate::sync::SyncConfig>,
-
-    // 旧字段（向后兼容，迁移后不再保存）
-    #[serde(default, skip_serializing)]
-    pub codex_active: String,
-    #[serde(default, skip_serializing)]
-    pub claude_active: String,
-    #[serde(default, skip_serializing)]
-    pub active: String,
-    #[serde(default, skip_serializing)]
-    pub providers: Vec<Provider>,
+    pub sync: Option<SyncConfig>,
+    #[serde(default)]
+    pub migrated_from_v1: bool,
 }
 
-fn normalize_source(source: &str) -> &'static str {
-    if source == SOURCE_APP {
-        SOURCE_APP
-    } else {
-        SOURCE_WSL
-    }
+fn default_version() -> u32 {
+    CONFIG_VERSION
 }
 
-pub fn effective_source(cfg: &Config) -> &'static str {
-    if let Some(source) = cfg.codex_source.as_deref() {
-        return normalize_source(source);
-    }
-    if let Some(source) = cfg.claude_source.as_deref() {
-        return normalize_source(source);
-    }
-    if let Some(source) = cfg.grok_source.as_deref() {
-        return normalize_source(source);
-    }
-    SOURCE_WSL
-}
-
-pub fn set_global_source(cfg: &mut Config, source: &str) {
-    let source = normalize_source(source);
-    cfg.codex_source = Some(source.to_string());
-    cfg.claude_source = Some(source.to_string());
-    cfg.grok_source = Some(source.to_string());
-}
-
-/// 0.0.8 把缺省策略存成了 keep。只迁一次：未设置和 keep 改成 follow，之后用户再选 keep 会保留。
-fn migrate_grok_web_search_default(cfg: &mut Config) -> bool {
-    if cfg.grok_web_search_default_migrated {
-        return false;
-    }
-    for provider in &mut cfg.grok_providers {
-        if matches!(
-            provider.grok_web_search,
-            None | Some(GrokWebSearch::Keep)
-        ) {
-            provider.grok_web_search = Some(GrokWebSearch::Follow);
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            version: CONFIG_VERSION,
+            suppliers: Vec::new(),
+            agents: Agents::default(),
+            custom_dirs: CustomDirs::default(),
+            sync: None,
+            migrated_from_v1: false,
         }
     }
-    cfg.grok_web_search_default_migrated = true;
-    true
 }
 
-fn sync_global_source_fields(cfg: &mut Config) -> bool {
-    if cfg.codex_source.is_none() && cfg.claude_source.is_none() && cfg.grok_source.is_none() {
-        return false;
+impl Config {
+    pub fn supplier(&self, id: &str) -> Option<&Supplier> {
+        self.suppliers.iter().find(|supplier| supplier.id == id)
     }
 
-    let source = effective_source(cfg);
-    let changed = cfg.codex_source.as_deref() != Some(source)
-        || cfg.claude_source.as_deref() != Some(source)
-        || cfg.grok_source.as_deref() != Some(source);
-    if changed {
-        set_global_source(cfg, source);
+    pub fn supplier_mut(&mut self, id: &str) -> Option<&mut Supplier> {
+        self.suppliers.iter_mut().find(|supplier| supplier.id == id)
     }
-    changed
-}
 
-fn providers_mut<'a>(
-    cfg: &'a mut Config,
-    target_tool: &str,
-) -> Result<&'a mut Vec<Provider>, ConfigError> {
-    match target_tool {
-        "codex" => Ok(&mut cfg.codex_providers),
-        "claude" => Ok(&mut cfg.claude_providers),
-        "grok" => Ok(&mut cfg.grok_providers),
-        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
+    pub fn supplier_by_name(&self, name: &str) -> Option<&Supplier> {
+        self.suppliers.iter().find(|supplier| supplier.name == name)
     }
-}
 
-fn providers_ref<'a>(
-    cfg: &'a Config,
-    target_tool: &str,
-) -> Result<&'a Vec<Provider>, ConfigError> {
-    match target_tool {
-        "codex" => Ok(&cfg.codex_providers),
-        "claude" => Ok(&cfg.claude_providers),
-        "grok" => Ok(&cfg.grok_providers),
-        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
+    pub fn agent(&self, kind: AgentKind) -> &AgentEnvs {
+        self.agents.get(kind)
+    }
+
+    pub fn agent_mut(&mut self, kind: AgentKind) -> &mut AgentEnvs {
+        self.agents.get_mut(kind)
+    }
+
+    pub fn slot_of(&self, kind: AgentKind, env: Env) -> Option<&AgentSlot> {
+        self.agent(kind).get(env)
+    }
+
+    /// 该 `(工具, 环境)` 当前使用中的绑定。
+    pub fn config_of(&self, kind: AgentKind, env: Env) -> Option<&AgentConfig> {
+        self.slot_of(kind, env)?.active_binding()
     }
 }
 
-fn active_fields_mut<'a>(
-    cfg: &'a mut Config,
-    target_tool: &str,
-) -> Result<(&'a mut String, &'a mut String), ConfigError> {
-    match target_tool {
-        "codex" => Ok((&mut cfg.codex_active_app, &mut cfg.codex_active_wsl)),
-        "claude" => Ok((&mut cfg.claude_active_app, &mut cfg.claude_active_wsl)),
-        "grok" => Ok((&mut cfg.grok_active_app, &mut cfg.grok_active_wsl)),
-        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
-    }
-}
-
-fn active_fields_ref<'a>(
-    cfg: &'a Config,
-    target_tool: &str,
-) -> Result<(&'a String, &'a String), ConfigError> {
-    match target_tool {
-        "codex" => Ok((&cfg.codex_active_app, &cfg.codex_active_wsl)),
-        "claude" => Ok((&cfg.claude_active_app, &cfg.claude_active_wsl)),
-        "grok" => Ok((&cfg.grok_active_app, &cfg.grok_active_wsl)),
-        other => Err(ConfigError::UnknownTargetTool(other.to_string())),
-    }
-}
-
+/// 配置文件路径。测试可用 `CXC_CONFIG_DIR` 覆盖目录。
 pub fn config_path() -> Result<PathBuf, ConfigError> {
-    let mut path = if let Some(test_dir) = TEST_CONFIG_DIR.with(|dir| dir.borrow().clone()) {
-        test_dir
-    } else if let Ok(env_dir) = std::env::var("CXC_TEST_CONFIG_DIR") {
-        PathBuf::from(env_dir)
-    } else {
-        dirs::config_dir().ok_or(ConfigError::NoConfigDir)?
-    };
+    if let Ok(dir) = std::env::var("CXC_CONFIG_DIR") {
+        return Ok(PathBuf::from(dir).join(CONFIG_FILE_NAME));
+    }
+    let mut path = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
     path.push(CONFIG_DIR_NAME);
     path.push(CONFIG_FILE_NAME);
     Ok(path)
 }
 
+/// 上一代（CXC 2）的配置路径，仅用于一次性接管。
+pub fn previous_config_path() -> Result<PathBuf, ConfigError> {
+    if let Ok(dir) = std::env::var("CXC_PREVIOUS_CONFIG_DIR") {
+        return Ok(PathBuf::from(dir).join(CONFIG_FILE_NAME));
+    }
+    let mut path = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
+    path.push(PREVIOUS_CONFIG_DIR_NAME);
+    path.push(CONFIG_FILE_NAME);
+    Ok(path)
+}
+
+/// 读取配置，必要时把旧数据接管过来。
+///
+/// 优先级：主路径的新格式配置 → 上一代 `cxc-v2` 配置 → 旧版 v1 配置 → 空配置。
+/// 覆盖任何已有文件之前都会先备份。
 pub fn load() -> Result<Config, ConfigError> {
     let path = config_path()?;
-    if !path.exists() {
-        // 没有旧配置可迁，缺省策略从这一版起就是 follow。
-        let mut cfg = Config::default();
-        cfg.grok_web_search_default_migrated = true;
+    let previous = previous_config_path().ok();
+    load_at(&path, previous.as_deref())
+}
+
+/// `load` 的可测试版本：路径显式传入，不读环境变量。
+pub(crate) fn load_at(path: &Path, previous: Option<&Path>) -> Result<Config, ConfigError> {
+    let main_value = if path.exists() {
+        Some(read_value(path)?)
+    } else {
+        None
+    };
+    let main_is_legacy = main_value.as_ref().is_some_and(is_legacy_v1);
+
+    // 1) 主路径已是新格式：直接用，版本落后就顺手升级。
+    if let Some(value) = main_value
+        && !main_is_legacy
+    {
+        let mut cfg = parse_value(value)?;
+        if read_version(path)? < CONFIG_VERSION {
+            save_to(path, &cfg)?;
+        }
+        cfg.version = CONFIG_VERSION;
         return Ok(cfg);
     }
 
-    let data = fs::read(&path).map_err(|err| ConfigError::ReadError {
-        path: path.clone(),
-        source: err,
+    // 2) 上一代配置比旧版 v1 更新，优先接管。
+    if let Some(previous) = previous
+        && previous.exists()
+    {
+        let value = read_value(previous)?;
+        let cfg = if is_legacy_v1(&value) {
+            import_legacy(previous)?
+        } else {
+            parse_value(value)?
+        };
+        if path.exists() {
+            backup_file(path)?;
+        }
+        save_to(path, &cfg)?;
+        return Ok(cfg);
+    }
+
+    // 3) 只有旧版 v1：备份后原地迁移。
+    if main_is_legacy {
+        backup_file(path)?;
+        let cfg = import_legacy(path)?;
+        save_to(path, &cfg)?;
+        return Ok(cfg);
+    }
+
+    Ok(Config::default())
+}
+
+/// 旧版格式没有 `version` 字段，靠这几个顶层键识别。
+fn is_legacy_v1(value: &serde_yaml::Value) -> bool {
+    if value.get("version").is_some() {
+        return false;
+    }
+    [
+        "codex_providers",
+        "claude_providers",
+        "grok_providers",
+        "providers",
+    ]
+    .iter()
+    .any(|key| value.get(*key).is_some())
+}
+
+fn read_value(path: &Path) -> Result<serde_yaml::Value, ConfigError> {
+    let data = fs::read(path).map_err(|source| ConfigError::ReadError {
+        path: path.to_path_buf(),
+        source,
     })?;
+    Ok(serde_yaml::from_slice(&data)?)
+}
 
-    let mut cfg: Config = serde_yaml::from_slice(&data)?;
-    let mut changed = false;
-
-    // 自动迁移 1：极早期版本的旧字段，迁移到 Codex 配置
-    if cfg.codex_providers.is_empty() && !cfg.providers.is_empty() {
-        cfg.codex_providers = cfg.providers.clone();
-        cfg.codex_active_app = cfg.active.clone(); // 默认给 app
-        cfg.providers.clear();
-        cfg.active.clear();
-        changed = true;
-    }
-
-    // 自动迁移 2：单状态到多源状态的迁移
-    if !cfg.codex_active.is_empty() {
-        if cfg.codex_source.as_deref() == Some("wsl") {
-            cfg.codex_active_wsl = cfg.codex_active.clone();
-        } else {
-            cfg.codex_active_app = cfg.codex_active.clone();
-        }
-        cfg.codex_active.clear();
-        changed = true;
-    }
-    if !cfg.claude_active.is_empty() {
-        if cfg.claude_source.as_deref() == Some("app") {
-            cfg.claude_active_app = cfg.claude_active.clone();
-        } else {
-            cfg.claude_active_wsl = cfg.claude_active.clone();
-        }
-        cfg.claude_active.clear();
-        changed = true;
-    }
-
-    if sync_global_source_fields(&mut cfg) {
-        changed = true;
-    }
-
-    if migrate_grok_web_search_default(&mut cfg) {
-        changed = true;
-    }
-
-    if changed {
-        // 立即保存迁移后的配置
-        save(&cfg)?;
-    }
-
+fn import_legacy(path: &Path) -> Result<Config, ConfigError> {
+    let mut cfg = Config::default();
+    crate::migration::import_into_config(&mut cfg, path)
+        .map_err(|error| ConfigError::ParseError(serde_yaml::Error::custom(error.to_string())))?;
     Ok(cfg)
 }
 
+pub fn load_from(path: &Path) -> Result<Config, ConfigError> {
+    if !path.exists() {
+        return Ok(Config::default());
+    }
+    let value = read_value(path)?;
+    if is_legacy_v1(&value) {
+        return import_legacy(path);
+    }
+    parse_value(value)
+}
+
+fn parse_value(value: serde_yaml::Value) -> Result<Config, ConfigError> {
+    let version = value
+        .get("version")
+        .and_then(serde_yaml::Value::as_u64)
+        .unwrap_or(0) as u32;
+
+    if version >= CONFIG_VERSION {
+        let mut cfg: Config = serde_yaml::from_value(value)?;
+        cfg.version = CONFIG_VERSION;
+        return Ok(cfg);
+    }
+
+    if version == 4 {
+        let legacy: LegacyConfigV4 = serde_yaml::from_value(value)?;
+        return Ok(legacy.into_config());
+    }
+
+    if version == 3 {
+        let legacy: LegacyConfigV3 = serde_yaml::from_value(value)?;
+        return Ok(legacy.into_config());
+    }
+
+    let legacy: LegacyConfigV2 = serde_yaml::from_value(value)?;
+    Ok(legacy.into_config())
+}
+
+fn read_version(path: &Path) -> Result<u32, ConfigError> {
+    let data = fs::read(path).map_err(|source| ConfigError::ReadError {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let value: serde_yaml::Value = serde_yaml::from_slice(&data)?;
+    Ok(value
+        .get("version")
+        .and_then(serde_yaml::Value::as_u64)
+        .unwrap_or(0) as u32)
+}
+
 pub fn save(cfg: &Config) -> Result<(), ConfigError> {
-    let path = config_path()?;
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|err| ConfigError::CreateDirError {
-                path: parent.to_path_buf(),
-                source: err,
-            })?;
-        }
+    save_to(&config_path()?, cfg)
+}
+
+pub fn save_to(path: &Path, cfg: &Config) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent).map_err(|source| ConfigError::CreateDirError {
+            path: parent.to_path_buf(),
+            source,
+        })?;
     }
 
     let data = serde_yaml::to_string(cfg).map_err(ConfigError::SerializeError)?;
-
-    write_secure_file(&path, data.as_bytes()).map_err(|err| ConfigError::WriteError {
-        path: path.clone(),
-        source: err,
-    })?;
-
-    Ok(())
+    write_atomic(path, data.as_bytes()).map_err(|source| ConfigError::WriteError {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
-fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Result<()> {
-    fs::write(&path, contents)?;
+fn write_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("yaml.tmp");
+    fs::write(&tmp, contents)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&path)?.permissions();
+        let mut perms = fs::metadata(&tmp)?.permissions();
         perms.set_mode(0o600);
-        fs::set_permissions(&path, perms)?;
+        fs::set_permissions(&tmp, perms)?;
     }
-    Ok(())
+    #[cfg(windows)]
+    {
+        if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
+    fs::rename(&tmp, path)
 }
 
-/// Creates a backup copy of the current config.yaml file before performing disruptive operations like sync pulls.
 pub fn backup_config_file() -> Result<Option<PathBuf>, ConfigError> {
     let path = config_path()?;
     if !path.exists() {
         return Ok(None);
     }
-
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let backup_name = format!("{}.backup.{}", CONFIG_FILE_NAME, timestamp);
-    let mut backup_path = path.clone();
-    backup_path.set_file_name(backup_name);
-
-    fs::copy(&path, &backup_path).map_err(|err| ConfigError::WriteError {
-        path: backup_path.clone(),
-        source: err,
-    })?;
-
-    Ok(Some(backup_path))
+    backup_file(&path).map(Some)
 }
 
-pub fn get_sync_config(cfg: &Config) -> crate::sync::SyncConfig {
+/// 把文件复制成 `config.yaml.backup.<时间戳>`。
+pub fn backup_file(path: &Path) -> Result<PathBuf, ConfigError> {
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let mut backup_path = path.to_path_buf();
+    backup_path.set_file_name(format!("{}.backup.{}", CONFIG_FILE_NAME, timestamp));
+    fs::copy(path, &backup_path).map_err(|source| ConfigError::WriteError {
+        path: backup_path.clone(),
+        source,
+    })?;
+    Ok(backup_path)
+}
+
+pub fn get_sync_config(cfg: &Config) -> SyncConfig {
     cfg.sync.clone().unwrap_or_default()
 }
 
-pub fn update_sync_config(cfg: &mut Config, sync: crate::sync::SyncConfig) {
+pub fn update_sync_config(cfg: &mut Config, sync: SyncConfig) {
     cfg.sync = Some(sync);
 }
 
-pub fn add_provider(cfg: &mut Config, target_tool: &str, mut p: Provider) -> Result<(), ConfigError> {
-    let providers = providers_mut(cfg, target_tool)?;
-
-    if providers.iter().any(|prov| prov.name == p.name) {
-        return Err(ConfigError::ProviderExists(p.name));
-    }
-    p.normalize_reasoning_effort();
-    p.normalize_context_settings();
-    if target_tool == "claude" {
-        p.normalize_claude_context();
-    }
-    if p.wire_api.is_empty() {
-        // Grok 默认 chat_completions，其余工具默认 responses
-        p.wire_api = if target_tool == "grok" {
-            "chat_completions".to_string()
-        } else {
-            default_wire_api()
-        };
-    }
-    providers.push(p.clone());
-    save(cfg)
+pub fn now() -> DateTime<Local> {
+    Local::now()
 }
 
-pub fn edit_provider(cfg: &mut Config, target_tool: &str, old_name: &str, mut updated: Provider) -> Result<(), ConfigError> {
-    {
-        let providers = providers_mut(cfg, target_tool)?;
+// ---------------------------------------------------------------------------
+// 旧配置 → 版本 5
+//   v4：中转站单 Key → 一个「默认」账号，绑定跟随默认
+//   v3：每个 (工具, 环境) 一份配置 → 一条绑定，并设为使用中
+//   v2：每个工具一份共享绑定列表 + 全局来源 → 主环境保留全部绑定，另一环境只保留激活项
+// ---------------------------------------------------------------------------
 
-        let idx = providers
-            .iter()
-            .position(|prov| prov.name == old_name)
-            .ok_or_else(|| ConfigError::ProviderNotFound(old_name.to_string()))?;
+#[derive(Deserialize, Default)]
+struct LegacyConfigV4 {
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: Agents,
+    #[serde(default)]
+    custom_dirs: CustomDirs,
+    #[serde(default)]
+    sync: Option<SyncConfig>,
+    #[serde(default)]
+    migrated_from_v1: bool,
+}
 
-        if updated.name != old_name && providers.iter().any(|prov| prov.name == updated.name) {
-            return Err(ConfigError::ProviderExists(updated.name));
+impl LegacyConfigV4 {
+    fn into_config(self) -> Config {
+        Config {
+            version: CONFIG_VERSION,
+            suppliers: self
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: self.agents,
+            custom_dirs: self.custom_dirs,
+            sync: self.sync,
+            migrated_from_v1: self.migrated_from_v1,
         }
+    }
+}
 
-        updated.normalize_reasoning_effort();
-        updated.normalize_context_settings();
-        if target_tool == "claude" {
-            updated.normalize_claude_context();
+#[derive(Deserialize, Default)]
+struct LegacyConfigV3 {
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: LegacyAgentsV3,
+    #[serde(default)]
+    custom_dirs: CustomDirs,
+    #[serde(default)]
+    sync: Option<SyncConfig>,
+    #[serde(default)]
+    migrated_from_v1: bool,
+}
+
+#[derive(Deserialize, Default)]
+pub(crate) struct LegacyAgentsV3 {
+    #[serde(default)]
+    codex: LegacyAgentV3,
+    #[serde(default)]
+    claude: LegacyAgentV3,
+    #[serde(default)]
+    grok: LegacyAgentV3,
+    #[serde(default)]
+    opencode: LegacyAgentV3,
+}
+
+#[derive(Deserialize, Default)]
+struct LegacyAgentV3 {
+    #[serde(default)]
+    wsl: Option<AgentConfig>,
+    #[serde(default)]
+    windows: Option<AgentConfig>,
+}
+
+impl LegacyConfigV3 {
+    fn into_config(self) -> Config {
+        Config {
+            version: CONFIG_VERSION,
+            suppliers: self
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: agents_from_v3(&self.agents),
+            custom_dirs: self.custom_dirs,
+            sync: self.sync,
+            migrated_from_v1: self.migrated_from_v1,
         }
-        if updated.wire_api.is_empty() {
-            updated.wire_api = if target_tool == "grok" {
-                "chat_completions".to_string()
-            } else {
-                default_wire_api()
+    }
+}
+
+impl LegacyAgentsV3 {
+    fn get(&self, kind: AgentKind) -> &LegacyAgentV3 {
+        match kind {
+            AgentKind::Codex => &self.codex,
+            AgentKind::Claude => &self.claude,
+            AgentKind::Grok => &self.grok,
+            AgentKind::OpenCode => &self.opencode,
+        }
+    }
+}
+
+/// 版本 3 的单份配置转成「一条绑定 + 使用中」。
+pub(crate) fn agents_from_v3(legacy: &LegacyAgentsV3) -> Agents {
+    let mut agents = Agents::default();
+    for kind in AgentKind::ALL {
+        let legacy = legacy.get(kind);
+        let mut envs = AgentEnvs::default();
+        for (env, config) in [
+            (Env::Wsl, legacy.wsl.clone()),
+            (Env::Windows, legacy.windows.clone()),
+        ] {
+            let Some(mut config) = config else {
+                continue;
             };
+            config.id = crate::agent::new_binding_id();
+            envs.set(
+                env,
+                Some(AgentSlot {
+                    active: Some(config.id.clone()),
+                    bindings: vec![config],
+                }),
+            );
         }
-
-        let existing = &providers[idx];
-        if updated.last_test.is_none() {
-            updated.last_test = existing.last_test;
-        }
-        if updated.latency_ms.is_none() {
-            updated.latency_ms = existing.latency_ms;
-        }
-        if updated.last_ok.is_none() {
-            updated.last_ok = existing.last_ok;
-        }
-
-        providers[idx] = updated.clone();
+        *agents.get_mut(kind) = envs;
     }
-
-    {
-        let (active_app, active_wsl) = active_fields_mut(cfg, target_tool)?;
-        if *active_app == old_name {
-            *active_app = updated.name.clone();
-        }
-        if *active_wsl == old_name {
-            *active_wsl = updated.name.clone();
-        }
-    }
-
-    save(cfg)
+    agents
 }
 
-pub fn remove_provider(cfg: &mut Config, target_tool: &str, name: &str) -> Result<(), ConfigError> {
-    let (active_app, active_wsl) = active_fields_ref(cfg, target_tool)?;
-
-    let mut active_sources = Vec::new();
-    if *active_app == name {
-        active_sources.push("app");
-    }
-    if *active_wsl == name {
-        active_sources.push("wsl");
-    }
-
-    if !active_sources.is_empty() {
-        return Err(ConfigError::CannotRemoveActive {
-            name: name.to_string(),
-            target_tool: target_tool.to_string(),
-            sources: active_sources.join(", "),
-        });
-    }
-
-    let providers = providers_mut(cfg, target_tool)?;
-    let idx = providers
-        .iter()
-        .position(|prov| prov.name == name)
-        .ok_or_else(|| ConfigError::ProviderNotFound(name.to_string()))?;
-
-    providers.remove(idx);
-    save(cfg)
+#[derive(Deserialize, Default)]
+struct LegacyConfigV2 {
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: LegacyAgentsV2,
+    #[serde(default)]
+    custom_dirs: LegacyCustomDirsV2,
+    #[serde(default)]
+    sync: Option<SyncConfig>,
+    #[serde(default)]
+    migrated_from_v1: bool,
+    #[serde(default)]
+    source: Option<String>,
 }
 
-pub fn set_active(cfg: &mut Config, target_tool: &str, source: &str, name: &str) -> Result<(), ConfigError> {
-    {
-        let providers = providers_ref(cfg, target_tool)?;
-        if !providers.iter().any(|prov| prov.name == name) {
-            return Err(ConfigError::ProviderNotFound(name.to_string()));
+#[derive(Deserialize, Default)]
+pub(crate) struct LegacyAgentsV2 {
+    #[serde(default)]
+    codex: LegacyAgentV2,
+    #[serde(default)]
+    claude: LegacyAgentV2,
+    #[serde(default)]
+    grok: LegacyAgentV2,
+    #[serde(default)]
+    opencode: LegacyAgentV2,
+}
+
+#[derive(Deserialize, Default)]
+pub(crate) struct LegacyAgentV2 {
+    #[serde(default)]
+    active_app: Option<String>,
+    #[serde(default)]
+    active_wsl: Option<String>,
+    #[serde(default)]
+    bindings: Vec<AgentConfig>,
+}
+
+#[derive(Deserialize, Default)]
+struct LegacyCustomDirsV2 {
+    #[serde(default)]
+    codex: String,
+    #[serde(default)]
+    claude: String,
+    #[serde(default)]
+    grok: String,
+    #[serde(default)]
+    opencode: String,
+}
+
+impl LegacyConfigV2 {
+    fn into_config(self) -> Config {
+        let agents = agents_from_v2(&self.agents, self.source.as_deref());
+
+        let env = self.source.as_deref().map(Env::parse).unwrap_or(Env::Wsl);
+        let mut custom_dirs = CustomDirs::default();
+        for kind in AgentKind::ALL {
+            let value = self.custom_dirs.get(kind).trim().to_string();
+            if !value.is_empty() {
+                custom_dirs.set(kind, env, value);
+            }
+        }
+
+        Config {
+            version: CONFIG_VERSION,
+            suppliers: self
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents,
+            custom_dirs,
+            sync: self.sync,
+            migrated_from_v1: self.migrated_from_v1,
         }
     }
+}
 
-    let (active_app, active_wsl) = active_fields_mut(cfg, target_tool)?;
-    if source == "wsl" {
-        *active_wsl = name.to_string();
-    } else {
-        *active_app = name.to_string();
+/// 版本 2 的共享绑定列表：主环境（全局来源）保留全部绑定，另一环境只保留激活项。
+pub(crate) fn agents_from_v2(legacy: &LegacyAgentsV2, source: Option<&str>) -> Agents {
+    let primary = source.map(Env::parse).unwrap_or(Env::Wsl);
+    let mut agents = Agents::default();
+    for kind in AgentKind::ALL {
+        let legacy = legacy.get(kind);
+        let mut envs = AgentEnvs::default();
+        for env in Env::ALL {
+            let active = match env {
+                Env::Wsl => legacy.active_wsl.as_deref(),
+                Env::Windows => legacy.active_app.as_deref(),
+            };
+            let full_catalog = env == primary;
+            if let Some(slot) = legacy.slot(active, full_catalog) {
+                envs.set(env, Some(slot));
+            }
+        }
+        *agents.get_mut(kind) = envs;
     }
-    save(cfg)
+    agents
 }
 
-pub fn get_provider<'a>(cfg: &'a Config, target_tool: &str, name: &str) -> Option<&'a Provider> {
-    let providers = providers_ref(cfg, target_tool).ok()?;
-    providers.iter().find(|prov| prov.name == name)
+impl LegacyAgentsV2 {
+    fn get(&self, kind: AgentKind) -> &LegacyAgentV2 {
+        match kind {
+            AgentKind::Codex => &self.codex,
+            AgentKind::Claude => &self.claude,
+            AgentKind::Grok => &self.grok,
+            AgentKind::OpenCode => &self.opencode,
+        }
+    }
 }
 
-pub fn get_active<'a>(cfg: &'a Config, target_tool: &str, source: &str) -> Option<&'a Provider> {
-    let (active_app, active_wsl) = active_fields_ref(cfg, target_tool).ok()?;
-    let active_name = if source == "wsl" { active_wsl } else { active_app };
-    get_provider(cfg, target_tool, active_name)
+impl LegacyCustomDirsV2 {
+    fn get(&self, kind: AgentKind) -> &str {
+        match kind {
+            AgentKind::Codex => &self.codex,
+            AgentKind::Claude => &self.claude,
+            AgentKind::Grok => &self.grok,
+            AgentKind::OpenCode => &self.opencode,
+        }
+    }
 }
 
-pub fn update_test_result(cfg: &mut Config, target_tool: &str, name: &str, latency_ms: i64, ok: bool) -> Result<(), ConfigError> {
-    let providers = providers_mut(cfg, target_tool)?;
+impl LegacyAgentV2 {
+    /// `full_catalog` 为真时带上全部绑定，否则只保留激活项。
+    fn slot(&self, active: Option<&str>, full_catalog: bool) -> Option<AgentSlot> {
+        let active_binding =
+            active.and_then(|id| self.bindings.iter().find(|binding| binding.id == id));
 
-    let idx = providers
-        .iter()
-        .position(|prov| prov.name == name)
-        .ok_or_else(|| ConfigError::ProviderNotFound(name.to_string()))?;
+        let mut bindings: Vec<AgentConfig> = if full_catalog {
+            self.bindings.clone()
+        } else {
+            active_binding.cloned().into_iter().collect()
+        };
+        if bindings.is_empty() {
+            return None;
+        }
+        for binding in &mut bindings {
+            if binding.id.is_empty() {
+                binding.id = crate::agent::new_binding_id();
+            }
+        }
 
-    providers[idx].last_test = Some(Local::now());
-    providers[idx].latency_ms = Some(latency_ms);
-    providers[idx].last_ok = Some(ok);
+        let active_id = active_binding
+            .map(|binding| binding.id.clone())
+            .filter(|id| bindings.iter().any(|binding| &binding.id == id))
+            .or_else(|| full_catalog.then(|| bindings[0].id.clone()));
 
-    save(cfg)
+        Some(AgentSlot {
+            active: active_id,
+            bindings,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use crate::agent::AgentConfig;
+    use crate::protocol::Protocol;
 
-    fn setup_test() -> (TempDir, PathBuf) {
-        let temp_dir = tempfile::tempdir().unwrap();
-        TEST_CONFIG_DIR.with(|dir| {
-            *dir.borrow_mut() = Some(temp_dir.path().to_path_buf());
-        });
-        let path = config_path().unwrap();
-        (temp_dir, path)
-    }
-
-    #[test]
-    fn test_add_provider() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        let p = Provider {
-            name: "test".to_string(),
-            base_url: "https://example.com/v1".to_string(),
-            api_key: "sk-xxx".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
+    fn binding(id: &str, model: &str) -> AgentConfig {
+        AgentConfig {
+            id: id.to_string(),
+            supplier_id: "s1".to_string(),
+            key_id: None,
+            protocol: Protocol::Responses,
+            model: model.to_string(),
             reasoning_effort: None,
             plan_reasoning_effort: None,
             context_length: None,
             compact_ratio: None,
-        };
-        add_provider(&mut cfg, "codex", p).unwrap();
-
-        assert_eq!(cfg.codex_providers.len(), 1);
-        assert_eq!(cfg.codex_active_app, "");
-        assert_eq!(cfg.codex_providers[0].wire_api, "responses");
-    }
-
-    #[test]
-    fn test_blank_reasoning_effort_is_stored_as_absent() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        let p = Provider {
-            name: "test".to_string(),
-            base_url: "https://example.com/v1".to_string(),
-            api_key: "sk-xxx".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
             claude_models: None,
             grok_web_search: None,
-            reasoning_effort: Some("  ".to_string()),
-            plan_reasoning_effort: Some("  ".to_string()),
-            context_length: None,
-            compact_ratio: None,
-        };
-        add_provider(&mut cfg, "codex", p).unwrap();
-        let loaded = load().unwrap();
-        assert!(loaded.codex_providers[0].reasoning_effort.is_none());
-        assert!(loaded.codex_providers[0].plan_reasoning_effort.is_none());
-
-        let none_level = Provider {
-            name: "none-level".to_string(),
-            base_url: "https://example.com/v1".to_string(),
-            api_key: "sk-xxx".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: Some("none".to_string()),
-            plan_reasoning_effort: Some(" None ".to_string()),
-            context_length: None,
-            compact_ratio: None,
-        };
-        add_provider(&mut cfg, "codex", none_level).unwrap();
-        let loaded = load().unwrap();
-        let stored = loaded
-            .codex_providers
-            .iter()
-            .find(|p| p.name == "none-level")
-            .unwrap();
-        assert!(stored.reasoning_effort.is_none());
-        assert!(stored.plan_reasoning_effort.is_none());
-    }
-
-    #[test]
-    fn test_add_provider_duplicate() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        let p = Provider {
-            name: "test".to_string(),
-            base_url: "https://example.com/v1".to_string(),
-            api_key: "sk-xxx".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        add_provider(&mut cfg, "codex", p.clone()).unwrap();
-        let err = add_provider(&mut cfg, "codex", p);
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn test_first_provider_does_not_become_active() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "b".to_string(),
-            base_url: "https://b.com/v1".to_string(),
-            api_key: "k2".to_string(),
-            model: "m2".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        assert_eq!(cfg.codex_active_app, "");
-    }
-
-    #[test]
-    fn test_remove_provider() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "b".to_string(),
-            base_url: "https://b.com/v1".to_string(),
-            api_key: "k2".to_string(),
-            model: "m2".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        set_active(&mut cfg, "codex", "app", "b").unwrap();
-        remove_provider(&mut cfg, "codex", "a").unwrap();
-
-        assert_eq!(cfg.codex_providers.len(), 1);
-    }
-
-    #[test]
-    fn test_remove_active_provider_fails() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        set_active(&mut cfg, "codex", "app", "a").unwrap();
-
-        let err = remove_provider(&mut cfg, "codex", "a");
-        match err {
-            Err(ConfigError::CannotRemoveActive { name, target_tool, sources }) => {
-                assert_eq!(name, "a");
-                assert_eq!(target_tool, "codex");
-                assert_eq!(sources, "app");
-            }
-            other => panic!("expected CannotRemoveActive, got {:?}", other),
         }
     }
 
     #[test]
-    fn test_remove_provider_active_in_both_sources_fails_with_both_sources() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "claude", Provider {
-            name: "shared".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        set_active(&mut cfg, "claude", "app", "shared").unwrap();
-        set_active(&mut cfg, "claude", "wsl", "shared").unwrap();
-
-        let err = remove_provider(&mut cfg, "claude", "shared");
-        match err {
-            Err(ConfigError::CannotRemoveActive { name, target_tool, sources }) => {
-                assert_eq!(name, "shared");
-                assert_eq!(target_tool, "claude");
-                assert_eq!(sources, "app, wsl");
-            }
-            other => panic!("expected CannotRemoveActive, got {:?}", other),
-        }
+    fn env_parses_legacy_app_as_windows() {
+        assert_eq!(Env::parse("app"), Env::Windows);
+        assert_eq!(Env::parse("windows"), Env::Windows);
+        assert_eq!(Env::parse("wsl"), Env::Wsl);
+        assert_eq!(Env::parse(""), Env::Wsl);
     }
 
-    #[test]
-    fn test_remove_nonexistent_provider_fails() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        let err = remove_provider(&mut cfg, "codex", "nonexistent");
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn test_set_active() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "b".to_string(),
-            base_url: "https://b.com/v1".to_string(),
-            api_key: "k2".to_string(),
-            model: "m2".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        set_active(&mut cfg, "codex", "app", "b").unwrap();
-        assert_eq!(cfg.codex_active_app, "b");
-    }
-
-    #[test]
-    fn test_persistence() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "sk-abc".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        let loaded = load().unwrap();
-        assert_eq!(loaded.codex_providers.len(), 1);
-        assert_eq!(loaded.codex_providers[0].api_key, "sk-abc");
-    }
-
-    #[test]
-    fn test_multi_source_active_persistence() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "node-a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "sk-abc".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "node-b".to_string(),
-            base_url: "https://b.com/v1".to_string(),
-            api_key: "sk-def".to_string(),
-            model: "gpt-4".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        set_active(&mut cfg, "codex", "app", "node-a").unwrap();
-        set_active(&mut cfg, "codex", "wsl", "node-b").unwrap();
-
-        let loaded = load().unwrap();
-        assert_eq!(loaded.codex_active_app, "node-a");
-        assert_eq!(loaded.codex_active_wsl, "node-b");
-    }
-
-    #[test]
-    fn test_effective_source_defaults_to_wsl() {
-        let cfg = Config::default();
-        assert_eq!(effective_source(&cfg), SOURCE_WSL);
-    }
-
-    #[test]
-    fn test_load_syncs_global_source_fields() {
-        let (_dir, _path) = setup_test();
-        let cfg = Config {
-            codex_source: Some("app".to_string()),
-            claude_source: Some("wsl".to_string()),
-            grok_source: Some("wsl".to_string()),
-            ..Config::default()
-        };
-        save(&cfg).unwrap();
-
-        let loaded = load().unwrap();
-        assert_eq!(loaded.codex_source.as_deref(), Some(SOURCE_APP));
-        assert_eq!(loaded.claude_source.as_deref(), Some(SOURCE_APP));
-        assert_eq!(loaded.grok_source.as_deref(), Some(SOURCE_APP));
-    }
-
-    #[test]
-    fn test_grok_provider_crud_and_default_wire_api() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(
-            &mut cfg,
-            "grok",
-            Provider {
-                name: "relay".to_string(),
-                base_url: "https://example.com/v1".to_string(),
-                api_key: "sk-xxx".to_string(),
-                model: "grok-4.5".to_string(),
-                wire_api: "".to_string(),
-                remark: None,
-                last_test: None,
-                latency_ms: None,
-                last_ok: None,
-                claude_models: None,
-                grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-            },
-        )
-        .unwrap();
-
-        assert_eq!(cfg.grok_providers.len(), 1);
-        assert_eq!(cfg.grok_providers[0].wire_api, "chat_completions");
-
-        set_active(&mut cfg, "grok", "wsl", "relay").unwrap();
-        assert_eq!(cfg.grok_active_wsl, "relay");
-        assert_eq!(get_active(&cfg, "grok", "wsl").unwrap().name, "relay");
-    }
-
-    #[test]
-    fn test_unknown_target_tool_errors() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        let err = add_provider(
-            &mut cfg,
-            "unknown",
-            Provider {
-                name: "x".to_string(),
-                base_url: "https://x.com".to_string(),
-                api_key: "k".to_string(),
-                model: "m".to_string(),
-                wire_api: "".to_string(),
-                remark: None,
-                last_test: None,
-                latency_ms: None,
-                last_ok: None,
-                claude_models: None,
-                grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-            },
-        );
-        assert!(matches!(err, Err(ConfigError::UnknownTargetTool(_))));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_config_file_permissions() {
-        let (_dir, path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        use std::os::unix::fs::PermissionsExt;
-        let meta = fs::metadata(&path).unwrap();
-        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
-    }
-
-    #[test]
-    fn test_update_test_result() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        update_test_result(&mut cfg, "codex", "a", 123, true).unwrap();
-        let p = get_provider(&cfg, "codex", "a").unwrap();
-        assert_eq!(p.latency_ms, Some(123));
-        assert_eq!(p.last_ok, Some(true));
-        assert!(p.last_test.is_some());
-    }
-
-    #[test]
-    fn test_remark_persistence() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com/v1".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: Some("My backup endpoint".to_string()),
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        let loaded = load().unwrap();
-        assert_eq!(loaded.codex_providers.len(), 1);
-        assert_eq!(loaded.codex_providers[0].remark, Some("My backup endpoint".to_string()));
-    }
-
-    #[test]
-    fn test_edit_provider() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: Some("old".to_string()),
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        let updated = Provider {
-            name: "a".to_string(),
-            base_url: "https://new-a.com".to_string(),
-            api_key: "new-k1".to_string(),
-            model: "new-m1".to_string(),
-            wire_api: "".to_string(),
-            remark: Some("new".to_string()),
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        edit_provider(&mut cfg, "codex", "a", updated).unwrap();
-
-        let p = get_provider(&cfg, "codex", "a").unwrap();
-        assert_eq!(p.base_url, "https://new-a.com");
-        assert_eq!(p.api_key, "new-k1");
-        assert_eq!(p.model, "new-m1");
-        assert_eq!(p.remark, Some("new".to_string()));
-    }
-
-    #[test]
-    fn test_edit_provider_rename_active() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "b".to_string(),
-            base_url: "https://b.com".to_string(),
-            api_key: "k2".to_string(),
-            model: "m2".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        set_active(&mut cfg, "codex", "app", "a").unwrap();
-
-        let updated = Provider {
-            name: "new-a".to_string(),
-            base_url: "https://a.com".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        edit_provider(&mut cfg, "codex", "a", updated).unwrap();
-
-        assert_eq!(cfg.codex_active_app, "new-a");
-        assert!(get_provider(&cfg, "codex", "a").is_none());
-        assert!(get_provider(&cfg, "codex", "new-a").is_some());
-    }
-
-    #[test]
-    fn test_edit_provider_duplicate_name() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "a".to_string(),
-            base_url: "https://a.com".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-        add_provider(&mut cfg, "codex", Provider {
-            name: "b".to_string(),
-            base_url: "https://b.com".to_string(),
-            api_key: "k2".to_string(),
-            model: "m2".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }).unwrap();
-
-        let updated = Provider {
-            name: "b".to_string(),
-            base_url: "https://a.com".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        let err = edit_provider(&mut cfg, "codex", "a", updated);
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn test_grok_web_search_default_migrates_keep_once() {
-        let (_dir, path) = setup_test();
-        let yaml = r#"
-grok_providers:
-- name: mustore
-  base_url: https://example.com/v1
-  api_key: sk
-  model: grok-4.6
-  wire_api: responses
-  grok_models:
-  - grok-4.5
-  grok_web_search:
-    mode: keep
-- name: lab
-  base_url: https://example.com/v1
-  api_key: sk
-  model: grok-4.5
-  wire_api: responses
-  grok_web_search:
-    mode: unset
+    const LEGACY_V1: &str = r#"
+codex_active_wsl: relay-a
+codex_providers:
+  - name: relay-a
+    base_url: https://a.example.com/v1
+    api_key: sk-a
+    model: gpt-5
+    wire_api: responses
+claude_providers: []
+grok_providers: []
 "#;
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+    fn write(path: &std::path::Path, contents: &str) {
+        fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn takes_over_previous_cxc_v2_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("config.yaml");
+        let previous = dir.path().join("cxc-v2.yaml");
+        write(
+            &previous,
+            &format!(
+                "version: {}\nsuppliers: []\nagents:\n  codex:\n    wsl:\n      active: b1\n      bindings:\n        - id: b1\n          supplier_id: s1\n          protocol: responses\n          model: gpt-5\n",
+                CONFIG_VERSION
+            ),
+        );
+
+        let cfg = load_at(&main, Some(&previous)).unwrap();
+        assert!(main.exists());
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("gpt-5")
+        );
+        // 上一代文件保持原样，作为备份。
+        assert!(previous.exists());
+    }
+
+    #[test]
+    fn prefers_previous_config_over_legacy_v1() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("config.yaml");
+        let previous = dir.path().join("cxc-v2.yaml");
+        write(&main, LEGACY_V1);
+        write(
+            &previous,
+            &format!(
+                "version: {}\nsuppliers: []\nagents:\n  codex:\n    wsl:\n      active: b1\n      bindings:\n        - id: b1\n          supplier_id: s1\n          protocol: responses\n          model: from-v2\n",
+                CONFIG_VERSION
+            ),
+        );
+
+        let cfg = load_at(&main, Some(&previous)).unwrap();
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("from-v2")
+        );
+        // 旧版 v1 被备份，主路径变成新格式。
+        let backups: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".backup."))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(load_from(&main).unwrap().version, CONFIG_VERSION);
+    }
+
+    #[test]
+    fn migrates_legacy_v1_in_place_with_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("config.yaml");
+        write(&main, LEGACY_V1);
+
+        let cfg = load_at(&main, None).unwrap();
+        assert_eq!(cfg.suppliers.len(), 1);
+        assert_eq!(cfg.suppliers[0].name, "relay-a");
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("gpt-5")
+        );
+
+        let backups: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".backup."))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(load_from(&main).unwrap().version, CONFIG_VERSION);
+    }
+
+    #[test]
+    fn keeps_existing_new_format_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("config.yaml");
+        write(
+            &main,
+            &format!(
+                "version: {}\nsuppliers: []\nagents:\n  codex:\n    wsl:\n      active: b1\n      bindings:\n        - id: b1\n          supplier_id: s1\n          protocol: responses\n          model: current\n",
+                CONFIG_VERSION
+            ),
+        );
+        let previous = dir.path().join("cxc-v2.yaml");
+        write(
+            &previous,
+            &format!("version: {}\nsuppliers: []\nagents: {{}}\n", CONFIG_VERSION),
+        );
+
+        let cfg = load_at(&main, Some(&previous)).unwrap();
+        assert_eq!(
+            cfg.config_of(AgentKind::Codex, Env::Wsl)
+                .map(|config| config.model.as_str()),
+            Some("current")
+        );
+        // 没有覆盖，也没有产生备份。
+        let backups = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".backup."))
+            .count();
+        assert_eq!(backups, 0);
+    }
+
+    #[test]
+    fn starts_empty_when_nothing_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("config.yaml");
+        let cfg = load_at(&main, None).unwrap();
+        assert!(cfg.suppliers.is_empty());
+        assert!(!main.exists());
+    }
+
+    #[test]
+    fn upgrades_v4_single_key_into_default_account() {
+        let yaml = r#"
+version: 4
+suppliers:
+  - id: s1
+    name: relay
+    base_url: https://api.example.com/v1
+    api_key: sk-old
+    protocols: [responses]
+    models:
+      - model: gpt-5
+        protocols: [responses]
+agents:
+  codex:
+    wsl:
+      active: b1
+      bindings:
+        - id: b1
+          supplier_id: s1
+          protocol: responses
+          model: gpt-5
+  claude: {}
+  grok: {}
+  opencode: {}
+custom_dirs:
+  codex: { wsl: '', windows: '' }
+  claude: { wsl: '', windows: '' }
+  grok: { wsl: '', windows: '' }
+  opencode: { wsl: '', windows: '' }
+migrated_from_v1: true
+"#;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
         fs::write(&path, yaml).unwrap();
 
-        let cfg = load().unwrap();
-        assert_eq!(
-            cfg.grok_providers[0].grok_web_search,
-            Some(GrokWebSearch::Follow)
-        );
-        assert_eq!(
-            cfg.grok_providers[1].grok_web_search,
-            Some(GrokWebSearch::Unset)
-        );
-        assert!(cfg.grok_web_search_default_migrated);
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.version, CONFIG_VERSION);
 
-        let mut cfg = load().unwrap();
-        cfg.grok_providers[0].grok_web_search = Some(GrokWebSearch::Keep);
-        save(&cfg).unwrap();
-        let cfg = load().unwrap();
+        let supplier = cfg.supplier("s1").unwrap();
+        assert_eq!(supplier.keys.len(), 1);
+        assert_eq!(supplier.keys[0].name, "默认");
+        assert_eq!(supplier.keys[0].api_key, "sk-old");
         assert_eq!(
-            cfg.grok_providers[0].grok_web_search,
-            Some(GrokWebSearch::Keep)
+            supplier.default_key_id.as_deref(),
+            Some(supplier.keys[0].id.as_str())
         );
-    }
 
-    fn bare_provider(name: &str) -> Provider {
-        Provider {
-            name: name.to_string(),
-            base_url: "https://api.example.com".to_string(),
-            api_key: "sk".to_string(),
-            model: "m".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }
+        let binding = cfg.config_of(AgentKind::Codex, Env::Wsl).unwrap();
+        assert_eq!(binding.key_id, None);
     }
 
     #[test]
-    fn test_parse_context_length() {
-        assert_eq!(parse_context_tokens("200k"), Some(200_000));
-        assert_eq!(parse_context_tokens("500K"), Some(500_000));
-        assert_eq!(parse_context_tokens("1m"), Some(1_000_000));
-        assert_eq!(parse_context_tokens("1000k"), Some(1_000_000));
-        assert_eq!(parse_context_tokens("1000000"), Some(1_000_000));
-        assert_eq!(parse_context_tokens(" 200000 "), Some(200_000));
-        assert_eq!(canonical_context_length("1000k").as_deref(), Some("1m"));
-        assert_eq!(canonical_context_length("1000000").as_deref(), Some("1m"));
-        assert_eq!(canonical_context_length("200000").as_deref(), Some("200k"));
-        assert_eq!(canonical_context_length("123456").as_deref(), Some("123456"));
-        assert_eq!(parse_context_tokens("1.5k"), None);
-        assert_eq!(parse_context_tokens(""), None);
-        assert_eq!(parse_context_tokens("none"), None);
-        assert_eq!(parse_context_tokens("0k"), None);
+    fn upgrades_v3_single_config_into_one_binding() {
+        let yaml = r#"
+version: 3
+suppliers:
+  - id: s1
+    name: relay
+    base_url: https://api.example.com/v1
+    api_key: sk-1
+    protocols: [responses]
+    models: []
+agents:
+  codex:
+    wsl:
+      supplier_id: s1
+      protocol: responses
+      model: gpt-5
+      reasoning_effort: high
+    windows: null
+  claude: {}
+  grok: {}
+  opencode: {}
+custom_dirs:
+  codex: { wsl: /tmp/codex, windows: '' }
+  claude: { wsl: '', windows: '' }
+  grok: { wsl: '', windows: '' }
+  opencode: { wsl: '', windows: '' }
+migrated_from_v1: true
+"#;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        fs::write(&path, yaml).unwrap();
+
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.version, CONFIG_VERSION);
+
+        let slot = cfg.agent(AgentKind::Codex).get(Env::Wsl).unwrap();
+        assert_eq!(slot.bindings.len(), 1);
+        let binding = slot.active_binding().unwrap();
+        assert_eq!(binding.model, "gpt-5");
+        assert_eq!(binding.reasoning_effort.as_deref(), Some("high"));
+        assert!(!binding.id.is_empty());
+        assert!(cfg.agent(AgentKind::Codex).get(Env::Windows).is_none());
+        assert_eq!(
+            cfg.custom_dirs.get(AgentKind::Codex, Env::Wsl),
+            Some(std::path::Path::new("/tmp/codex"))
+        );
     }
 
     #[test]
-    fn test_compact_ratio_and_token_limit() {
-        let mut provider = bare_provider("a");
-        provider.compact_ratio = Some(69);
-        assert_eq!(provider.compact_ratio_percent(), None);
-        provider.compact_ratio = Some(101);
-        assert_eq!(provider.compact_ratio_percent(), None);
-        provider.context_length = Some("1m".to_string());
-        provider.compact_ratio = Some(75);
-        assert_eq!(provider.compact_token_limit(), Some(750_000));
-        provider.context_length = Some("200k".to_string());
-        provider.compact_ratio = Some(70);
-        assert_eq!(provider.compact_token_limit(), Some(140_000));
-        provider.context_length = Some("1m".to_string());
-        provider.compact_ratio = Some(100);
-        assert_eq!(provider.compact_token_limit(), Some(1_000_000));
-        provider.context_length = Some("50k".to_string());
-        provider.compact_ratio = Some(70);
-        assert_eq!(provider.compact_token_limit(), Some(100_000));
-        provider.context_length = None;
-        assert_eq!(provider.compact_token_limit(), None);
+    fn upgrades_v2_catalog_into_bindings() {
+        let yaml = r#"
+version: 2
+source: wsl
+suppliers:
+  - id: s1
+    name: relay
+    base_url: https://api.example.com/v1
+    api_key: sk-1
+    protocols: [responses]
+    models: []
+agents:
+  codex:
+    active_wsl: b1
+    active_app: b2
+    bindings:
+      - id: b1
+        supplier_id: s1
+        protocol: responses
+        model: gpt-5
+        reasoning_effort: high
+      - id: b2
+        supplier_id: s1
+        protocol: responses
+        model: gpt-5-mini
+  claude:
+    bindings:
+      - id: c1
+        supplier_id: s1
+        protocol: messages
+        model: claude-sonnet
+  grok:
+    bindings: []
+  opencode:
+    bindings: []
+custom_dirs:
+  codex: /tmp/codex
+  claude: ''
+  grok: ''
+  opencode: ''
+migrated_from_v1: true
+"#;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
+        fs::write(&path, yaml).unwrap();
+
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.version, CONFIG_VERSION);
+
+        let wsl = cfg.agent(AgentKind::Codex).get(Env::Wsl).unwrap();
+        assert_eq!(wsl.bindings.len(), 2);
+        assert_eq!(wsl.active_binding().unwrap().model, "gpt-5");
+
+        let windows = cfg.agent(AgentKind::Codex).get(Env::Windows).unwrap();
+        assert_eq!(windows.bindings.len(), 1);
+        assert_eq!(windows.active_binding().unwrap().model, "gpt-5-mini");
+
+        let claude = cfg.agent(AgentKind::Claude).get(Env::Wsl).unwrap();
+        assert_eq!(claude.active_binding().unwrap().model, "claude-sonnet");
+        assert!(cfg.agent(AgentKind::Claude).get(Env::Windows).is_none());
+        assert_eq!(
+            cfg.custom_dirs.get(AgentKind::Codex, Env::Wsl),
+            Some(std::path::Path::new("/tmp/codex"))
+        );
+        assert!(cfg.migrated_from_v1);
     }
 
     #[test]
-    fn test_claude_model_suffix_and_connectivity_model() {
-        assert_eq!(
-            claude_model_for_context("deepseek-v4.1-flash[1M][1m]", Some(CLAUDE_1M_TOKENS)),
-            "deepseek-v4.1-flash[1m]"
-        );
-        assert_eq!(
-            claude_model_for_context("deepseek[1m]", Some(200_000)),
-            "deepseek"
-        );
-        assert_eq!(
-            claude_model_for_context("deepseek[1m]", None),
-            "deepseek[1m]"
-        );
-        assert_eq!(connectivity_model("deepseek[1m]", true), "deepseek");
-        assert_eq!(connectivity_model("deepseek[1m]", false), "deepseek[1m]");
-        assert_eq!(claude_model_for_context("", Some(CLAUDE_1M_TOKENS)), "");
-    }
-
-    #[test]
-    fn test_add_and_edit_normalize_context_settings() {
-        let (_dir, _path) = setup_test();
+    fn roundtrips_v4_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yaml");
         let mut cfg = Config::default();
-        let mut provider = bare_provider("relay");
-        provider.context_length = Some(" 1000k ".to_string());
-        provider.compact_ratio = Some(69);
-        add_provider(&mut cfg, "codex", provider).unwrap();
-        assert_eq!(cfg.codex_providers[0].context_length.as_deref(), Some("1m"));
-        assert_eq!(cfg.codex_providers[0].compact_ratio, None);
+        cfg.agents.codex.windows = Some(AgentSlot {
+            active: Some("b1".to_string()),
+            bindings: vec![binding("b1", "gpt-5")],
+        });
+        save_to(&path, &cfg).unwrap();
 
-        let mut updated = bare_provider("relay");
-        updated.context_length = Some("500K".to_string());
-        updated.compact_ratio = Some(100);
-        edit_provider(&mut cfg, "codex", "relay", updated).unwrap();
-        assert_eq!(cfg.codex_providers[0].context_length.as_deref(), Some("500k"));
-        assert_eq!(cfg.codex_providers[0].compact_ratio, Some(100));
-    }
-
-    #[test]
-    fn test_claude_context_only_keeps_1m() {
-        let (_dir, _path) = setup_test();
-        let mut cfg = Config::default();
-        let mut provider = bare_provider("relay");
-        provider.context_length = Some("200k".to_string());
-        provider.compact_ratio = Some(75);
-        add_provider(&mut cfg, "claude", provider).unwrap();
-        assert_eq!(cfg.claude_providers[0].context_length, None);
-        assert_eq!(cfg.claude_providers[0].compact_ratio, Some(75));
-
-        let mut updated = bare_provider("relay");
-        updated.context_length = Some("1000k".to_string());
-        edit_provider(&mut cfg, "claude", "relay", updated).unwrap();
-        assert_eq!(cfg.claude_providers[0].context_length.as_deref(), Some("1m"));
-    }
-
-    #[test]
-    fn test_claude_models_ignores_legacy_fable_field() {
-        let models: ClaudeModels =
-            serde_json::from_str(r#"{"opus":"a","fable":"legacy","subagent":"c"}"#).unwrap();
-        assert_eq!(models.opus.as_deref(), Some("a"));
-        assert_eq!(models.subagent.as_deref(), Some("c"));
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded, cfg);
     }
 }

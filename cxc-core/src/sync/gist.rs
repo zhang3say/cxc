@@ -1,4 +1,4 @@
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -70,7 +70,11 @@ impl GistClient {
         let mut headers = HeaderMap::new();
         headers.insert(
             USER_AGENT,
-            HeaderValue::from_static(concat!("CXC-Desktop/", env!("CARGO_PKG_VERSION"), " (https://github.com/zhang3say/cxc)")),
+            HeaderValue::from_static(concat!(
+                "CXC-Desktop/",
+                env!("CARGO_PKG_VERSION"),
+                " (https://github.com/zhang3say/cxc)"
+            )),
         );
         headers.insert(
             ACCEPT,
@@ -109,7 +113,10 @@ impl GistClient {
             });
         }
 
-        let user: GitHubUserResponse = resp.json().await.map_err(|e| GistError::Parse(e.to_string()))?;
+        let user: GitHubUserResponse = resp
+            .json()
+            .await
+            .map_err(|e| GistError::Parse(e.to_string()))?;
         Ok(user.login)
     }
 
@@ -148,7 +155,10 @@ impl GistClient {
             });
         }
 
-        let gist: GistResponse = resp.json().await.map_err(|e| GistError::Parse(e.to_string()))?;
+        let gist: GistResponse = resp
+            .json()
+            .await
+            .map_err(|e| GistError::Parse(e.to_string()))?;
         Ok(gist.id)
     }
 
@@ -171,7 +181,10 @@ impl GistClient {
             });
         }
 
-        let gist: GistResponse = resp.json().await.map_err(|e| GistError::Parse(e.to_string()))?;
+        let gist: GistResponse = resp
+            .json()
+            .await
+            .map_err(|e| GistError::Parse(e.to_string()))?;
 
         // Look for the cxc_sync.json file, or fall back to the first available file
         let file = gist
@@ -180,10 +193,10 @@ impl GistClient {
             .or_else(|| gist.files.values().next())
             .ok_or_else(|| GistError::FileNotFound(GIST_FILENAME.to_string()))?;
 
-        if let Some(content) = &file.content {
-            if !file.truncated {
-                return Ok(content.clone());
-            }
+        if let Some(content) = &file.content
+            && !file.truncated
+        {
+            return Ok(content.clone());
         }
 
         // If content was truncated, download raw content via raw_url

@@ -1,6 +1,6 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
 use base64::prelude::*;
 use rand::RngCore;
@@ -31,7 +31,10 @@ fn derive_key(passphrase: &str) -> [u8; 32] {
 
 /// Encrypt plaintext bytes using AES-256-GCM.
 /// Returns (base64_ciphertext, base64_nonce).
-pub fn encrypt_aes_gcm(passphrase: &str, plaintext: &[u8]) -> Result<(String, String), CryptoError> {
+pub fn encrypt_aes_gcm(
+    passphrase: &str,
+    plaintext: &[u8],
+) -> Result<(String, String), CryptoError> {
     let key_bytes = derive_key(passphrase);
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| CryptoError::EncryptError(e.to_string()))?;
@@ -51,7 +54,11 @@ pub fn encrypt_aes_gcm(passphrase: &str, plaintext: &[u8]) -> Result<(String, St
 }
 
 /// Decrypt ciphertext bytes using AES-256-GCM with the given passphrase and nonce.
-pub fn decrypt_aes_gcm(passphrase: &str, b64_ciphertext: &str, b64_nonce: &str) -> Result<Vec<u8>, CryptoError> {
+pub fn decrypt_aes_gcm(
+    passphrase: &str,
+    b64_ciphertext: &str,
+    b64_nonce: &str,
+) -> Result<Vec<u8>, CryptoError> {
     let key_bytes = derive_key(passphrase);
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| CryptoError::EncryptError(e.to_string()))?;

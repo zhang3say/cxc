@@ -21,4 +21,4 @@
 
 ## 状态
 
-已采纳。实现见 `cxc-v2/cxc-v2-core/src/config.rs`、`migration.rs`、`sync/mod.rs`。
+已采纳。实现见 `cxc-core/src/config.rs`、`migration.rs`、`sync/mod.rs`。

@@ -25,12 +25,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
-
       - name: setup node
         uses: actions/setup-node@v4
         with:
@@ -50,14 +44,24 @@ jobs:
         run: npm ci
         working-directory: cxc-desktop
 
+      - name: run core tests
+        run: cargo test -p cxc-core
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: cxc-desktop
           tagName: ${{ github.ref_name }}
-          releaseName: '${{ github.ref_name }}'
-          releaseBody: 'Release of cxc-desktop ${{ github.ref_name }}. See assets below to download and install.'
+          releaseName: 'CXC ${{ github.ref_name }}'
+          releaseBody: |
+            CXC ${{ github.ref_name }}.
+
+            这是 CXC 的新版本，取代旧的 cxc-desktop。首次启动会自动接管旧版配置：
+            - 旧版 `~/.config/cxc/config.yaml`（或 Windows 的 `%APPDATA%\cxc\config.yaml`）会被备份后迁移；
+            - 若本机存在上一代 `cxc-v2` 配置，会优先接管它。
+
+            This is the new CXC release replacing cxc-desktop. Existing configuration is migrated automatically on first launch, with a backup kept next to the original file.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

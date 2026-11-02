@@ -1,336 +1,295 @@
-use crate::config::Provider;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Merges local and remote provider lists based on the provider `name`.
-/// - Providers unique to either list are preserved.
-/// - When a provider exists in both lists:
-///   - Remarks, claude_models, grok_web_search, reasoning_effort, plan_reasoning_effort,
-///     context_length and compact_ratio: if one side has None and the other has Some, the non-empty
-///     configuration is adopted.
-///   - Connection parameters (base_url, api_key, model, wire_api) and test metrics (last_test, latency_ms, last_ok)
-///     are kept strictly coupled:
-///     - If both sets of connection parameters are identical, the more recent test metrics are adopted.
-///     - If connection parameters differ:
-///       - If remote has a more recent test timestamp than local, remote's parameters and test metrics are adopted.
-///       - If local has a more recent test timestamp (or equal), local's parameters and test metrics are preserved.
-///       - If neither side has been tested, remote's parameters are adopted as the synced cloud baseline.
-pub fn merge_providers(local: &[Provider], remote: &[Provider]) -> Vec<Provider> {
-    let mut map: HashMap<String, Provider> = HashMap::new();
+use crate::agent::{AgentConfig, AgentKind, AgentSlot, Agents};
+use crate::config::{Config, Env};
+use crate::protocol::Protocol;
+use crate::supplier::{Supplier, SupplierModel};
 
-    // Insert all local providers first
-    for p in local {
-        map.insert(p.name.clone(), p.clone());
-    }
+use super::SyncPayload;
 
-    // Merge in remote providers
-    for r in remote {
-        if let Some(l) = map.get_mut(&r.name) {
-            let connection_identical = l.base_url == r.base_url
-                && l.api_key == r.api_key
-                && l.model == r.model
-                && l.wire_api == r.wire_api;
-
-            if connection_identical {
-                // Adopt newer test metrics if available
-                match (&l.last_test, &r.last_test) {
-                    (Some(lt), Some(rt)) if rt > lt => {
-                        l.last_test = r.last_test;
-                        l.latency_ms = r.latency_ms;
-                        l.last_ok = r.last_ok;
-                    }
-                    (None, Some(_)) => {
-                        l.last_test = r.last_test;
-                        l.latency_ms = r.latency_ms;
-                        l.last_ok = r.last_ok;
-                    }
-                    _ => {}
-                }
-            } else {
-                // Connection parameters differ: decide which one is newer, keeping parameters and test metrics coupled
-                let prefer_remote = match (&l.last_test, &r.last_test) {
-                    (Some(lt), Some(rt)) => rt > lt,
-                    (None, Some(_)) => true,
-                    (Some(_), None) => false,
-                    (None, None) => true, // default to remote if neither has test timestamp
-                };
-
-                if prefer_remote {
-                    l.base_url = r.base_url.clone();
-                    l.api_key = r.api_key.clone();
-                    l.model = r.model.clone();
-                    l.wire_api = r.wire_api.clone();
-                    l.last_test = r.last_test;
-                    l.latency_ms = r.latency_ms;
-                    l.last_ok = r.last_ok;
-                }
-                // Else: preserve local connection parameters and test metrics
-            }
-
-            // Adopt remarks if local is missing them
-            if l.remark.is_none() && r.remark.is_some() {
-                l.remark = r.remark.clone();
-            }
-
-            // Adopt Claude models if local is missing them
-            if l.claude_models.is_none() && r.claude_models.is_some() {
-                l.claude_models = r.claude_models.clone();
-            }
-
-            // Adopt Grok web_search policy if local is missing it
-            if l.grok_web_search.is_none() && r.grok_web_search.is_some() {
-                l.grok_web_search = r.grok_web_search.clone();
-            }
-
-            if l.reasoning_effort.is_none() && r.reasoning_effort.is_some() {
-                l.reasoning_effort = r.reasoning_effort.clone();
-            }
-            if l.plan_reasoning_effort.is_none() && r.plan_reasoning_effort.is_some() {
-                l.plan_reasoning_effort = r.plan_reasoning_effort.clone();
-            }
-            if l.context_length.is_none() && r.context_length.is_some() {
-                l.context_length = r.context_length.clone();
-            }
-            if l.compact_ratio.is_none() && r.compact_ratio.is_some() {
-                l.compact_ratio = r.compact_ratio;
-            }
-        } else {
-            // Provider is only present on remote, add it
-            map.insert(r.name.clone(), r.clone());
-        }
-    }
-
-    // Maintain a stable order: local providers in original order, then newly added remote providers
-    let mut result = Vec::with_capacity(map.len());
-    let mut added = std::collections::HashSet::new();
-
-    for p in local {
-        if let Some(item) = map.remove(&p.name) {
-            result.push(item);
-            added.insert(p.name.clone());
-        }
-    }
-
-    for r in remote {
-        if !added.contains(&r.name) {
-            if let Some(item) = map.remove(&r.name) {
-                result.push(item);
-                added.insert(r.name.clone());
-            }
-        }
-    }
-
-    result
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncMode {
+    Merge,
+    Overwrite,
 }
+
+#[derive(Serialize, Debug, Clone, Default)]
+pub struct MergeReport {
+    pub suppliers_added: usize,
+    pub suppliers_updated: usize,
+    pub bindings_added: usize,
+    pub bindings_updated: usize,
+}
+
+pub fn merge_payload(cfg: &mut Config, payload: SyncPayload) -> MergeReport {
+    let mut report = MergeReport::default();
+    let mut id_map: HashMap<String, String> = HashMap::new();
+
+    for remote in payload.suppliers {
+        let local_id =
+            if let Some(local) = cfg.suppliers.iter_mut().find(|local| local.id == remote.id) {
+                merge_supplier(local, &remote);
+                report.suppliers_updated += 1;
+                local.id.clone()
+            } else if let Some(local) = cfg
+                .suppliers
+                .iter_mut()
+                .find(|local| same_endpoint(local, &remote))
+            {
+                merge_supplier(local, &remote);
+                report.suppliers_updated += 1;
+                local.id.clone()
+            } else {
+                cfg.suppliers.push(remote.clone());
+                report.suppliers_added += 1;
+                remote.id.clone()
+            };
+        id_map.insert(remote.id, local_id);
+    }
+
+    for kind in AgentKind::ALL {
+        for env in Env::ALL {
+            let Some(remote_slot) = payload.agents.get(kind).get(env).cloned() else {
+                continue;
+            };
+            let mut remote_slot = remote_slot;
+            for binding in &mut remote_slot.bindings {
+                if let Some(supplier_id) = id_map.get(&binding.supplier_id) {
+                    binding.supplier_id = supplier_id.clone();
+                }
+            }
+            remote_slot
+                .bindings
+                .retain(|binding| cfg.supplier(&binding.supplier_id).is_some());
+            if remote_slot.bindings.is_empty() {
+                continue;
+            }
+            if remote_slot
+                .active
+                .as_deref()
+                .is_some_and(|id| remote_slot.binding(id).is_none())
+            {
+                remote_slot.active = None;
+            }
+
+            let agent = cfg.agent_mut(kind);
+            let local = agent.slot_mut(env);
+            for remote in remote_slot.bindings {
+                if let Some(existing) = local.binding_mut(&remote.id) {
+                    *existing = remote;
+                    report.bindings_updated += 1;
+                } else {
+                    local.bindings.push(remote);
+                    report.bindings_added += 1;
+                }
+            }
+            if local.active.is_none() {
+                local.active = remote_slot.active;
+            }
+        }
+    }
+
+    report
+}
+
+pub fn overwrite_payload(cfg: &mut Config, payload: SyncPayload) -> MergeReport {
+    let report = MergeReport {
+        suppliers_added: payload.suppliers.len(),
+        bindings_added: count_bindings(&payload.agents),
+        ..MergeReport::default()
+    };
+    cfg.suppliers = payload.suppliers;
+    cfg.agents = payload.agents;
+    report
+}
+
+fn count_bindings(agents: &Agents) -> usize {
+    AgentKind::ALL
+        .iter()
+        .map(|kind| {
+            Env::ALL
+                .iter()
+                .filter_map(|env| agents.get(*kind).get(*env))
+                .map(|slot: &AgentSlot| slot.bindings.len())
+                .sum::<usize>()
+        })
+        .sum()
+}
+
+fn merge_supplier(local: &mut Supplier, remote: &Supplier) {
+    local.name = remote.name.clone();
+    local.base_url = remote.base_url.clone();
+    local.remark = remote.remark.clone();
+    merge_keys(local, remote);
+    local.protocols = Protocol::normalize_all(
+        local
+            .protocols
+            .iter()
+            .copied()
+            .chain(remote.protocols.iter().copied()),
+    );
+
+    for remote_model in &remote.models {
+        if let Some(local_model) = local
+            .models
+            .iter_mut()
+            .find(|model| model.model == remote_model.model)
+        {
+            local_model.protocols = Protocol::normalize_all(
+                local_model
+                    .protocols
+                    .iter()
+                    .copied()
+                    .chain(remote_model.protocols.iter().copied()),
+            );
+        } else {
+            local.models.push(SupplierModel {
+                model: remote_model.model.clone(),
+                protocols: remote_model.protocols.clone(),
+                ..SupplierModel::default()
+            });
+        }
+    }
+}
+
+/// 账号按 id 合并：远端新增的账号加入，同名同 Key 的账号去重，本地独有账号保留。
+fn merge_keys(local: &mut Supplier, remote: &Supplier) {
+    for remote_key in &remote.keys {
+        let same_id = local.keys.iter_mut().find(|key| key.id == remote_key.id);
+        if let Some(key) = same_id {
+            key.name = remote_key.name.clone();
+            key.api_key = remote_key.api_key.clone();
+            key.remark = remote_key.remark.clone();
+            continue;
+        }
+        let same_key = local
+            .keys
+            .iter()
+            .any(|key| key.api_key.trim() == remote_key.api_key.trim());
+        if !same_key {
+            local.keys.push(remote_key.clone());
+        }
+    }
+    if local.default_key_id.is_none() {
+        local.default_key_id = remote.default_key_id.clone();
+    }
+    if local
+        .default_key_id
+        .as_deref()
+        .is_none_or(|id| local.key(id).is_none())
+    {
+        local.default_key_id = local.keys.first().map(|key| key.id.clone());
+    }
+}
+
+fn same_endpoint(left: &Supplier, right: &Supplier) -> bool {
+    left.base_url.trim().trim_end_matches('/') == right.base_url.trim().trim_end_matches('/')
+        && left
+            .default_key()
+            .map(|key| key.api_key.trim())
+            .zip(right.default_key().map(|key| key.api_key.trim()))
+            .is_some_and(|(a, b)| a == b)
+}
+
+#[allow(dead_code)]
+fn _assert_binding_type(_: &AgentConfig) {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration, Local};
+    use crate::protocol::Protocol;
+    use crate::supplier::{SupplierInput, add_supplier};
 
-    #[test]
-    fn test_merge_disjoint_providers() {
-        let local = vec![Provider {
-            name: "p1".to_string(),
-            base_url: "https://api1.com".to_string(),
-            api_key: "k1".to_string(),
-            model: "m1".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
+    fn binding(id: &str, model: &str) -> AgentConfig {
+        AgentConfig {
+            id: id.to_string(),
+            supplier_id: "local-supplier".to_string(),
+            key_id: None,
+            protocol: Protocol::Responses,
+            model: model.to_string(),
             reasoning_effort: None,
             plan_reasoning_effort: None,
             context_length: None,
             compact_ratio: None,
-        }];
-
-        let remote = vec![Provider {
-            name: "p2".to_string(),
-            base_url: "https://api2.com".to_string(),
-            api_key: "k2".to_string(),
-            model: "m2".to_string(),
-            wire_api: "responses".to_string(),
-            remark: Some("backup".to_string()),
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
             claude_models: None,
             grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }];
-
-        let merged = merge_providers(&local, &remote);
-        assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].name, "p1");
-        assert_eq!(merged[1].name, "p2");
-        assert_eq!(merged[1].remark, Some("backup".to_string()));
+        }
     }
 
-    #[test]
-    fn test_merge_overlapping_providers_preserves_newer_local() {
-        let now = Local::now();
-        let local = vec![Provider {
-            name: "common".to_string(),
-            base_url: "https://local-updated.com".to_string(),
-            api_key: "local-key".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: "responses".to_string(),
-            remark: Some("local remark".to_string()),
-            last_test: Some(now),
-            latency_ms: Some(42),
-            last_ok: Some(true),
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }];
-
-        let remote = vec![Provider {
-            name: "common".to_string(),
-            base_url: "https://remote-older.com".to_string(),
-            api_key: "remote-key".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: "responses".to_string(),
-            remark: Some("remote remark".to_string()),
-            last_test: Some(now - Duration::hours(1)),
-            latency_ms: Some(150),
-            last_ok: Some(true),
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }];
-
-        let merged = merge_providers(&local, &remote);
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].base_url, "https://local-updated.com");
-        assert_eq!(merged[0].latency_ms, Some(42));
-    }
-
-    #[test]
-    fn test_merge_overlapping_providers_adopts_newer_remote() {
-        let now = Local::now();
-        let local = vec![Provider {
-            name: "common".to_string(),
-            base_url: "https://local-older.com".to_string(),
-            api_key: "local-key".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: Some(now - Duration::hours(2)),
-            latency_ms: Some(200),
-            last_ok: Some(true),
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }];
-
-        let remote = vec![Provider {
-            name: "common".to_string(),
-            base_url: "https://remote-newer.com".to_string(),
-            api_key: "remote-key".to_string(),
-            model: "gpt-4o-mini".to_string(),
-            wire_api: "chat".to_string(),
-            remark: Some("updated remark".to_string()),
-            last_test: Some(now),
-            latency_ms: Some(60),
-            last_ok: Some(true),
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        }];
-
-        let merged = merge_providers(&local, &remote);
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].base_url, "https://remote-newer.com");
-        assert_eq!(merged[0].model, "gpt-4o-mini");
-        assert_eq!(merged[0].latency_ms, Some(60));
-        assert_eq!(merged[0].remark, Some("updated remark".to_string()));
-    }
-
-    #[test]
-    fn test_merge_reasoning_effort_adopts_remote_only_when_local_missing() {
-        let bare = |name: &str, effort: Option<&str>, plan: Option<&str>| Provider {
-            name: name.to_string(),
-            base_url: "https://api.example.com".to_string(),
-            api_key: "k".to_string(),
-            model: "m".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: effort.map(str::to_string),
-            plan_reasoning_effort: plan.map(str::to_string),
-            context_length: None,
-            compact_ratio: None,
-        };
-        let merged = merge_providers(
-            &[bare("empty", None, None), bare("set", Some("max"), Some("high"))],
-            &[
-                bare("empty", Some("high"), Some("xhigh")),
-                bare("set", Some("low"), Some("low")),
-            ],
+    fn config_with_supplier() -> (Config, String) {
+        let mut cfg = Config::default();
+        let supplier = add_supplier(
+            &mut cfg,
+            SupplierInput::single_key(
+                "relay".to_string(),
+                "https://api.example.com/v1".to_string(),
+                "sk-1".to_string(),
+                None,
+                Some(vec![Protocol::Responses]),
+            ),
+        )
+        .unwrap();
+        let id = supplier.id.clone();
+        let mut first = binding("b1", "gpt-5");
+        first.supplier_id = id.clone();
+        cfg.agent_mut(AgentKind::Codex).set(
+            Env::Wsl,
+            Some(AgentSlot {
+                active: Some("b1".to_string()),
+                bindings: vec![first],
+            }),
         );
-        assert_eq!(merged[0].reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(merged[0].plan_reasoning_effort.as_deref(), Some("xhigh"));
-        assert_eq!(merged[1].reasoning_effort.as_deref(), Some("max"));
-        assert_eq!(merged[1].plan_reasoning_effort.as_deref(), Some("high"));
+        (cfg, id)
     }
 
     #[test]
-    fn test_merge_context_settings_keep_local_when_both_set() {
-        let local_empty = Provider {
-            name: "empty".to_string(),
-            base_url: "https://api.example.com".to_string(),
-            api_key: "k".to_string(),
-            model: "m".to_string(),
-            wire_api: "responses".to_string(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        let mut local_set = local_empty.clone();
-        local_set.name = "set".to_string();
-        local_set.context_length = Some("200k".to_string());
-        local_set.compact_ratio = Some(80);
+    fn merge_remaps_supplier_ids_and_adds_bindings() {
+        let (mut local, local_supplier) = config_with_supplier();
+        let (remote_cfg, _) = config_with_supplier();
+        let mut payload = super::super::build_payload(&remote_cfg);
+        payload.suppliers[0].id = "remote-id".to_string();
+        for binding in &mut payload.agents.codex.wsl.as_mut().unwrap().bindings {
+            binding.supplier_id = "remote-id".to_string();
+        }
+        payload.agents.codex.wsl.as_mut().unwrap().bindings.push({
+            let mut extra = binding("b2", "gpt-5-mini");
+            extra.supplier_id = "remote-id".to_string();
+            extra
+        });
 
-        let mut remote_empty = local_empty.clone();
-        remote_empty.context_length = Some("1m".to_string());
-        remote_empty.compact_ratio = Some(75);
-        let mut remote_set = local_set.clone();
-        remote_set.context_length = Some("500k".to_string());
-        remote_set.compact_ratio = Some(90);
+        let report = merge_payload(&mut local, payload);
+        assert_eq!(local.suppliers.len(), 1);
+        assert_eq!(report.suppliers_updated, 1);
+        assert_eq!(report.bindings_added, 1);
 
-        let merged = merge_providers(&[local_empty, local_set], &[remote_empty, remote_set]);
-        assert_eq!(merged[0].context_length.as_deref(), Some("1m"));
-        assert_eq!(merged[0].compact_ratio, Some(75));
-        assert_eq!(merged[1].context_length.as_deref(), Some("200k"));
-        assert_eq!(merged[1].compact_ratio, Some(80));
+        let slot = local.agent(AgentKind::Codex).get(Env::Wsl).unwrap();
+        assert_eq!(slot.bindings.len(), 2);
+        assert!(
+            slot.bindings
+                .iter()
+                .all(|binding| binding.supplier_id == local_supplier)
+        );
+        assert_eq!(slot.active.as_deref(), Some("b1"));
+    }
+
+    #[test]
+    fn overwrite_replaces_agents() {
+        let (mut local, _) = config_with_supplier();
+        let (remote_cfg, _) = config_with_supplier();
+        let payload = super::super::build_payload(&remote_cfg);
+        overwrite_payload(&mut local, payload);
+        assert_eq!(local.suppliers.len(), 1);
+        assert_eq!(
+            local
+                .agent(AgentKind::Codex)
+                .get(Env::Wsl)
+                .unwrap()
+                .bindings
+                .len(),
+            1
+        );
+        assert!(local.agent(AgentKind::Codex).get(Env::Windows).is_none());
     }
 }

@@ -1,476 +1,556 @@
-use cxc_core::config::{self, Config, GrokWebSearch, Provider};
-use cxc_core::target::{
-    claude::ClaudeAdapter, codex::CodexAdapter, grok::GrokAdapter, grok::GrokReorgReport,
-};
+use cxc_core::agent::{self, AgentConfigInput, AgentKind, CustomDirs};
+use cxc_core::config::{self, Config, Env};
+use cxc_core::connectivity::{self, ModelTestOutcome, ModelTestResult};
+use cxc_core::detect::{self, DetectedAgent};
+use cxc_core::protocol::{self, ProbeReport, Protocol};
+use cxc_core::supplier::{self, SupplierInput};
+use cxc_core::sync::{self, merge::MergeReport, SyncConfig};
+use cxc_core::target;
+use serde::Serialize;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+#[derive(Serialize)]
+struct ProbeResponse {
+    config: Config,
+    report: ProbeReport,
+}
+
+#[derive(Serialize)]
+struct ModelsResponse {
+    config: Config,
+    models: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ModelTestResponse {
+    config: Config,
+    result: ModelTestResult,
+}
+
+#[derive(Serialize)]
+struct BulkTestResponse {
+    config: Config,
+    outcomes: Vec<ModelTestOutcome>,
+}
+
+#[derive(Serialize)]
+struct SyncResponse {
+    config: Config,
+    report: MergeReport,
+}
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    current_version: String,
+    latest_version: String,
+    has_update: bool,
+    download_url: Option<String>,
+}
+
+fn load_config() -> Result<Config, String> {
+    config::load().map_err(|error| error.to_string())
+}
+
+fn save_config(cfg: &Config) -> Result<(), String> {
+    config::save(cfg).map_err(|error| error.to_string())
+}
+
+fn parse_agent(value: &str) -> Result<AgentKind, String> {
+    AgentKind::parse(value).ok_or_else(|| format!("未知 Agent：{value}"))
+}
+
+fn parse_protocol(value: &str) -> Result<Protocol, String> {
+    Protocol::parse(value).ok_or_else(|| format!("未知协议：{value}"))
+}
+
+fn http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(concat!("CXC/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn get_config() -> Result<Config, String> {
-    config::load().map_err(|e| e.to_string())
+    load_config()
 }
 
 #[tauri::command]
-fn switch_provider(
-    app_handle: tauri::AppHandle,
-    name: String,
-    target_tool: String,
-) -> Result<Config, String> {
-    do_switch_provider(&app_handle, name, target_tool)
+fn get_envs() -> Vec<Env> {
+    detect::reachable_envs()
 }
 
 #[tauri::command]
-fn add_provider(
-    app_handle: tauri::AppHandle,
-    provider: Provider,
-    target_tool: String,
-) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::add_provider(&mut cfg, &target_tool, provider).map_err(|e| e.to_string())?;
-    let _ = update_tray_menu(&app_handle);
+fn detect_agents() -> Result<Vec<DetectedAgent>, String> {
+    let cfg = load_config()?;
+    Ok(detect::detect_all(&cfg.custom_dirs))
+}
+
+#[tauri::command]
+fn get_path_env() -> String {
+    detect::current_path()
+}
+
+#[tauri::command]
+fn add_supplier(app: tauri::AppHandle, input: SupplierInput) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    supplier::add_supplier(&mut cfg, input).map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
     Ok(cfg)
 }
 
 #[tauri::command]
-fn edit_provider(
-    app_handle: tauri::AppHandle,
-    old_name: String,
-    updated: Provider,
-    target_tool: String,
+fn edit_supplier(
+    app: tauri::AppHandle,
+    id: String,
+    input: SupplierInput,
 ) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-
-    // Check if the active provider for this target_tool is being edited
-    let current_source = config::effective_source(&cfg).to_string();
-    let current_active = config::get_active(&cfg, &target_tool, &current_source)
-        .map(|p| p.name.clone())
-        .unwrap_or_default();
-
-    if current_active == old_name || current_active == updated.name {
-        write_provider_to_target(&cfg, &target_tool, &updated)?;
-    }
-
-    config::edit_provider(&mut cfg, &target_tool, &old_name, updated).map_err(|e| e.to_string())?;
-    let _ = update_tray_menu_with_config(&app_handle, &cfg);
+    let mut cfg = load_config()?;
+    supplier::edit_supplier(&mut cfg, &id, input).map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
     Ok(cfg)
 }
 
 #[tauri::command]
-fn delete_provider(
-    app_handle: tauri::AppHandle,
-    name: String,
-    target_tool: String,
-) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::remove_provider(&mut cfg, &target_tool, &name).map_err(|e| e.to_string())?;
-    let _ = update_tray_menu(&app_handle);
+fn delete_supplier(app: tauri::AppHandle, id: String) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    supplier::remove_supplier(&mut cfg, &id).map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
     Ok(cfg)
 }
 
 #[tauri::command]
-async fn test_provider(
-    app_handle: tauri::AppHandle,
-    name: String,
-    target_tool: String,
-) -> Result<Config, String> {
-    let p = {
-        let cfg = config::load().map_err(|e| e.to_string())?;
-        config::get_provider(&cfg, &target_tool, &name)
-            .ok_or_else(|| format!("provider \"{}\" not found", name))?
-            .clone()
-    };
+async fn probe_supplier(app: tauri::AppHandle, id: String) -> Result<ProbeResponse, String> {
+    let mut cfg = load_config()?;
+    let supplier = cfg
+        .supplier(&id)
+        .cloned()
+        .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let key = supplier
+        .default_key()
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
+    let client = http_client()?;
+    let report = protocol::probe_supplier(&supplier, &key.api_key, &client).await;
 
-    let tester = cxc_core::connectivity::Tester::new();
-    // Claude uses Anthropic Messages API; Codex and Grok use OpenAI-compatible chat completions
-    let is_claude = target_tool == "claude";
-    let res = tester
-        .test(&p.base_url, &p.api_key, &p.model, is_claude)
-        .await;
-
-    // Reload config AFTER the await to prevent overwriting other concurrent tests
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::update_test_result(&mut cfg, &target_tool, &name, res.latency_ms, res.ok)
-        .map_err(|e| e.to_string())?;
-    let _ = update_tray_menu(&app_handle);
-
-    Ok(cfg)
-}
-
-#[tauri::command]
-async fn test_all_providers(
-    app_handle: tauri::AppHandle,
-    target_tool: String,
-) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let providers = match target_tool.as_str() {
-        "codex" => cfg.codex_providers.clone(),
-        "claude" => cfg.claude_providers.clone(),
-        "grok" => cfg.grok_providers.clone(),
-        other => return Err(format!("Unknown target tool: {}", other)),
-    };
-
-    let mut tasks = vec![];
-    let is_claude = target_tool == "claude";
-    for p in providers {
-        let is_claude = is_claude;
-        tasks.push(tokio::spawn(async move {
-            let tester = cxc_core::connectivity::Tester::new();
-            let res = tester
-                .test(&p.base_url, &p.api_key, &p.model, is_claude)
-                .await;
-            (p.name.clone(), res.ok, res.latency_ms)
-        }));
+    if let Some(target) = cfg.supplier_mut(&id) {
+        target.protocols = report.protocols.clone();
+        target.last_probe = Some(chrono::Local::now());
     }
-
-    for task in tasks {
-        if let std::result::Result::Ok(res) = task.await {
-            let (name, is_ok, latency) = res;
-            let _ = config::update_test_result(&mut cfg, &target_tool, &name, latency, is_ok);
-        }
-    }
-
-    config::save(&cfg).map_err(|e| e.to_string())?;
-    let _ = update_tray_menu(&app_handle);
-    Ok(cfg)
-}
-
-#[tauri::command]
-async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
-    cxc_core::connectivity::fetch_models(&base_url, &api_key)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-fn apply_source_settings(
-    cfg: &mut Config,
-    source: &str,
-    custom_dir: &str,
-    claude_custom_dir: &str,
-    grok_custom_dir: &str,
-) -> Result<(), String> {
-    config::set_global_source(cfg, source);
-    cfg.codex_custom_dir = custom_dir.to_string();
-    cfg.claude_custom_dir = claude_custom_dir.to_string();
-    cfg.grok_custom_dir = grok_custom_dir.to_string();
-    Ok(())
-}
-
-fn write_provider_to_target(
-    cfg: &Config,
-    target_tool: &str,
-    provider: &Provider,
-) -> Result<(), String> {
-    match target_tool {
-        "codex" => {
-            let adapter = CodexAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
-            adapter
-                .write_provider(provider)
-                .map_err(|e| e.to_string())
-        }
-        "claude" => {
-            let adapter = ClaudeAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
-            adapter.write_provider(provider).map_err(|e| e.to_string())
-        }
-        "grok" => {
-            let adapter = GrokAdapter::new_from_config(cfg).map_err(|e| e.to_string())?;
-            adapter.write_provider(provider).map_err(|e| e.to_string())
-        }
-        other => Err(format!("Unknown target tool: {}", other)),
-    }
-}
-
-#[tauri::command]
-fn save_settings(
-    app_handle: tauri::AppHandle,
-    target_tool: String,
-    source: String,
-    custom_dir: String,
-    claude_custom_dir: String,
-    grok_custom_dir: String,
-) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    apply_source_settings(
-        &mut cfg,
-        &source,
-        &custom_dir,
-        &claude_custom_dir,
-        &grok_custom_dir,
-    )?;
-    config::save(&cfg).map_err(|e| e.to_string())?;
-
-    // Re-apply the active provider only for the target tool that initiated this save.
-    let src = config::effective_source(&cfg).to_string();
-    if let Some(p) = config::get_active(&cfg, &target_tool, &src).cloned() {
-        write_provider_to_target(&cfg, &target_tool, &p)?;
-    }
-
-    let _ = update_tray_menu_with_config(&app_handle, &cfg);
-    Ok(cfg)
-}
-
-#[derive(serde::Serialize)]
-struct GrokMigrationResponse {
-    report: GrokReorgReport,
-    config: Config,
-}
-
-/// 把迁移结果回填到 CXC 的 Grok 中转站：web_search 处置策略。
-///
-/// 只有中转站块键与 CXC 里的中转站名称一致时才回填，其余块由用户自行处理。
-fn apply_grok_reorg_to_config(cfg: &mut Config, report: &GrokReorgReport) {
-    for (key, models) in &report.groups {
-        let Some(provider) = cfg.grok_providers.iter_mut().find(|p| &p.name == key) else {
-            continue;
-        };
-
-        let default_model = provider.model.clone();
-        provider.grok_web_search = match report.web_search.as_deref() {
-            None => Some(GrokWebSearch::Unset),
-            Some(model) if model == default_model => Some(GrokWebSearch::Follow),
-            Some(model) if models.iter().any(|m| m == model) => Some(GrokWebSearch::Model {
-                model: model.to_string(),
-            }),
-            // 指向别处的模型：保持配置文件现状。None 现在表示跟随，所以这里要显式 keep。
-            Some(_) => Some(GrokWebSearch::Keep),
-        };
-    }
-}
-
-#[tauri::command]
-fn migrate_grok_config(app_handle: tauri::AppHandle) -> Result<GrokMigrationResponse, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-
-    let adapter = GrokAdapter::new_from_config(&cfg).map_err(|e| e.to_string())?;
-    let report = adapter
-        .reorganize_provider_centric(&cfg)
-        .map_err(|e| e.to_string())?;
-
-    apply_grok_reorg_to_config(&mut cfg, &report);
-    config::save(&cfg).map_err(|e| e.to_string())?;
-
-    let _ = update_tray_menu_with_config(&app_handle, &cfg);
-    let _ = app_handle.emit("config-updated", &cfg);
-
-    Ok(GrokMigrationResponse {
-        report,
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(ProbeResponse {
         config: cfg,
+        report,
     })
 }
 
 #[tauri::command]
-fn get_app_version(app_handle: tauri::AppHandle) -> String {
-    app_handle.package_info().version.to_string()
-}
-
-#[tauri::command]
-fn get_sync_config() -> Result<cxc_core::sync::SyncConfig, String> {
-    let cfg = config::load().map_err(|e| e.to_string())?;
-    Ok(config::get_sync_config(&cfg))
-}
-
-#[tauri::command]
-fn save_sync_config(sync_config: cxc_core::sync::SyncConfig) -> Result<(), String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    config::update_sync_config(&mut cfg, sync_config);
-    config::save(&cfg).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn test_gist_connection(token: String, gist_id: Option<String>) -> Result<String, String> {
-    cxc_core::sync::test_gist_connection(&token, gist_id.as_deref())
+async fn fetch_supplier_models(id: String) -> Result<ModelsResponse, String> {
+    let mut cfg = load_config()?;
+    let supplier = cfg
+        .supplier(&id)
+        .cloned()
+        .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let key = supplier
+        .default_key()
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
+    let client = http_client()?;
+    let models = connectivity::fetch_models(&supplier.base_url, &key.api_key, &client)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|error| error.to_string())?;
+    if let Some(target) = cfg.supplier_mut(&id) {
+        supplier::replace_discovered_models(target, models.clone());
+    }
+    save_config(&cfg)?;
+    Ok(ModelsResponse {
+        config: cfg,
+        models,
+    })
 }
 
-fn finish_sync_op(app_handle: &tauri::AppHandle, cfg: Config) -> Result<Config, String> {
-    let _ = update_tray_menu_with_config(app_handle, &cfg);
+#[tauri::command]
+async fn test_supplier_model(
+    id: String,
+    model: String,
+    protocol: String,
+    key_id: Option<String>,
+) -> Result<ModelTestResponse, String> {
+    let mut cfg = load_config()?;
+    let supplier = cfg
+        .supplier(&id)
+        .cloned()
+        .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let protocol = parse_protocol(&protocol)?;
+    let key = supplier::effective_key(&supplier, key_id.as_deref())
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
+    let client = http_client()?;
+    let result = connectivity::test_model(&supplier, &key.api_key, &model, protocol, &client).await;
+    supplier::record_model_test(
+        &mut cfg,
+        &id,
+        &model,
+        protocol,
+        Some(&key.id),
+        result.ok,
+        result.latency_ms,
+        result.error.clone(),
+    )
+    .map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    Ok(ModelTestResponse {
+        config: cfg,
+        result,
+    })
+}
+
+#[tauri::command]
+async fn test_supplier_models(
+    id: String,
+    key_id: Option<String>,
+) -> Result<BulkTestResponse, String> {
+    let mut cfg = load_config()?;
+    let supplier = cfg
+        .supplier(&id)
+        .cloned()
+        .ok_or_else(|| format!("供应商不存在：{id}"))?;
+    let key = supplier::effective_key(&supplier, key_id.as_deref())
+        .ok_or_else(|| format!("中转站没有可用账号：{id}"))?;
+    let client = http_client()?;
+    let outcomes = connectivity::test_supplier_models(&supplier, &key.api_key, &client).await;
+    for outcome in &outcomes {
+        let _ = supplier::record_model_test(
+            &mut cfg,
+            &id,
+            &outcome.model,
+            outcome.protocol,
+            Some(&key.id),
+            outcome.result.ok,
+            outcome.result.latency_ms,
+            outcome.result.error.clone(),
+        );
+    }
+    save_config(&cfg)?;
+    Ok(BulkTestResponse {
+        config: cfg,
+        outcomes,
+    })
+}
+
+#[tauri::command]
+fn add_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    input: AgentConfigInput,
+    activate: bool,
+) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::add_binding(&mut cfg, kind, env, input, activate, adapter.as_ref())
+        .map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    if activate {
+        notify_written(kind, env, &cfg);
+    }
+    let _ = app.emit("config-updated", &cfg);
     Ok(cfg)
 }
 
 #[tauri::command]
-async fn sync_gist_push(
-    app_handle: tauri::AppHandle,
-    mut sync_config: cxc_core::sync::SyncConfig,
+fn edit_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    id: String,
+    input: AgentConfigInput,
 ) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let _ = cxc_core::sync::push_to_gist(&mut cfg, &mut sync_config)
-        .await
-        .map_err(|e| e.to_string())?;
-    finish_sync_op(&app_handle, cfg)
+    let mut cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::edit_binding(&mut cfg, kind, env, &id, input, adapter.as_ref())
+        .map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    notify_written(kind, env, &cfg);
+    let _ = app.emit("config-updated", &cfg);
+    Ok(cfg)
 }
 
 #[tauri::command]
-async fn sync_gist_pull(
-    app_handle: tauri::AppHandle,
-    mut sync_config: cxc_core::sync::SyncConfig,
+fn delete_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    id: String,
 ) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let _ = cxc_core::sync::pull_from_gist(&mut cfg, &mut sync_config)
-        .await
-        .map_err(|e| e.to_string())?;
-    finish_sync_op(&app_handle, cfg)
+    let mut cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    agent::delete_binding(&mut cfg, kind, env, &id).map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(cfg)
 }
 
 #[tauri::command]
-async fn sync_gist_merge(
-    app_handle: tauri::AppHandle,
-    mut sync_config: cxc_core::sync::SyncConfig,
+fn activate_binding(
+    app: tauri::AppHandle,
+    agent: String,
+    env: String,
+    id: String,
 ) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-    let _ = cxc_core::sync::sync_and_merge(&mut cfg, &mut sync_config)
-        .await
-        .map_err(|e| e.to_string())?;
-    finish_sync_op(&app_handle, cfg)
-}
-
-#[derive(serde::Serialize)]
-struct UpdateInfo {
-    version: String,
-    url: String,
-    changelog: String,
+    let mut cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::activate_binding(&mut cfg, kind, env, &id, adapter.as_ref())
+        .map_err(|error| error.to_string())?;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    notify_written(kind, env, &cfg);
+    let _ = app.emit("config-updated", &cfg);
+    Ok(cfg)
 }
 
 #[tauri::command]
-async fn check_update() -> Result<UpdateInfo, String> {
-    println!("[CXC-Update] Starting update check...");
+fn rewrite_agent(agent: String, env: String) -> Result<Config, String> {
+    let cfg = load_config()?;
+    let kind = parse_agent(&agent)?;
+    let env = Env::parse(&env);
+    let adapter = target::adapter_for(kind);
+    agent::rewrite(&cfg, kind, env, adapter.as_ref()).map_err(|error| error.to_string())?;
+    notify_written(kind, env, &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+fn save_settings(app: tauri::AppHandle, custom_dirs: CustomDirs) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    cfg.custom_dirs = custom_dirs;
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(cfg)
+}
+
+#[tauri::command]
+fn get_sync_config() -> Result<SyncConfig, String> {
+    Ok(config::get_sync_config(&load_config()?))
+}
+
+#[tauri::command]
+fn save_sync_config(sync: SyncConfig) -> Result<Config, String> {
+    let mut cfg = load_config()?;
+    config::update_sync_config(&mut cfg, sync);
+    save_config(&cfg)?;
+    Ok(cfg)
+}
+
+#[tauri::command]
+async fn test_gist_connection(token: String, gist_id: Option<String>) -> Result<String, String> {
+    sync::test_gist_connection(&token, gist_id.as_deref())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn sync_push(app: tauri::AppHandle) -> Result<SyncResponse, String> {
+    let mut cfg = load_config()?;
+    let mut sync_config = config::get_sync_config(&cfg);
+    sync::push_to_gist(&cfg, &mut sync_config)
+        .await
+        .map_err(|error| error.to_string())?;
+    config::update_sync_config(&mut cfg, sync_config);
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(SyncResponse {
+        config: cfg,
+        report: MergeReport::default(),
+    })
+}
+
+#[tauri::command]
+async fn sync_pull(app: tauri::AppHandle) -> Result<SyncResponse, String> {
+    let mut cfg = load_config()?;
+    let mut sync_config = config::get_sync_config(&cfg);
+    let report = sync::pull_from_gist(&mut cfg, &mut sync_config, sync::merge::SyncMode::Overwrite)
+        .await
+        .map_err(|error| error.to_string())?;
+    config::update_sync_config(&mut cfg, sync_config);
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(SyncResponse {
+        config: cfg,
+        report,
+    })
+}
+
+#[tauri::command]
+async fn sync_merge(app: tauri::AppHandle) -> Result<SyncResponse, String> {
+    let mut cfg = load_config()?;
+    let mut sync_config = config::get_sync_config(&cfg);
+    let report = sync::pull_from_gist(&mut cfg, &mut sync_config, sync::merge::SyncMode::Merge)
+        .await
+        .map_err(|error| error.to_string())?;
+    config::update_sync_config(&mut cfg, sync_config);
+    save_config(&cfg)?;
+    let _ = update_tray_menu_with_config(&app, &cfg);
+    Ok(SyncResponse {
+        config: cfg,
+        report,
+    })
+}
+
+#[tauri::command]
+fn get_app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+    let current = app.package_info().version.to_string();
     let client = reqwest::Client::builder()
         .user_agent("CXC-Desktop-App")
         .build()
-        .map_err(|e| {
-            let err_msg = format!("Failed to build HTTP client: {}", e);
-            println!("[CXC-Update] Error: {}", err_msg);
-            err_msg
-        })?;
-
-    let res = client
+        .map_err(|error| error.to_string())?;
+    let response = client
         .get("https://api.github.com/repos/zhang3say/cxc/releases/latest")
         .send()
         .await
-        .map_err(|e| {
-            let err_msg = format!("HTTP request failed: {}", e);
-            println!("[CXC-Update] Error: {}", err_msg);
-            err_msg
-        })?;
-
-    println!("[CXC-Update] Response received with status: {}", res.status());
-    if !res.status().is_success() {
-        let err_msg = format!("Request failed with status: {}", res.status());
-        println!("[CXC-Update] Error: {}", err_msg);
-        return Err(err_msg);
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
     }
 
     #[derive(serde::Deserialize)]
     struct GithubRelease {
         tag_name: String,
         html_url: String,
-        body: Option<String>,
     }
-
-    let release: GithubRelease = res.json().await.map_err(|e| {
-        let err_msg = format!("Failed to parse JSON: {}", e);
-        println!("[CXC-Update] Error: {}", err_msg);
-        err_msg
-    })?;
-
-    println!("[CXC-Update] Found remote version: {}", release.tag_name);
-
+    let release: GithubRelease = response.json().await.map_err(|error| error.to_string())?;
+    let latest = release.tag_name.trim_start_matches('v').to_string();
     Ok(UpdateInfo {
-        version: release.tag_name,
-        url: release.html_url,
-        changelog: release.body.unwrap_or_default(),
+        has_update: version_gt(&latest, &current),
+        current_version: current,
+        latest_version: latest,
+        download_url: Some(release.html_url),
     })
 }
 
-fn do_switch_provider(
-    app_handle: &tauri::AppHandle,
-    name: String,
-    target_tool: String,
-) -> Result<Config, String> {
-    let mut cfg = config::load().map_err(|e| e.to_string())?;
-
-    let p = config::get_provider(&cfg, &target_tool, &name)
-        .ok_or_else(|| format!("provider \"{}\" not found", name))?
-        .clone();
-
-    write_provider_to_target(&cfg, &target_tool, &p)?;
-
-    let source = config::effective_source(&cfg).to_string();
-
-    config::set_active(&mut cfg, &target_tool, &source, &name).map_err(|e| e.to_string())?;
-
-    let _ = update_tray_menu_with_config(app_handle, &cfg);
-
-    notify_provider_switched(name);
-
-    let _ = app_handle.emit("config-updated", &cfg);
-
-    Ok(cfg)
+fn version_gt(left: &str, right: &str) -> bool {
+    let parse = |value: &str| -> Vec<u64> {
+        value
+            .split('.')
+            .map(|part| part.parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let left = parse(left);
+    let right = parse(right);
+    for index in 0..left.len().max(right.len()) {
+        let a = left.get(index).copied().unwrap_or(0);
+        let b = right.get(index).copied().unwrap_or(0);
+        if a != b {
+            return a > b;
+        }
+    }
+    false
 }
 
-fn update_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
-    let cfg = config::load().map_err(|e| e.to_string())?;
-    update_tray_menu_with_config(app_handle, &cfg)
+fn agent_label(kind: AgentKind, env: Env) -> String {
+    format!("{} ({})", kind.display_name(), env.label())
 }
 
-fn update_tray_menu_with_config(app_handle: &tauri::AppHandle, cfg: &Config) -> Result<(), String> {
-    let menu = Menu::new(app_handle).map_err(|e| e.to_string())?;
+fn update_tray_menu_with_config(app: &tauri::AppHandle, cfg: &Config) -> Result<(), String> {
+    let menu = Menu::new(app).map_err(|error| error.to_string())?;
 
-    // System Tray 只显示 Codex providers（已知的设计限制，见 CONTEXT.md）
-    // 托盘无法选择 Target Tool，固定使用 Codex 列表
-    let codex_source = cfg
-        .codex_source
-        .clone()
-        .unwrap_or_else(|| config::effective_source(cfg).to_string());
-    for p in &cfg.codex_providers {
-        let is_active = match config::get_active(&cfg, "codex", &codex_source) {
-            Some(active_p) => active_p.name == p.name,
-            None => false,
-        };
-        let item = CheckMenuItem::with_id(
-            app_handle,
-            format!("prov:{}", p.name),
-            &p.name,
-            true,
-            is_active,
-            None::<&str>,
-        )
-        .map_err(|e| e.to_string())?;
-
-        menu.append(&item).map_err(|e| e.to_string())?;
+    for env in detect::reachable_envs() {
+        for kind in AgentKind::ALL {
+            let Some(config) = cfg.config_of(kind, env) else {
+                continue;
+            };
+            let label = format!("{} · {}", agent_label(kind, env), config.model);
+            let item = CheckMenuItem::with_id(
+                app,
+                format!("rewrite:{}:{}", kind.as_str(), env.as_str()),
+                label,
+                true,
+                false,
+                None::<&str>,
+            )
+            .map_err(|error| error.to_string())?;
+            menu.append(&item).map_err(|error| error.to_string())?;
+        }
     }
 
-    let separator = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
-    menu.append(&separator).map_err(|e| e.to_string())?;
+    let separator = PredefinedMenuItem::separator(app).map_err(|error| error.to_string())?;
+    menu.append(&separator).map_err(|error| error.to_string())?;
+    let show = MenuItem::with_id(
+        app,
+        "show_window",
+        "打开 CXC / Open CXC",
+        true,
+        None::<&str>,
+    )
+    .map_err(|error| error.to_string())?;
+    menu.append(&show).map_err(|error| error.to_string())?;
+    let quit = MenuItem::with_id(app, "quit", "退出 / Quit", true, None::<&str>)
+        .map_err(|error| error.to_string())?;
+    menu.append(&quit).map_err(|error| error.to_string())?;
 
-    let show_item = MenuItem::with_id(app_handle, "show_window", "Show Window", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    menu.append(&show_item).map_err(|e| e.to_string())?;
-
-    let quit_item = MenuItem::with_id(app_handle, "quit", "Quit", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    menu.append(&quit_item).map_err(|e| e.to_string())?;
-
-    if let Some(tray) = app_handle.tray_by_id("cxc_tray") {
-        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    if let Some(tray) = app.tray_by_id("cxc_tray") {
+        tray.set_menu(Some(menu))
+            .map_err(|error| error.to_string())?;
     }
-
     Ok(())
 }
 
-fn notify_provider_switched(name: String) {
+fn update_tray_menu(app: &tauri::AppHandle) -> Result<(), String> {
+    let cfg = load_config()?;
+    update_tray_menu_with_config(app, &cfg)
+}
+
+fn notify_written(kind: AgentKind, env: Env, cfg: &Config) {
+    let Some(config) = cfg.config_of(kind, env) else {
+        return;
+    };
+    let title = agent_label(kind, env);
+    let body = format!("已写入 {}", config.model);
     std::thread::spawn(move || {
         let _ = notify_rust::Notification::new()
-            .summary("CXC")
-            .body(&format!("✓ Switched active provider to \"{}\"", name))
+            .summary(&title)
+            .body(&body)
             .show();
     });
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn rewrite_from_tray(app: &tauri::AppHandle, agent: &str, env: &str) {
+    let Ok(kind) = parse_agent(agent) else {
+        return;
+    };
+    let env = Env::parse(env);
+    let Ok(cfg) = load_config() else {
+        return;
+    };
+    let adapter = target::adapter_for(kind);
+    if agent::rewrite(&cfg, kind, env, adapter.as_ref()).is_ok() {
+        notify_written(kind, env, &cfg);
+        let _ = app.emit("config-updated", &cfg);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -478,10 +558,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(app);
         }))
         .setup(|app| {
             let handle = app.handle().clone();
@@ -497,39 +574,32 @@ pub fn run() {
             let _tray = TrayIconBuilder::with_id("cxc_tray")
                 .icon(tray_icon)
                 .show_menu_on_left_click(false)
-                .on_tray_icon_event(move |tray, event| match event {
-                    TrayIconEvent::Click {
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
                         ..
-                    } => {
-                        let app_handle = tray.app_handle();
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
                     }
-                    _ => {}
                 })
-                .on_menu_event(move |app_handle, event| {
+                .on_menu_event(|app, event| {
                     let id = event.id.as_ref();
                     if id == "quit" {
-                        app_handle.exit(0);
+                        app.exit(0);
                     } else if id == "show_window" {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                        show_main_window(app);
+                    } else if let Some(rest) = id.strip_prefix("rewrite:") {
+                        let mut parts = rest.splitn(2, ':');
+                        if let (Some(agent), Some(env)) = (parts.next(), parts.next()) {
+                            rewrite_from_tray(app, agent, env);
                         }
-                    } else if id.starts_with("prov:") {
-                        let prov_name = id.trim_start_matches("prov:").to_string();
-                        // System Tray 固定使用 Codex（已知设计限制）
-                        let _ = do_switch_provider(app_handle, prov_name, "codex".to_string());
                     }
                 })
                 .build(app)?;
 
             let _ = update_tray_menu(&handle);
-
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -539,91 +609,32 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_config,
-            switch_provider,
-            add_provider,
-            edit_provider,
-            delete_provider,
-            test_provider,
-            test_all_providers,
-            fetch_models,
+            get_envs,
+            detect_agents,
+            get_path_env,
+            add_supplier,
+            edit_supplier,
+            delete_supplier,
+            probe_supplier,
+            fetch_supplier_models,
+            test_supplier_model,
+            test_supplier_models,
+            add_binding,
+            edit_binding,
+            delete_binding,
+            activate_binding,
+            rewrite_agent,
             save_settings,
-            migrate_grok_config,
-            get_app_version,
-            check_update,
             get_sync_config,
             save_sync_config,
             test_gist_connection,
-            sync_gist_push,
-            sync_gist_pull,
-            sync_gist_merge
+            sync_push,
+            sync_pull,
+            sync_merge,
+            get_app_version,
+            check_update,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cfg_with_sources() -> Config {
-        Config {
-            codex_source: Some("app".to_string()),
-            codex_custom_dir: "C:\\Users\\lee\\.codex".to_string(),
-            claude_source: Some("wsl".to_string()),
-            claude_custom_dir: r"\\wsl.localhost\Ubuntu\home\lee\.claude".to_string(),
-            grok_source: Some("app".to_string()),
-            grok_custom_dir: r"\\wsl.localhost\Ubuntu\home\lee\.grok".to_string(),
-            ..Config::default()
-        }
-    }
-
-    #[test]
-    fn test_apply_source_settings_updates_global_source_to_wsl() {
-        let mut cfg = cfg_with_sources();
-
-        apply_source_settings(
-            &mut cfg,
-            "wsl",
-            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex",
-            "C:\\Users\\lee\\.claude",
-            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.grok",
-        )
-        .unwrap();
-
-        assert_eq!(cfg.codex_source.as_deref(), Some("wsl"));
-        assert_eq!(cfg.claude_source.as_deref(), Some("wsl"));
-        assert_eq!(cfg.grok_source.as_deref(), Some("wsl"));
-        assert_eq!(
-            cfg.codex_custom_dir,
-            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.codex"
-        );
-        assert_eq!(cfg.claude_custom_dir, "C:\\Users\\lee\\.claude");
-        assert_eq!(
-            cfg.grok_custom_dir,
-            r"\\wsl.localhost\Ubuntu-24.04\home\leezi\.grok"
-        );
-    }
-
-    #[test]
-    fn test_apply_source_settings_updates_global_source_to_app() {
-        let mut cfg = cfg_with_sources();
-
-        apply_source_settings(
-            &mut cfg,
-            "app",
-            "C:\\Users\\lee\\.codex",
-            "C:\\Users\\lee\\.claude",
-            "C:\\Users\\lee\\.grok",
-        )
-        .unwrap();
-
-        assert_eq!(cfg.codex_source.as_deref(), Some("app"));
-        assert_eq!(cfg.codex_custom_dir, "C:\\Users\\lee\\.codex");
-        assert_eq!(cfg.claude_source.as_deref(), Some("app"));
-        assert_eq!(cfg.claude_custom_dir, "C:\\Users\\lee\\.claude");
-        assert_eq!(cfg.grok_source.as_deref(), Some("app"));
-        assert_eq!(cfg.grok_custom_dir, "C:\\Users\\lee\\.grok");
-    }
+        .expect("error while running CXC");
 }

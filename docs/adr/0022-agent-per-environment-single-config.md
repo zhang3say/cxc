@@ -27,4 +27,4 @@ ADR-0018 的模型是「全局中转站 + 每个 Agent 一份绑定目录 + 每�
 
 ## 状态
 
-已采纳。实现见 `cxc-v2/cxc-v2-core/src/agent.rs`、`config.rs`、`detect.rs`。
+已采纳。实现见 `cxc-core/src/agent.rs`、`config.rs`、`detect.rs`。

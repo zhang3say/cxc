@@ -33,4 +33,4 @@ CXC 管理一个 `provider.cxc-<supplier-id>` 块：
 
 ## 状态
 
-已采纳。实现见 `cxc-v2/cxc-v2-core/src/target/opencode.rs`。
+已采纳。实现见 `cxc-core/src/target/opencode.rs`。

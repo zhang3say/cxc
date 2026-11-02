@@ -32,4 +32,4 @@ ADR-0022 把每个 Agent 收敛成「一份配置」，Agent 页只有一张卡�
 
 ## 状态
 
-已采纳。实现见 `cxc-v2/cxc-v2-core/src/agent.rs`、`config.rs`，界面见 `cxc-v2/cxc-v2-desktop/src/components/agents/`。
+已采纳。实现见 `cxc-core/src/agent.rs`、`config.rs`，界面见 `cxc-desktop/src/components/agents/`。

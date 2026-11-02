@@ -33,4 +33,4 @@
 
 ## 状态
 
-已采纳。实现见 `cxc-v2/cxc-v2-core/src/protocol.rs`。
+已采纳。实现见 `cxc-core/src/protocol.rs`。

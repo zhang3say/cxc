@@ -50,4 +50,4 @@
 
 ## 状态
 
-已采纳。实现见 `cxc-v2/cxc-v2-core/src/supplier.rs`、`agent.rs`、`config.rs`，界面见 `cxc-v2/cxc-v2-desktop/src/components/suppliers/`。
+已采纳。实现见 `cxc-core/src/supplier.rs`、`agent.rs`、`config.rs`，界面见 `cxc-desktop/src/components/suppliers/`。

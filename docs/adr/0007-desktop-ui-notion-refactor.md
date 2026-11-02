@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The user reported that the current `@cxc-desktop` UI/UX is unappealing and requested a complete refactoring of its interface based on the specifications in DESIGN.md. The existing desktop interface uses standard dark-neutral aesthetics with Tailwind CSS, Geist Sans typography, and generic Card surfaces.
+The user reported that the current `@cxc-desktop` UI/UX is unappealing and requested a complete refactoring of its interface based on the specifications in DESIGN.md (now kept at `docs/design.md`). The existing desktop interface uses standard dark-neutral aesthetics with Tailwind CSS, Geist Sans typography, and generic Card surfaces.
 
 We need to redefine the visual identity of the desktop application using Notion's calm, document-like aesthetic, while keeping both light and dark modes fully usable and aesthetically aligned.
 

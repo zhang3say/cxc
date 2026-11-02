@@ -1,929 +1,385 @@
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
-use reqwest::Client;
-use std::time::Duration;
+use serde_json::Value;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Result {
+use crate::protocol::{self, Protocol};
+use crate::supplier::Supplier;
+
+pub use crate::protocol::fetch_models;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ModelTestResult {
     pub ok: bool,
     pub latency_ms: i64,
-    pub response: String, // truncated model response on success
-    pub error: String,    // categorized error on failure
+    pub status: Option<u16>,
+    pub error: Option<String>,
 }
 
-pub struct Tester {
-    client: Client,
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ModelTestOutcome {
+    pub model: String,
+    pub protocol: Protocol,
+    pub result: ModelTestResult,
 }
 
-impl Default for Tester {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub async fn test_model(
+    supplier: &Supplier,
+    api_key: &str,
+    model: &str,
+    protocol: Protocol,
+    client: &reqwest::Client,
+) -> ModelTestResult {
+    let started = Instant::now();
+    let url = protocol.endpoint(&supplier.base_url);
+    let request = client
+        .post(&url)
+        .timeout(Duration::from_secs(20))
+        .json(&protocol.request_body(model, false));
+    let request = protocol.apply_headers(request, api_key);
 
-impl Tester {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| Client::new());
-        Self { client }
-    }
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let code = status.as_u16();
+            let body = response.text().await.unwrap_or_default();
+            let latency_ms = started.elapsed().as_millis() as i64;
 
-    pub fn new_with_client(client: Client) -> Self {
-        Self { client }
-    }
-
-    pub async fn test(&self, base_url: &str, api_key: &str, model: &str, is_claude: bool) -> Result {
-        if is_claude {
-            let model = crate::config::connectivity_model(model, true);
-            self.test_claude(base_url, api_key, &model).await
-        } else {
-            self.test_openai(base_url, api_key, model).await
-        }
-    }
-
-    async fn test_openai(&self, base_url: &str, api_key: &str, model: &str) -> Result {
-        let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-
-        let req_body = ChatRequest {
-            model: model.to_string(),
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: "say hi".to_string(),
-            }],
-            max_tokens: Some(1),
-        };
-
-        let start = Instant::now();
-        let res = self.client.post(&url)
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&req_body)
-            .send()
-            .await;
-
-        let latency_ms = start.elapsed().as_millis() as i64;
-
-        let resp = match res {
-            Ok(r) => r,
-            Err(e) => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: categorize_network_error(e),
-                };
-            }
-        };
-
-        let status = resp.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: "invalid API key (auth error)".to_string(),
-            };
-        }
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: "endpoint not found — check base_url".to_string(),
-            };
-        }
-
-        let raw_body = match resp.bytes().await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: format!("reading response: {}", e),
-                };
-            }
-        };
-
-        let body_str = String::from_utf8_lossy(&raw_body);
-
-        let chat_resp: ChatResponse = match serde_json::from_slice(&raw_body) {
-            Ok(cr) => cr,
-            Err(_) => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: format!("invalid response (status {}): {}", status.as_u16(), truncate(&body_str, 100)),
-                };
-            }
-        };
-
-        if let Some(err) = chat_resp.error {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: categorize_api_error(&err),
-            };
-        }
-
-        if !status.is_success() {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: format!("unexpected status {}: {}", status.as_u16(), truncate(&body_str, 100)),
-            };
-        }
-
-        let choices = match chat_resp.choices {
-            Some(c) => c,
-            None => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: "no choices returned".to_string(),
-                };
-            }
-        };
-
-        if choices.is_empty() {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: "no choices returned".to_string(),
-            };
-        }
-
-        Result {
-            ok: true,
-            latency_ms,
-            response: truncate(&openai_probe_text(&choices[0].message), 50),
-            error: String::new(),
-        }
-    }
-
-    async fn test_claude(&self, base_url: &str, api_key: &str, model: &str) -> Result {
-        let trimmed = base_url.trim().trim_end_matches('/');
-        let url = if trimmed.ends_with("/v1/messages") {
-            trimmed.to_string()
-        } else if trimmed.ends_with("/v1") {
-            format!("{}/messages", trimmed)
-        } else {
-            format!("{}/v1/messages", trimmed)
-        };
-
-        let req_body = AnthropicMessagesRequest {
-            model: model.to_string(),
-            messages: vec![AnthropicMessage {
-                role: "user".to_string(),
-                content: "say hi".to_string(),
-            }],
-            max_tokens: 1,
-        };
-
-        let start = Instant::now();
-        let mut req = self.client.post(&url)
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("anthropic-version", "2023-06-01")
-            .json(&req_body);
-
-        if api_key.starts_with("sk-ant-") {
-            req = req.header("x-api-key", api_key);
-        }
-
-        let res = req.send().await;
-
-        let latency_ms = start.elapsed().as_millis() as i64;
-
-        let resp = match res {
-            Ok(r) => r,
-            Err(e) => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: categorize_network_error(e),
-                };
-            }
-        };
-
-        let status = resp.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: "invalid API key (auth error)".to_string(),
-            };
-        }
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: "endpoint not found — check base_url".to_string(),
-            };
-        }
-
-        let raw_body = match resp.bytes().await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: format!("reading response: {}", e),
-                };
-            }
-        };
-
-        let body_str = String::from_utf8_lossy(&raw_body);
-
-        let anthropic_resp: AnthropicMessagesResponse = match serde_json::from_slice(&raw_body) {
-            Ok(ar) => ar,
-            Err(_) => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: format!("invalid response (status {}): {}", status.as_u16(), truncate(&body_str, 100)),
-                };
-            }
-        };
-
-        if let Some(err) = anthropic_resp.error {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: format!("API error: {}", err.message),
-            };
-        }
-
-        if !status.is_success() {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: format!("unexpected status {}: {}", status.as_u16(), truncate(&body_str, 100)),
-            };
-        }
-
-        let content_list = match anthropic_resp.content {
-            Some(c) => c,
-            None => {
-                return Result {
-                    ok: false,
-                    latency_ms,
-                    response: String::new(),
-                    error: "no content returned".to_string(),
-                };
-            }
-        };
-
-        if content_list.is_empty() {
-            return Result {
-                ok: false,
-                latency_ms,
-                response: String::new(),
-                error: "no content returned".to_string(),
-            };
-        }
-
-        Result {
-            ok: true,
-            latency_ms,
-            response: truncate(&claude_probe_text(&content_list), 50),
-            error: String::new(),
-        }
-    }
-}
-
-fn nonempty(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-/// 正文优先。只有思考内容时也算连通，`max_tokens: 1` 常把唯一 token 用在思考上。
-fn openai_probe_text(message: &ChoiceMessage) -> String {
-    let from_parts = match &message.content {
-        Some(MessageContent::Text(text)) => nonempty(text),
-        Some(MessageContent::Parts(parts)) => parts.iter().find_map(|part| nonempty(&part.text)),
-        None => None,
-    };
-    if let Some(text) = from_parts {
-        return text;
-    }
-    if let Some(MessageContent::Parts(parts)) = &message.content {
-        if let Some(text) = parts.iter().find_map(|part| {
-            nonempty(&part.reasoning).or_else(|| nonempty(&part.reasoning_content))
-        }) {
-            return text;
-        }
-    }
-    message
-        .reasoning_content
-        .as_deref()
-        .and_then(nonempty)
-        .or_else(|| message.reasoning.as_deref().and_then(nonempty))
-        .unwrap_or_default()
-}
-
-fn claude_probe_text(blocks: &[AnthropicContent]) -> String {
-    blocks
-        .iter()
-        .find_map(|block| nonempty(&block.text))
-        .or_else(|| blocks.iter().find_map(|block| nonempty(&block.thinking)))
-        .unwrap_or_default()
-}
-
-// ── Model Discovery ─────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-struct ModelsResponse {
-    data: Vec<ModelEntry>,
-}
-
-#[derive(Deserialize)]
-struct ModelEntry {
-    id: String,
-}
-
-/// Fetch the list of model IDs from `GET {base_url}/models`.
-/// Returns `Ok(vec![])` if the endpoint returns an empty list.
-/// Returns `Err` on network failure or non-2xx status.
-pub async fn fetch_models(base_url: &str, api_key: &str) -> anyhow::Result<Vec<String>> {
-    let trimmed = base_url.trim().trim_end_matches('/');
-    
-    // 1. 尝试直接拼接 /models
-    let url1 = format!("{}/models", trimmed);
-    match do_fetch_models(&url1, api_key).await {
-        Ok(models) => Ok(models),
-        Err(e) => {
-            // 2. 如果失败，且 URL 中没有 /v1，我们自动尝试 /v1/models 进行自愈
-            if !trimmed.ends_with("/v1") {
-                let url2 = format!("{}/v1/models", trimmed);
-                if let Ok(models) = do_fetch_models(&url2, api_key).await {
-                    return Ok(models);
-                }
-            }
-            Err(e)
-        }
-    }
-}
-
-async fn do_fetch_models(url: &str, api_key: &str) -> anyhow::Result<Vec<String>> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| Client::new());
-
-    let mut req = client
-        .get(url)
-        .header("Authorization", format!("Bearer {}", api_key));
-
-    if api_key.starts_with("sk-ant-") {
-        req = req.header("x-api-key", api_key);
-    }
-
-    let resp = req.send()
-        .await
-        .map_err(|e| anyhow::anyhow!("network error: {}", e))?;
-
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(anyhow::anyhow!("HTTP {} from /models", status.as_u16()));
-    }
-
-    let raw_text = resp.text().await
-        .map_err(|e| anyhow::anyhow!("failed to read response text: {}", e))?;
-
-    let trimmed_text = raw_text.trim();
-
-    // 检查是否返回了 HTML 内容（有些单页应用在未匹配路径时会重定向到首页 HTML）
-    if trimmed_text.starts_with("<!doctype") || trimmed_text.starts_with("<html") || trimmed_text.starts_with("<!DOCTYPE") {
-        return Err(anyhow::anyhow!("接口未提供有效的模型列表服务，返回了网页 HTML 内容"));
-    }
-
-    // 1. 尝试解析为标准的 OpenAI `{ data: [{ id: "model-name" }] }` 格式
-    if let Ok(openai_resp) = serde_json::from_str::<ModelsResponse>(trimmed_text) {
-        return Ok(openai_resp.data.into_iter().map(|m| m.id).collect());
-    }
-
-    // 2. 尝试解析为直接的扁平数组 `["model-1", "model-2"]`
-    if let Ok(flat_list) = serde_json::from_str::<Vec<String>>(trimmed_text) {
-        return Ok(flat_list);
-    }
-
-    // 3. 尝试解析为包含字符串数组的 data 字段，例如 `{ "data": ["model-1", "model-2"] }`
-    #[derive(Deserialize)]
-    struct AlternateResponse {
-        data: Vec<String>,
-    }
-    if let Ok(alt_resp) = serde_json::from_str::<AlternateResponse>(trimmed_text) {
-        return Ok(alt_resp.data);
-    }
-
-    // 4. 尝试解析为通用 Value，以提取可能的 model 信息
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed_text) {
-        if let Some(models_val) = val.get("models") {
-            if let Some(arr) = models_val.as_array() {
-                let mut list = Vec::new();
-                for item in arr {
-                    if let Some(s) = item.as_str() {
-                        list.push(s.to_string());
-                    } else if let Some(id_val) = item.get("id").and_then(|id| id.as_str()) {
-                        list.push(id_val.to_string());
+            if status.is_success() {
+                if extract_text(protocol, &body).is_some() {
+                    ModelTestResult {
+                        ok: true,
+                        latency_ms,
+                        status: Some(code),
+                        error: None,
+                    }
+                } else {
+                    ModelTestResult {
+                        ok: false,
+                        latency_ms,
+                        status: Some(code),
+                        error: Some("响应中没有文本或思考内容".to_string()),
                     }
                 }
-                if !list.is_empty() {
-                    return Ok(list);
+            } else {
+                ModelTestResult {
+                    ok: false,
+                    latency_ms,
+                    status: Some(code),
+                    error: Some(categorize_api_error(code, &body)),
+                }
+            }
+        }
+        Err(error) => ModelTestResult {
+            ok: false,
+            latency_ms: started.elapsed().as_millis() as i64,
+            status: None,
+            error: Some(protocol::categorize_network_error(&error)),
+        },
+    }
+}
+
+/// 批量测试供应商模型。并发上限 4。
+pub async fn test_supplier_models(
+    supplier: &Supplier,
+    api_key: &str,
+    client: &reqwest::Client,
+) -> Vec<ModelTestOutcome> {
+    let mut tasks: Vec<(String, Protocol)> = Vec::new();
+    for entry in &supplier.models {
+        let protocols = if entry.protocols.is_empty() {
+            if supplier.protocols.is_empty() {
+                Protocol::ALL.to_vec()
+            } else {
+                supplier.protocols.clone()
+            }
+        } else {
+            entry.protocols.clone()
+        };
+        for protocol in protocols {
+            tasks.push((entry.model.clone(), protocol));
+        }
+    }
+
+    if tasks.is_empty() {
+        return Vec::new();
+    }
+
+    let semaphore = Arc::new(Semaphore::new(4));
+    let mut set = JoinSet::new();
+    for (model, protocol) in tasks {
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let supplier = supplier.clone();
+        let api_key = api_key.to_string();
+        let client = client.clone();
+        set.spawn(async move {
+            let _permit = permit;
+            let result = test_model(&supplier, &api_key, &model, protocol, &client).await;
+            ModelTestOutcome {
+                model,
+                protocol,
+                result,
+            }
+        });
+    }
+
+    let mut outcomes = Vec::new();
+    while let Some(result) = set.join_next().await {
+        if let Ok(outcome) = result {
+            outcomes.push(outcome);
+        }
+    }
+    outcomes.sort_by(|left, right| {
+        left.model
+            .cmp(&right.model)
+            .then(left.protocol.cmp(&right.protocol))
+    });
+    outcomes
+}
+
+pub fn extract_text(protocol: Protocol, body: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(body).ok()?;
+    let text = match protocol {
+        Protocol::ChatCompletions => chat_text(&value),
+        Protocol::Responses => responses_text(&value),
+        Protocol::Messages => messages_text(&value),
+    };
+    text.filter(|text| !text.trim().is_empty())
+}
+
+fn chat_text(value: &Value) -> Option<String> {
+    let choice = value.get("choices")?.as_array()?.first()?;
+    if let Some(message) = choice.get("message") {
+        if let Some(text) = message.get("content").and_then(content_text) {
+            return Some(text);
+        }
+        for key in ["reasoning_content", "reasoning"] {
+            if let Some(text) = message.get(key).and_then(|value| value.as_str())
+                && !text.trim().is_empty()
+            {
+                return Some(text.to_string());
+            }
+        }
+    }
+    choice
+        .get("text")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+}
+
+fn responses_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.get("output_text").and_then(|value| value.as_str())
+        && !text.trim().is_empty()
+    {
+        return Some(text.to_string());
+    }
+    let output = value.get("output")?.as_array()?;
+    let mut reasoning = None;
+    for item in output {
+        if let Some(content) = item.get("content").and_then(|value| value.as_array()) {
+            for part in content {
+                if let Some(text) = part.get("text").and_then(|value| value.as_str())
+                    && !text.trim().is_empty()
+                {
+                    return Some(text.to_string());
+                }
+            }
+        }
+        if let Some(summary) = item.get("summary").and_then(|value| value.as_array()) {
+            for part in summary {
+                if let Some(text) = part.get("text").and_then(|value| value.as_str())
+                    && !text.trim().is_empty()
+                {
+                    reasoning = Some(text.to_string());
                 }
             }
         }
     }
+    reasoning
+}
 
-    // 解析失败，输出具体的响应文本前缀以供排查
-    let truncated_text = if trimmed_text.chars().count() > 150 {
-        let prefix: String = trimmed_text.chars().take(150).collect();
-        format!("{}...", prefix)
+fn messages_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.get("completion").and_then(|value| value.as_str())
+        && !text.trim().is_empty()
+    {
+        return Some(text.to_string());
+    }
+    let content = value.get("content")?.as_array()?;
+    let mut thinking = None;
+    for block in content {
+        let kind = block
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        if kind == "text"
+            && let Some(text) = block.get("text").and_then(|value| value.as_str())
+            && !text.trim().is_empty()
+        {
+            return Some(text.to_string());
+        }
+        if kind == "thinking"
+            && let Some(text) = block.get("thinking").and_then(|value| value.as_str())
+            && !text.trim().is_empty()
+        {
+            thinking = Some(text.to_string());
+        }
+    }
+    thinking
+}
+
+fn content_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    let parts = value.as_array()?;
+    let mut result = String::new();
+    for part in parts {
+        if let Some(text) = part.get("text").and_then(|value| value.as_str()) {
+            result.push_str(text);
+        }
+    }
+    if result.is_empty() {
+        None
     } else {
-        trimmed_text.to_string()
-    };
-
-    Err(anyhow::anyhow!(
-        "failed to parse /models response: error decoding JSON. Raw response:\n{}",
-        truncated_text
-    ))
-}
-
-#[derive(Serialize)]
-struct ChatRequest {
-    model: String,
-    messages: Vec<Message>,
-    max_tokens: Option<u32>,
-}
-
-#[derive(Serialize)]
-struct Message {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct ChatResponse {
-    choices: Option<Vec<Choice>>,
-    error: Option<ApiError>,
-}
-
-#[derive(Deserialize)]
-struct Choice {
-    message: ChoiceMessage,
-}
-
-#[derive(Deserialize)]
-struct ChoiceMessage {
-    #[serde(default)]
-    content: Option<MessageContent>,
-    #[serde(default)]
-    reasoning_content: Option<String>,
-    #[serde(default)]
-    reasoning: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum MessageContent {
-    Text(String),
-    Parts(Vec<ContentPart>),
-}
-
-#[derive(Deserialize)]
-struct ContentPart {
-    #[serde(default)]
-    text: String,
-    #[serde(default)]
-    reasoning: String,
-    #[serde(default)]
-    reasoning_content: String,
-}
-
-#[derive(Deserialize)]
-struct ApiError {
-    message: String,
-}
-
-// ── Anthropic Messages structs ──────────────────────────────────────────────
-#[derive(Serialize)]
-struct AnthropicMessagesRequest {
-    model: String,
-    messages: Vec<AnthropicMessage>,
-    max_tokens: u32,
-}
-
-#[derive(Serialize)]
-struct AnthropicMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct AnthropicMessagesResponse {
-    content: Option<Vec<AnthropicContent>>,
-    error: Option<AnthropicError>,
-}
-
-#[derive(Deserialize)]
-struct AnthropicContent {
-    #[serde(default)]
-    text: String,
-    #[serde(default)]
-    thinking: String,
-}
-
-#[derive(Deserialize)]
-struct AnthropicError {
-    message: String,
-}
-
-fn categorize_network_error(err: reqwest::Error) -> String {
-    let msg = err.to_string().to_lowercase();
-    if msg.contains("dns") || msg.contains("resolve") || msg.contains("unreachable") {
-        "unreachable — DNS failure or connection refused".to_string()
-    } else if err.is_timeout() || msg.contains("timeout") || msg.contains("deadline") {
-        "timeout — server did not respond within 10s".to_string()
-    } else if msg.contains("connection refused") {
-        "connection refused".to_string()
-    } else {
-        format!("network error: {}", err)
+        Some(result)
     }
 }
 
-fn categorize_api_error(err: &ApiError) -> String {
-    let msg = err.message.to_lowercase();
-    if msg.contains("model") && (msg.contains("not found") || msg.contains("does not exist")) {
-        format!("model not found: {}", err.message)
-    } else if msg.contains("auth") || msg.contains("key") || msg.contains("credential") {
-        format!("auth error: {}", err.message)
-    } else {
-        format!("API error: {}", err.message)
+fn categorize_api_error(status: u16, body: &str) -> String {
+    let detail = truncate(body, 200);
+    match status {
+        401 | 403 => "鉴权失败，请检查 API Key".to_string(),
+        404 => "模型或端点不存在".to_string(),
+        429 => "请求过于频繁，稍后重试".to_string(),
+        _ => {
+            if detail.is_empty() {
+                format!("HTTP {status}")
+            } else {
+                format!("HTTP {status}: {detail}")
+            }
+        }
     }
 }
 
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
+fn truncate(value: &str, limit: usize) -> String {
+    let value = value.trim();
+    if value.chars().count() <= limit {
+        value.to_string()
     } else {
-        let truncated: String = s.chars().take(n).collect();
-        format!("{}…", truncated)
+        let truncated: String = value.chars().take(limit).collect();
+        format!("{truncated}…")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path, header};
+    use crate::supplier::Supplier;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn test_supplier(base_url: String) -> Supplier {
+        Supplier {
+            id: "supplier-1".to_string(),
+            name: "relay".to_string(),
+            base_url,
+            keys: vec![crate::supplier::SupplierKey {
+                id: "k1".to_string(),
+                name: "默认".to_string(),
+                api_key: "sk-test".to_string(),
+                remark: None,
+            }],
+            default_key_id: Some("k1".to_string()),
+            protocols: vec![Protocol::ChatCompletions],
+            remark: None,
+            last_probe: None,
+            models: Vec::new(),
+        }
+    }
 
     #[tokio::test]
-    async fn test_success() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "choices": [{
-                "message": {
-                    "content": "Hi there!"
-                }
-            }]
-        });
-
+    async fn test_model_accepts_chat_text() {
+        let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
-            .and(header("Authorization", "Bearer sk-test"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{ "message": { "content": "hello" } }]
+            })))
+            .mount(&server)
             .await;
 
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4", false).await;
-
-        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
-        assert_eq!(result.response, "Hi there!");
+        let result = test_model(
+            &test_supplier(server.uri()),
+            "sk-test",
+            "test-model",
+            Protocol::ChatCompletions,
+            &reqwest::Client::new(),
+        )
+        .await;
+        assert!(result.ok);
+        assert_eq!(result.status, Some(200));
         assert!(result.latency_ms >= 0);
     }
 
     #[tokio::test]
-    async fn test_openai_reasoning_content_counts_as_success() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "choices": [{
-                "message": {
-                    "content": null,
-                    "reasoning_content": "thinking about hi"
-                }
-            }]
-        });
-
+    async fn test_model_reports_auth_error() {
+        let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
+            .respond_with(
+                ResponseTemplate::new(401).set_body_json(serde_json::json!({"error": "no"})),
+            )
+            .mount(&server)
             .await;
 
-        let tester = Tester::new();
-        let result = tester
-            .test(&mock_server.uri(), "sk-test", "gpt-test", false)
-            .await;
-
-        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
-        assert_eq!(result.response, "thinking about hi");
-    }
-
-    #[tokio::test]
-    async fn test_openai_reasoning_parts_prefer_text() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "choices": [{
-                "message": {
-                    "content": [
-                        {"type": "reasoning", "reasoning": "hidden thought"},
-                        {"type": "text", "text": "Hello"}
-                    ]
-                }
-            }]
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester
-            .test(&mock_server.uri(), "sk-test", "gpt-test", false)
-            .await;
-
-        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
-        assert_eq!(result.response, "Hello");
-    }
-
-    #[tokio::test]
-    async fn test_truncates_long_response() {
-        let mock_server = MockServer::start().await;
-        let long_content = "x".repeat(100);
-        let response_body = serde_json::json!({
-            "choices": [{
-                "message": {
-                    "content": long_content
-                }
-            }]
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4", false).await;
-
-        assert!(result.ok);
-        assert_eq!(result.response.chars().count(), 51); // 50 chars + 1 ellipsis char
-        assert!(result.response.ends_with('…'));
-    }
-
-    #[tokio::test]
-    async fn test_auth_error_401() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-bad", "gpt-4", false).await;
-
+        let result = test_model(
+            &test_supplier(server.uri()),
+            "sk-test",
+            "test-model",
+            Protocol::ChatCompletions,
+            &reqwest::Client::new(),
+        )
+        .await;
         assert!(!result.ok);
-        assert!(result.error.contains("auth") || result.error.contains("key"));
+        assert!(result.error.unwrap().contains("鉴权"));
     }
 
-    #[tokio::test]
-    async fn test_auth_error_403() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(403))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-bad", "gpt-4", false).await;
-
-        assert!(!result.ok);
-        assert!(result.error.contains("auth") || result.error.contains("key"));
-    }
-
-    #[tokio::test]
-    async fn test_not_found_404() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "gpt-4", false).await;
-
-        assert!(!result.ok);
-        assert!(result.error.contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn test_model_not_found() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "error": {
-                "message": "The model 'bad-model' does not exist"
-            }
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-test", "bad-model", false).await;
-
-        assert!(!result.ok);
-        assert!(result.error.to_lowercase().contains("model"));
-        assert!(result.error.to_lowercase().contains("not found") || result.error.to_lowercase().contains("does not exist"));
-    }
-
-    #[tokio::test]
-    async fn test_network_error() {
-        let tester = Tester::new();
-        // Use a non-existent domain to trigger a DNS lookup failure immediately
-        let result = tester.test("http://cxc-nonexistent-domain-123.com", "sk-test", "gpt-4", false).await;
-
-        assert!(!result.ok);
-        assert!(
-            result.error.contains("unreachable")
-                || result.error.contains("DNS")
-                || result.error.contains("network")
-                || result.error.contains("timeout")
-                || result.error.contains("connection refused")
+    #[test]
+    fn extracts_chat_text_and_reasoning() {
+        let body = r#"{"choices":[{"message":{"content":"hello"}}]}"#;
+        assert_eq!(
+            extract_text(Protocol::ChatCompletions, body).as_deref(),
+            Some("hello")
+        );
+        let body = r#"{"choices":[{"message":{"content":null,"reasoning_content":"think"}}]}"#;
+        assert_eq!(
+            extract_text(Protocol::ChatCompletions, body).as_deref(),
+            Some("think")
         );
     }
 
-    // ── fetch_models tests ───────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn test_fetch_models_success() {
-        let mock_server = MockServer::start().await;
-        let body = serde_json::json!({
-            "data": [
-                { "id": "gpt-4o" },
-                { "id": "gpt-4" }
-            ]
-        });
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .and(header("Authorization", "Bearer sk-test"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(body))
-            .mount(&mock_server)
-            .await;
-
-        let result = fetch_models(&mock_server.uri(), "sk-test").await;
-        assert!(result.is_ok(), "expected Ok, got {:?}", result);
-        let models = result.unwrap();
-        assert_eq!(models, vec!["gpt-4o", "gpt-4"]);
+    #[test]
+    fn extracts_messages_text_and_thinking() {
+        let body = r#"{"content":[{"type":"text","text":"hello"}]}"#;
+        assert_eq!(
+            extract_text(Protocol::Messages, body).as_deref(),
+            Some("hello")
+        );
+        let body = r#"{"content":[{"type":"thinking","thinking":"think"}]}"#;
+        assert_eq!(
+            extract_text(Protocol::Messages, body).as_deref(),
+            Some("think")
+        );
     }
 
-    #[tokio::test]
-    async fn test_fetch_models_empty_list() {
-        let mock_server = MockServer::start().await;
-        let body = serde_json::json!({ "data": [] });
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(body))
-            .mount(&mock_server)
-            .await;
-
-        let result = fetch_models(&mock_server.uri(), "sk-test").await;
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_fetch_models_auth_error() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&mock_server)
-            .await;
-
-        let result = fetch_models(&mock_server.uri(), "sk-bad").await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("401"));
-    }
-
-    #[tokio::test]
-    async fn test_fetch_models_network_error() {
-        // Non-existent domain — DNS failure
-        let result = fetch_models("http://cxc-nonexistent-domain-456.com", "sk-test").await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("network error"));
-    }
-
-    #[tokio::test]
-    async fn test_claude_success() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "content": [{
-                "type": "text",
-                "text": "Hello, Human!"
-            }]
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .and(header("x-api-key", "sk-ant-claude"))
-            .and(header("anthropic-version", "2023-06-01"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester.test(&mock_server.uri(), "sk-ant-claude", "claude-3-opus", true).await;
-
-        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
-        assert_eq!(result.response, "Hello, Human!");
-        assert!(result.latency_ms >= 0);
-    }
-
-    #[tokio::test]
-    async fn test_claude_thinking_only_counts_as_success() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "content": [{
-                "type": "thinking",
-                "thinking": ""
-            }]
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester
-            .test(&mock_server.uri(), "sk-relay", "deepseek-v4", true)
-            .await;
-
-        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
-        assert_eq!(result.response, "");
-    }
-
-    #[tokio::test]
-    async fn test_claude_thinking_then_text_prefers_text() {
-        let mock_server = MockServer::start().await;
-        let response_body = serde_json::json!({
-            "content": [
-                {"type": "thinking", "thinking": "draft"},
-                {"type": "text", "text": "Hi"}
-            ]
-        });
-
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
-            .mount(&mock_server)
-            .await;
-
-        let tester = Tester::new();
-        let result = tester
-            .test(&mock_server.uri(), "sk-relay", "glm-5.3", true)
-            .await;
-
-        assert!(result.ok, "Expected ok to be true, got error: {}", result.error);
-        assert_eq!(result.response, "Hi");
+    #[test]
+    fn extracts_responses_output() {
+        let body = r#"{"output":[{"content":[{"type":"output_text","text":"hello"}]}]}"#;
+        assert_eq!(
+            extract_text(Protocol::Responses, body).as_deref(),
+            Some("hello")
+        );
     }
 }

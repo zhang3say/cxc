@@ -1,1084 +1,298 @@
-use crate::config::{claude_model_for_context, Provider};
-use crate::target::{TargetAdapter, TargetConfig, TargetError};
-use serde_json::{self, json};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "windows")]
-use std::sync::OnceLock;
 
-pub struct ClaudeAdapter {
-    claude_dir: PathBuf,
-}
+use crate::agent::{AgentConfig, AgentKind, ClaudeModels, claude_model_for_context};
+use crate::config::Env;
+use crate::supplier::{Supplier, SupplierKey};
+
+use super::{
+    AgentAdapter, TargetError, backup, read_to_string, resolve_config_dir, write_secure_file,
+};
+
+pub struct ClaudeAdapter;
 
 impl ClaudeAdapter {
-    pub fn new() -> Result<Self, TargetError> {
-        let claude_dir = if let Ok(test_dir) = std::env::var("CXC_TEST_CLAUDE_DIR") {
-            PathBuf::from(test_dir)
-        } else {
-            // Load global cxc config to check for custom claude directory and source settings
-            let cfg = crate::config::load().ok();
-            Self::resolve_claude_dir(cfg.as_ref())?
-        };
-        Ok(Self { claude_dir })
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ClaudeAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AgentAdapter for ClaudeAdapter {
+    fn kind(&self) -> AgentKind {
+        AgentKind::Claude
     }
 
-    pub fn new_from_config(cfg: &crate::config::Config) -> Result<Self, TargetError> {
-        let claude_dir = if let Ok(test_dir) = std::env::var("CXC_TEST_CLAUDE_DIR") {
-            PathBuf::from(test_dir)
-        } else {
-            Self::resolve_claude_dir(Some(cfg))?
-        };
-        Ok(Self { claude_dir })
+    fn config_path(&self, env: Env, custom_dir: Option<&Path>) -> Result<PathBuf, TargetError> {
+        Ok(resolve_config_dir(AgentKind::Claude, env, custom_dir)?.join("settings.json"))
     }
 
-    fn resolve_claude_dir(cfg: Option<&crate::config::Config>) -> Result<PathBuf, TargetError> {
-        let source = cfg
-            .map(crate::config::effective_source)
-            .unwrap_or(crate::config::SOURCE_WSL);
-
-        let custom_dir = cfg.and_then(|c| {
-            if !c.claude_custom_dir.is_empty() {
-                let mut path_str = c.claude_custom_dir.clone();
-
-                // If running on Linux (e.g., WSL) and user configured a Windows-style path (like C:\...),
-                // automatically convert it to a WSL mount path (like /mnt/c/...)
-                #[cfg(target_os = "linux")]
-                {
-                    if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
-                        let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
-                        let remaining = &path_str[2..];
-                        let normalized = remaining.replace('\\', "/");
-                        path_str = format!("/mnt/{}{}", drive, normalized);
-                    } else {
-                        path_str = path_str.replace('\\', "/");
-                    }
-                }
-
-                return Some(PathBuf::from(path_str));
-            }
-            None
-        });
-
-        if let Some(dir) = custom_dir {
-            Ok(dir)
-        } else {
-            // No custom dir: use smart defaults based on claude_source
-            Self::default_claude_dir(source)
-        }
-    }
-
-    /// Resolve the default Claude config directory based on `claude_source`.
-    ///
-    /// - `"wsl"` on Linux  → `~/.claude` (local WSL home)
-    /// - `"app"` on Linux  → `/mnt/c/Users/<username>/.claude` (Windows host via WSL mount)
-    /// - `"app"` on Windows → `%USERPROFILE%\.claude`
-    /// - `"wsl"` on Windows → try `\\wsl.localhost\<distro>\home\<user>\.claude`
-    fn default_claude_dir(source: &str) -> Result<PathBuf, TargetError> {
-        #[cfg(target_os = "linux")]
-        {
-            if source == "app" {
-                // Try to find the Windows home directory via common WSL mount points
-                if let Some(win_dir) = Self::detect_windows_claude_dir() {
-                    return Ok(win_dir);
-                }
-                return Err(TargetError::ParseError("Unable to locate Windows home directory automatically from within WSL. Please specify a custom directory.".to_string()));
-            }
-            // source == "wsl" or fallback: use native Linux home
-            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
-            return Ok(home.join(".claude"));
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            if source == "wsl" {
-                // Try to find WSL home directory via UNC path
-                if let Some(wsl_dir) = Self::cached_wsl_claude_dir() {
-                    return Ok(wsl_dir);
-                }
-                return Err(TargetError::ParseError("Unable to locate WSL home directory automatically. Please specify a custom directory.".to_string()));
-            }
-            // source == "app" or fallback: use native Windows home
-            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
-            return Ok(home.join(".claude"));
-        }
-
-        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-        {
-            let _ = source;
-            let home = dirs::home_dir().ok_or(TargetError::NoHomeDir)?;
-            Ok(home.join(".claude"))
-        }
-    }
-
-    /// Detect Windows Claude directory from within WSL via /mnt/c/Users/<username>/.claude
-    #[cfg(target_os = "linux")]
-    fn detect_windows_claude_dir() -> Option<PathBuf> {
-        let username = std::env::var("USER").ok()?;
-        // Try the most common mount point first
-        let candidate = PathBuf::from(format!("/mnt/c/Users/{}/.claude", username));
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        let home = PathBuf::from(format!("/mnt/c/Users/{}", username));
-        if home.exists() {
-            return Some(candidate);
-        }
-        // Try scanning /mnt/c/Users/ for a matching directory
-        if let Ok(entries) = fs::read_dir("/mnt/c/Users") {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_lowercase();
-                if name == username.to_lowercase() {
-                    let claude_dir = entry.path().join(".claude");
-                    return Some(claude_dir);
-                }
-            }
-        }
-        None
-    }
-
-    #[cfg(target_os = "windows")]
-    fn cached_wsl_claude_dir() -> Option<PathBuf> {
-        static WSL_CLAUDE_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-        WSL_CLAUDE_DIR.get_or_init(Self::detect_wsl_claude_dir).clone()
-    }
-
-    /// Detect WSL Claude directory from Windows via \\wsl.localhost\<distro>\home\<user>\.claude
-    #[cfg(target_os = "windows")]
-    fn detect_wsl_claude_dir() -> Option<PathBuf> {
-        let mut first_valid_home: Option<PathBuf> = None;
-
-        // 0. Try using wsl.exe to get the home path dynamically
-        if let Ok(output) = std::process::Command::new("wsl")
-            .args(["-e", "sh", "-lc", "wslpath -w \"$HOME\""])
-            .output()
-        {
-            if output.status.success() {
-                if let Some(candidate) =
-                    Self::wsl_home_output_to_config_dir(&output.stdout, ".claude")
-                {
-                    if candidate.exists() {
-                        return Some(candidate);
-                    }
-                    first_valid_home = Some(candidate);
-                }
-            }
-        }
-
-        // Helper function to scan a base UNC path (like \\wsl.localhost or \\wsl$)
-        let mut scan_unc_path = |base_path: &str| -> Option<PathBuf> {
-            let base = Path::new(base_path);
-            if !base.exists() {
-                return None;
-            }
-
-            // Read all distros (subdirectories of the UNC base)
-            if let Ok(distro_entries) = fs::read_dir(base) {
-                for distro_entry in distro_entries.flatten() {
-                    let distro_path = distro_entry.path();
-                    let home_path = distro_path.join("home");
-                    if home_path.exists() {
-                        // Read all users in /home/
-                        if let Ok(user_entries) = fs::read_dir(&home_path) {
-                            for user_entry in user_entries.flatten() {
-                                let user_path = user_entry.path();
-                                let claude_dir = user_path.join(".claude");
-                                if claude_dir.exists() {
-                                    return Some(claude_dir);
-                                }
-                                if first_valid_home.is_none() && user_path.exists() {
-                                    first_valid_home = Some(claude_dir);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        };
-
-        // 1. Try modern wsl.localhost path first
-        if let Some(path) = scan_unc_path("\\\\wsl.localhost") {
-            return Some(path);
-        }
-
-        // 2. Fall back to legacy wsl$ path
-        if let Some(path) = scan_unc_path("\\\\wsl$") {
-            return Some(path);
-        }
-
-        // 3. Last fallback: try hardcoded approach using USERNAME env
-        if let Some(username) = std::env::var("USERNAME").ok() {
-            let username = username.to_lowercase();
-            let distros = [
-                "Ubuntu",
-                "Debian",
-                "openSUSE-Leap",
-                "kali-linux",
-                "Ubuntu-22.04",
-                "Ubuntu-24.04",
-            ];
-            for distro in &distros {
-                let candidate1 = PathBuf::from(format!(
-                    "\\\\wsl.localhost\\{}\\home\\{}\\.claude",
-                    distro, username
-                ));
-                if candidate1.exists() {
-                    return Some(candidate1);
-                }
-                let home1 =
-                    PathBuf::from(format!("\\\\wsl.localhost\\{}\\home\\{}", distro, username));
-                if first_valid_home.is_none() && home1.exists() {
-                    first_valid_home = Some(candidate1);
-                }
-                let candidate2 =
-                    PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}\\.claude", distro, username));
-                if candidate2.exists() {
-                    return Some(candidate2);
-                }
-                let home2 = PathBuf::from(format!("\\\\wsl$\\{}\\home\\{}", distro, username));
-                if first_valid_home.is_none() && home2.exists() {
-                    first_valid_home = Some(candidate2);
-                }
-            }
-        }
-
-        first_valid_home
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    fn wsl_home_output_to_config_dir(output: &[u8], config_dir_name: &str) -> Option<PathBuf> {
-        let path = String::from_utf8_lossy(output).trim().to_string();
-        if path.is_empty() || path == "~" || path.contains("\\~") || path.contains("/~") {
-            return None;
-        }
-        Some(PathBuf::from(path).join(config_dir_name))
-    }
-
-    pub fn new_with_dir<P: AsRef<Path>>(dir: P) -> Self {
-        Self {
-            claude_dir: dir.as_ref().to_path_buf(),
-        }
-    }
-
-    fn settings_path(&self) -> PathBuf {
-        self.claude_dir.join("settings.json")
-    }
-
-    /// Write a Provider's configuration to Claude CLI settings.json
-    pub fn write_provider(&self, provider: &Provider) -> Result<(), TargetError> {
-        let config = TargetConfig {
-            base_url: provider.base_url.clone(),
-            api_key: provider.api_key.clone(),
-            model: provider.model.clone(),
-            wire_api: String::new(), // Claude doesn't use this field
-        };
-        self.write_with_provider(&config, provider, true)
-    }
-
-    /// Internal write method that has access to full Provider for claude_models
-    fn write_with_provider(
+    fn apply(
         &self,
-        config: &TargetConfig,
-        provider: &Provider,
-        manage_effort: bool,
+        supplier: &Supplier,
+        account: &SupplierKey,
+        config: &AgentConfig,
+        custom_dir: Option<&Path>,
+        env: Env,
     ) -> Result<(), TargetError> {
-        // Check if .claude directory exists
-        if !self.claude_dir.exists() {
-            let reason = if cfg!(target_os = "linux") && self.claude_dir.starts_with("/mnt/c") {
-                "Windows 主机上未安装 Claude CLI".to_string()
-            } else if cfg!(target_os = "windows")
-                && self.claude_dir.to_string_lossy().contains("wsl")
-            {
-                "WSL 中未安装 Claude CLI".to_string()
-            } else {
-                "Claude CLI 未安装或未初始化".to_string()
-            };
-
-            let suggestion = if cfg!(target_os = "linux") && self.claude_dir.starts_with("/mnt/c") {
-                "在 Windows 上安装 Claude CLI，或修改 CXC 配置：claude_source = \"wsl\"".to_string()
-            } else if cfg!(target_os = "windows")
-                && self.claude_dir.to_string_lossy().contains("wsl")
-            {
-                "在 WSL 中安装 Claude CLI，或修改 CXC 配置：claude_source = \"app\"".to_string()
-            } else {
-                "安装 Claude CLI：https://claude.ai/download".to_string()
-            };
-
-            return Err(TargetError::ClaudeConfigDirNotFound {
-                path: self.claude_dir.clone(),
-                reason,
-                suggestion,
-            });
+        if config.protocol != crate::protocol::Protocol::Messages {
+            return Err(TargetError::ParseError(
+                "Claude 只支持 Anthropic Messages 协议".to_string(),
+            ));
         }
 
-        let settings_path = self.settings_path();
+        let dir = resolve_config_dir(AgentKind::Claude, env, custom_dir)?;
+        fs::create_dir_all(&dir).map_err(|error| TargetError::WriteError {
+            path: dir.clone(),
+            source: error,
+        })?;
+        let settings_path = dir.join("settings.json");
+        backup(&settings_path)?;
 
-        // Read existing settings or create empty object
-        let mut settings: serde_json::Value = if settings_path.exists() {
-            // Backup existing file
-            backup(&settings_path)?;
-
-            let data =
-                fs::read_to_string(&settings_path).map_err(|err| TargetError::ReadError {
-                    path: settings_path.clone(),
-                    source: err,
-                })?;
-
-            serde_json::from_str(&data).map_err(|e| TargetError::ClaudeConfigInvalid {
-                path: settings_path.clone(),
-                details: format!("JSON 解析失败: {}", e),
+        let mut settings: Value = if settings_path.exists() {
+            let data = read_to_string(&settings_path)?;
+            serde_json::from_str(&data).map_err(|error| {
+                TargetError::ParseError(format!("settings.json 解析失败: {error}"))
             })?
         } else {
             json!({})
         };
 
-        // Ensure env object exists
-        if !settings.get("env").map(|v| v.is_object()).unwrap_or(false) {
+        if !settings.get("env").map(Value::is_object).unwrap_or(false) {
             settings["env"] = json!({});
         }
+        let env_obj = settings["env"].as_object_mut().unwrap();
 
-        let env = settings["env"].as_object_mut().unwrap();
+        env_obj.insert(
+            "ANTHROPIC_BASE_URL".to_string(),
+            json!(supplier.base_url.trim()),
+        );
+        env_obj.insert(
+            "ANTHROPIC_AUTH_TOKEN".to_string(),
+            json!(account.api_key.trim()),
+        );
+        env_obj.remove("ANTHROPIC_API_KEY");
 
-        // Update base_url
-        env.insert("ANTHROPIC_BASE_URL".to_string(), json!(config.base_url));
+        let context = config.context_tokens();
+        let main = config.model.trim();
+        let opus = tier_model(
+            config.claude_models.as_ref(),
+            |models| models.opus.as_ref(),
+            main,
+            context,
+        );
+        let sonnet = tier_model(
+            config.claude_models.as_ref(),
+            |models| models.sonnet.as_ref(),
+            main,
+            context,
+        );
+        let haiku = tier_model(
+            config.claude_models.as_ref(),
+            |models| models.haiku.as_ref(),
+            main,
+            context,
+        );
+        let subagent = tier_model(
+            config.claude_models.as_ref(),
+            |models| models.subagent.as_ref(),
+            main,
+            context,
+        );
 
-        // Update authentication field
-        // Force write to ANTHROPIC_AUTH_TOKEN and remove ANTHROPIC_API_KEY
-        env.insert("ANTHROPIC_AUTH_TOKEN".to_string(), json!(config.api_key));
-        env.remove("ANTHROPIC_API_KEY");
+        env_obj.insert(
+            "ANTHROPIC_MODEL".to_string(),
+            json!(claude_model_for_context(main, context)),
+        );
+        env_obj.insert("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), json!(opus));
+        env_obj.insert("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), json!(sonnet));
+        env_obj.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_FABLE_MODEL".to_string(),
+            json!(claude_model_for_context(main, context)),
+        );
+        env_obj.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(subagent));
 
-        // 各档留空则写入主模型。Fable 不再单独配置，始终跟主模型。
-        let context = provider.context_tokens();
-        let main_raw = &provider.model;
-        let opus = claude_tier_model(provider, |m| m.opus.as_ref(), main_raw, context);
-        let sonnet = claude_tier_model(provider, |m| m.sonnet.as_ref(), main_raw, context);
-        let haiku = claude_tier_model(provider, |m| m.haiku.as_ref(), main_raw, context);
-        let subagent = claude_tier_model(provider, |m| m.subagent.as_ref(), main_raw, context);
-        let model = claude_model_for_context(&config.model, context);
-        let fable = claude_model_for_context(main_raw, context);
+        apply_reasoning_effort(&mut settings, config);
+        apply_compact_window(&mut settings, config);
 
-        env.insert("ANTHROPIC_MODEL".to_string(), json!(model));
-        env.insert("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), json!(opus));
-        env.insert("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), json!(sonnet));
-        env.insert("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), json!(haiku));
-        env.insert("ANTHROPIC_DEFAULT_FABLE_MODEL".to_string(), json!(fable));
-        env.insert("CLAUDE_CODE_SUBAGENT_MODEL".to_string(), json!(subagent));
-
-        apply_reasoning_effort(&mut settings, provider, manage_effort);
-        apply_compact_window(&mut settings, provider, manage_effort);
-
-        // Write settings
-        let out = serde_json::to_string_pretty(&settings)
-            .map_err(|e| TargetError::SerializeError(e.to_string()))?;
-
-        write_secure_file(&settings_path, out.as_bytes()).map_err(|err| {
+        let output = serde_json::to_string_pretty(&settings)
+            .map_err(|error| TargetError::SerializeError(error.to_string()))?;
+        write_secure_file(&settings_path, output.as_bytes()).map_err(|error| {
             TargetError::WriteError {
                 path: settings_path.clone(),
-                source: err,
+                source: error,
             }
         })?;
-
         Ok(())
     }
 }
 
-impl TargetAdapter for ClaudeAdapter {
-    fn name(&self) -> &'static str {
-        "Claude CLI"
-    }
-
-    fn read(&self) -> Result<TargetConfig, TargetError> {
-        let settings_path = self.settings_path();
-        let data = fs::read_to_string(&settings_path).map_err(|err| TargetError::ReadError {
-            path: settings_path.clone(),
-            source: err,
-        })?;
-
-        let settings: serde_json::Value =
-            serde_json::from_str(&data).map_err(|e| TargetError::ParseError(e.to_string()))?;
-
-        let env = settings
-            .get("env")
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| TargetError::ParseError("Missing or invalid env field".to_string()))?;
-
-        // Read base_url
-        let base_url = env
-            .get("ANTHROPIC_BASE_URL")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        // Read api_key from ANTHROPIC_AUTH_TOKEN
-        let api_key = env
-            .get("ANTHROPIC_AUTH_TOKEN")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        // Read model (prefer ANTHROPIC_MODEL, then OPUS, SONNET, FABLE, HAIKU)
-        let model = env
-            .get("ANTHROPIC_MODEL")
-            .or_else(|| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
-            .or_else(|| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
-            .or_else(|| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
-            .or_else(|| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        Ok(TargetConfig {
-            base_url,
-            api_key,
-            model,
-            wire_api: String::new(), // Claude doesn't use this field
-        })
-    }
-
-    fn write(&self, config: &TargetConfig) -> Result<(), TargetError> {
-        // Create a minimal provider from TargetConfig
-        // This is used when write() is called directly without a Provider
-        let provider = Provider {
-            name: String::new(),
-            base_url: config.base_url.clone(),
-            api_key: config.api_key.clone(),
-            model: config.model.clone(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        self.write_with_provider(config, &provider, false)
-    }
-}
-
-fn claude_tier_model(
-    provider: &Provider,
-    pick: impl Fn(&crate::config::ClaudeModels) -> Option<&String>,
+fn tier_model(
+    models: Option<&ClaudeModels>,
+    pick: impl Fn(&ClaudeModels) -> Option<&String>,
     main: &str,
     context: Option<u64>,
 ) -> String {
-    let explicit = provider
-        .claude_models
-        .as_ref()
+    let explicit = models
         .and_then(pick)
         .map(|value| value.trim())
         .filter(|value| !value.is_empty());
     claude_model_for_context(explicit.unwrap_or(main), context)
 }
 
-/// 有上下文和压缩比例时写 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`。
-/// 两者缺一，或比例不设置，启用卡片时删掉该环境变量。
-fn apply_compact_window(settings: &mut serde_json::Value, provider: &Provider, manage: bool) {
-    let Some(env) = settings.get_mut("env").and_then(|value| value.as_object_mut()) else {
+fn apply_compact_window(settings: &mut Value, config: &AgentConfig) {
+    let Some(env_obj) = settings.get_mut("env").and_then(Value::as_object_mut) else {
         return;
     };
-    if let Some(tokens) = provider.compact_token_limit() {
-        env.insert(
+    if let Some(tokens) = config.compact_token_limit() {
+        env_obj.insert(
             "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
             json!(tokens.to_string()),
         );
-        return;
-    }
-    if manage {
-        env.remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+    } else {
+        env_obj.remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
     }
 }
 
-/// 有推理档位时只写 `env.CLAUDE_CODE_EFFORT_LEVEL`，并删掉顶层 `effortLevel`。
-/// 环境变量是 Claude Code 的全局覆盖，换模型仍然继承这一档。
-/// 同时去掉各模型上的 `effortLevel`，避免按模型的值盖住全局档位；`maxEffortLevel` 和其他键保留。
-/// 启用卡片且没填时删除顶层 `effortLevel` 和该环境变量，不改 `modelSettings`。
-fn apply_reasoning_effort(
-    settings: &mut serde_json::Value,
-    provider: &Provider,
-    manage_effort: bool,
-) {
-    let Some(level) = provider.reasoning_effort_level() else {
-        if manage_effort {
-            if let Some(obj) = settings.as_object_mut() {
-                obj.remove("effortLevel");
-            }
-            if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
-                env.remove("CLAUDE_CODE_EFFORT_LEVEL");
-            }
+fn apply_reasoning_effort(settings: &mut Value, config: &AgentConfig) {
+    let Some(level) = config.reasoning_effort_level() else {
+        if let Some(object) = settings.as_object_mut() {
+            object.remove("effortLevel");
+        }
+        if let Some(env_obj) = settings.get_mut("env").and_then(Value::as_object_mut) {
+            env_obj.remove("CLAUDE_CODE_EFFORT_LEVEL");
         }
         return;
     };
-    if let Some(obj) = settings.as_object_mut() {
-        obj.remove("effortLevel");
-    }
-    if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
-        env.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), json!(level));
-    }
-    let Some(models) = settings.get_mut("modelSettings").and_then(|v| v.as_object_mut()) else {
-        return;
-    };
-    for entry in models.values_mut() {
-        if let Some(obj) = entry.as_object_mut() {
-            obj.remove("effortLevel");
-        }
-    }
-}
 
-fn backup(path: &Path) -> Result<(), TargetError> {
-    if !path.exists() {
-        return Ok(()); // nothing to backup
+    if let Some(object) = settings.as_object_mut() {
+        object.remove("effortLevel");
     }
-    let data = fs::read(path).map_err(|err| TargetError::ReadError {
-        path: path.to_path_buf(),
-        source: err,
-    })?;
-    let mut backup_path = path.to_path_buf();
-    let new_name = match path.file_name() {
-        Some(name) => {
-            let mut s = name.to_os_string();
-            s.push(".bak");
-            s
-        }
-        None => return Ok(()),
-    };
-    backup_path.set_file_name(new_name);
-
-    write_secure_file(&backup_path, &data).map_err(|err| TargetError::WriteError {
-        path: backup_path.clone(),
-        source: err,
-    })?;
-
-    Ok(())
-}
-
-fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Result<()> {
-    fs::write(&path, contents)?;
-    #[cfg(unix)]
+    if let Some(env_obj) = settings.get_mut("env").and_then(Value::as_object_mut) {
+        env_obj.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), json!(level));
+    }
+    if let Some(models) = settings
+        .get_mut("modelSettings")
+        .and_then(Value::as_object_mut)
     {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&path)?.permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(&path, perms)?;
+        for entry in models.values_mut() {
+            if let Some(object) = entry.as_object_mut() {
+                object.remove("effortLevel");
+            }
+        }
     }
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::ClaudeModels;
+    use crate::protocol::Protocol;
+    use crate::supplier::{Supplier, SupplierKey};
     use tempfile::TempDir;
 
-    fn setup_claude_dir() -> (TempDir, ClaudeAdapter) {
-        let dir = tempfile::tempdir().unwrap();
-        // Create minimal settings.json
-        let settings = json!({
-            "env": {
-                "ANTHROPIC_BASE_URL": "https://old.example.com/v1",
-                "ANTHROPIC_AUTH_TOKEN": "sk-old-key",
-                "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6"
-            },
-            "model": "opus"
-        });
-        fs::write(
-            dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
-        )
-        .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-        (dir, adapter)
-    }
-
-    #[test]
-    fn test_name_returns_claude_cli() {
-        let (_dir, adapter) = setup_claude_dir();
-        assert_eq!(adapter.name(), "Claude CLI");
-    }
-
-    #[test]
-    fn test_read() {
-        let (_dir, adapter) = setup_claude_dir();
-        let cfg = adapter.read().unwrap();
-        assert_eq!(cfg.base_url, "https://old.example.com/v1");
-        assert_eq!(cfg.api_key, "sk-old-key");
-        assert_eq!(cfg.model, "claude-opus-4-6");
-        assert_eq!(cfg.wire_api, "");
-    }
-
-    #[test]
-    fn test_write() {
-        let (dir, adapter) = setup_claude_dir();
-        let provider = Provider {
-            name: "test".to_string(),
-            base_url: "https://new.example.com/v1".to_string(),
-            api_key: "sk-new-key".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: String::new(),
+    fn key() -> SupplierKey {
+        SupplierKey {
+            id: "k1".to_string(),
+            name: "默认".to_string(),
+            api_key: "sk-ant-test".to_string(),
             remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
-
-        let got = adapter.read().unwrap();
-        assert_eq!(got.base_url, "https://new.example.com/v1");
-        assert_eq!(got.api_key, "sk-new-key");
-        assert_eq!(got.model, "gpt-4o");
-
-        // Verify backup created
-        assert!(dir.path().join("settings.json.bak").exists());
-    }
-
-    #[test]
-    fn test_write_with_claude_models() {
-        let (_dir, adapter) = setup_claude_dir();
-        let provider = Provider {
-            name: "deepseek".to_string(),
-            base_url: "https://api.deepseek.com/anthropic".to_string(),
-            api_key: "sk-deepseek".to_string(),
-            model: "deepseek-v4-pro".to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: Some(crate::config::ClaudeModels {
-                opus: Some("deepseek-v4-pro[1m]".to_string()),
-                sonnet: Some("deepseek-v4-pro[1m]".to_string()),
-                haiku: Some("deepseek-v4-flash".to_string()),
-                subagent: None,
-            }),
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
-
-        // Read back and check model fields
-        let settings_path = adapter.settings_path();
-        let data = fs::read_to_string(&settings_path).unwrap();
-        let settings: serde_json::Value = serde_json::from_str(&data).unwrap();
-        let env = settings["env"].as_object().unwrap();
-
-        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek-v4-pro");
-        assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "deepseek-v4-pro[1m]");
-        assert_eq!(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "deepseek-v4-pro[1m]");
-        assert_eq!(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "deepseek-v4-flash");
-        // 上下文未设置时保留手写的 [1m]。Fable 跟主模型，空的 Subagent 也写入主模型。
-        assert_eq!(env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "deepseek-v4-pro");
-        assert_eq!(env["CLAUDE_CODE_SUBAGENT_MODEL"], "deepseek-v4-pro");
-        assert_eq!(settings["model"], "opus");
-    }
-
-    fn sample_provider(model: &str) -> Provider {
-        Provider {
-            name: "relay".to_string(),
-            base_url: "https://api.example.com".to_string(),
-            api_key: "sk".to_string(),
-            model: model.to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
         }
     }
 
-    fn read_settings(adapter: &ClaudeAdapter) -> serde_json::Value {
-        let data = fs::read_to_string(adapter.settings_path()).unwrap();
-        serde_json::from_str(&data).unwrap()
-    }
-
-    #[test]
-    fn test_context_1m_appends_suffix_and_writes_compact_tokens() {
-        let (_dir, adapter) = setup_claude_dir();
-        let mut provider = sample_provider("deepseek-v4.1-flash[1M]");
-        provider.context_length = Some("1m".to_string());
-        provider.compact_ratio = Some(75);
-        provider.claude_models = Some(crate::config::ClaudeModels {
-            opus: Some("  ".to_string()),
-            sonnet: None,
-            haiku: Some("deepseek-v4-flash".to_string()),
-            subagent: Some(String::new()),
-        });
-        adapter.write_provider(&provider).unwrap();
-
-        let settings = read_settings(&adapter);
-        let env = settings["env"].as_object().unwrap();
-        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek-v4.1-flash[1m]");
-        assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "deepseek-v4.1-flash[1m]");
-        assert_eq!(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "deepseek-v4.1-flash[1m]");
-        assert_eq!(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "deepseek-v4-flash[1m]");
-        assert_eq!(env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "deepseek-v4.1-flash[1m]");
-        assert_eq!(env["CLAUDE_CODE_SUBAGENT_MODEL"], "deepseek-v4.1-flash[1m]");
-        assert_eq!(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "750000");
-        assert_eq!(settings["model"], "opus");
-    }
-
-    #[test]
-    fn test_other_context_length_strips_1m_suffix() {
-        let (_dir, adapter) = setup_claude_dir();
-        let mut provider = sample_provider("deepseek-v4-pro[1m][1M]");
-        provider.context_length = Some("200k".to_string());
-        provider.compact_ratio = Some(70);
-        provider.claude_models = Some(crate::config::ClaudeModels {
-            opus: Some("opus[1m]".to_string()),
-            sonnet: None,
-            haiku: None,
-            subagent: None,
-        });
-        adapter.write_provider(&provider).unwrap();
-
-        let settings = read_settings(&adapter);
-        let env = settings["env"].as_object().unwrap();
-        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek-v4-pro");
-        assert_eq!(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "opus");
-        assert_eq!(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "140000");
-    }
-
-    #[test]
-    fn test_unset_context_keeps_handwritten_suffix_and_drops_compact_window() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = json!({
-            "env": {
-                "ANTHROPIC_BASE_URL": "https://old.example.com",
-                "ANTHROPIC_AUTH_TOKEN": "sk-old",
-                "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432",
-                "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
-            },
-            "model": "glm-5.3[1m]"
-        });
-        fs::write(
-            dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
-        )
-        .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-        let mut provider = sample_provider("deepseek[1m]");
-        provider.compact_ratio = Some(80);
-        adapter.write_provider(&provider).unwrap();
-
-        let settings = read_settings(&adapter);
-        let env = settings["env"].as_object().unwrap();
-        assert_eq!(env["ANTHROPIC_MODEL"], "deepseek[1m]");
-        assert!(env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW").is_none());
-        assert_eq!(env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "75");
-        assert_eq!(settings["model"], "glm-5.3[1m]");
-    }
-
-    #[test]
-    fn test_generic_write_does_not_delete_compact_window() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = json!({
-            "env": {
-                "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432"
-            }
-        });
-        fs::write(
-            dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
-        )
-        .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-        adapter
-            .write(&TargetConfig {
-                base_url: "https://api.example.com".to_string(),
-                api_key: "sk".to_string(),
-                model: "gpt-4o[1m]".to_string(),
-                wire_api: String::new(),
-            })
-            .unwrap();
-
-        let settings = read_settings(&adapter);
-        let env = settings["env"].as_object().unwrap();
-        assert_eq!(env["ANTHROPIC_MODEL"], "gpt-4o[1m]");
-        assert_eq!(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "786432");
-    }
-
-    #[test]
-    fn test_write_preserves_env_fields() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = json!({
-            "env": {
-                "ANTHROPIC_BASE_URL": "https://old.example.com",
-                "ANTHROPIC_AUTH_TOKEN": "sk-old",
-                "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
-                "CLAUDE_CODE_EFFORT_LEVEL": "max",
-                "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
-            }
-        });
-        fs::write(
-            dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
-        )
-        .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-
-        let provider = Provider {
-            name: "test".to_string(),
-            base_url: "https://new.example.com".to_string(),
-            api_key: "sk-new".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: String::new(),
+    fn supplier() -> Supplier {
+        Supplier {
+            id: "abcdef1234567890".to_string(),
+            name: "relay".to_string(),
+            base_url: "https://api.example.com/v1".to_string(),
+            keys: vec![key()],
+            default_key_id: Some("k1".to_string()),
+            protocols: vec![Protocol::Messages],
             remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
-
-        let data = fs::read_to_string(adapter.settings_path()).unwrap();
-        let settings: serde_json::Value = serde_json::from_str(&data).unwrap();
-        let env = settings["env"].as_object().unwrap();
-
-        // 卡片没填档位时删掉全局覆盖；其余 env 保留
-        assert!(env.get("CLAUDE_CODE_EFFORT_LEVEL").is_none());
-        assert_eq!(env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "75");
-    }
-
-    #[test]
-    fn test_auth_field_cleanup() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = json!({
-            "env": {
-                "ANTHROPIC_BASE_URL": "https://old.example.com",
-                "ANTHROPIC_API_KEY": "sk-api-key",
-                "ANTHROPIC_AUTH_TOKEN": "sk-auth-token",
-                "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6"
-            }
-        });
-        fs::write(
-            dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
-        )
-        .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-
-        let provider = Provider {
-            name: "test".to_string(),
-            base_url: "https://new.example.com".to_string(),
-            api_key: "sk-new".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
-
-        let data = fs::read_to_string(adapter.settings_path()).unwrap();
-        let settings: serde_json::Value = serde_json::from_str(&data).unwrap();
-        let env = settings["env"].as_object().unwrap();
-
-        // Should keep AUTH_TOKEN and remove API_KEY
-        assert!(env.contains_key("ANTHROPIC_AUTH_TOKEN"));
-        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
-        assert_eq!(env["ANTHROPIC_AUTH_TOKEN"], "sk-new");
-    }
-
-    #[test]
-    fn test_dir_not_exists() {
-        let dir = tempfile::tempdir().unwrap();
-        let non_existent = dir.path().join("non-existent");
-        let adapter = ClaudeAdapter::new_with_dir(&non_existent);
-
-        let provider = Provider {
-            name: "test".to_string(),
-            base_url: "https://example.com".to_string(),
-            api_key: "sk-test".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-
-        let result = adapter.write_provider(&provider);
-        assert!(result.is_err());
-        match result {
-            Err(TargetError::ClaudeConfigDirNotFound { .. }) => (),
-            _ => panic!("Expected ClaudeConfigDirNotFound error"),
+            last_probe: None,
+            models: vec![],
         }
     }
 
-    #[test]
-    fn test_create_from_scratch() {
-        let dir = tempfile::tempdir().unwrap();
-        // Don't create settings.json
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-
-        let provider = Provider {
-            name: "test".to_string(),
-            base_url: "https://example.com".to_string(),
-            api_key: "sk-test".to_string(),
-            model: "gpt-4o".to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: None,
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
-
-        // Verify file was created
-        let got = adapter.read().unwrap();
-        assert_eq!(got.base_url, "https://example.com");
-        assert_eq!(got.api_key, "sk-test");
-
-        // No backup should exist
-        assert!(!dir.path().join("settings.json.bak").exists());
-    }
-
-    #[test]
-    fn test_write_reasoning_effort_sets_global_level() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = json!({
-            "theme": "light",
-            "effortLevel": "low",
-            "env": {
-                "ANTHROPIC_BASE_URL": "https://old.example.com",
-                "ANTHROPIC_AUTH_TOKEN": "sk-old",
-                "CLAUDE_CODE_EFFORT_LEVEL": "max"
-            },
-            "modelSettings": {
-                "claude-fable-5.1": { "maxEffortLevel": "max", "effortLevel": "low" },
-                "claude-haiku-5.5": { "effortLevel": "medium" }
-            }
-        });
-        fs::write(
-            dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
-        )
-        .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-        let mut provider = Provider {
-            name: "relay".to_string(),
-            base_url: "https://new.example.com".to_string(),
-            api_key: "sk-new".to_string(),
-            model: "claude-fable-5.1".to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
+    fn config() -> AgentConfig {
+        AgentConfig {
+            id: "b1".to_string(),
+            supplier_id: "abcdef1234567890".to_string(),
+            key_id: None,
+            protocol: Protocol::Messages,
+            model: "claude-sonnet".to_string(),
             reasoning_effort: Some("high".to_string()),
             plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
-
-        let data = fs::read_to_string(adapter.settings_path()).unwrap();
-        let got: serde_json::Value = serde_json::from_str(&data).unwrap();
-        assert_eq!(got["theme"], "light");
-        assert_eq!(got["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "high");
-        assert!(got.get("effortLevel").is_none());
-        assert!(got["modelSettings"]["claude-fable-5.1"]
-            .get("effortLevel")
-            .is_none());
-        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
-        assert!(got["modelSettings"]["claude-haiku-5.5"]
-            .get("effortLevel")
-            .is_none());
-
-        provider.reasoning_effort = None;
-        adapter.write_provider(&provider).unwrap();
-        let data = fs::read_to_string(adapter.settings_path()).unwrap();
-        let got: serde_json::Value = serde_json::from_str(&data).unwrap();
-        assert!(got.get("effortLevel").is_none());
-        assert!(got["env"].get("CLAUDE_CODE_EFFORT_LEVEL").is_none());
-        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
-        assert!(got["modelSettings"]["claude-fable-5.1"]
-            .get("effortLevel")
-            .is_none());
+            context_length: Some("1m".to_string()),
+            compact_ratio: Some(80),
+            claude_models: Some(ClaudeModels {
+                opus: Some("claude-opus".to_string()),
+                sonnet: None,
+                haiku: None,
+                subagent: Some("claude-sub".to_string()),
+            }),
+            grok_web_search: None,
+        }
     }
 
     #[test]
-    fn test_write_reasoning_effort_unset_removes_only_global_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = json!({
-            "effortLevel": "high",
-            "env": { "CLAUDE_CODE_EFFORT_LEVEL": "max" },
-            "modelSettings": {
-                "claude-fable-5.1": { "maxEffortLevel": "max", "effortLevel": "low" }
-            }
-        });
+    fn writes_env_and_preserves_other_keys() {
+        let dir = TempDir::new().unwrap();
         fs::write(
             dir.path().join("settings.json"),
-            serde_json::to_string_pretty(&settings).unwrap(),
+            r#"{"theme":"dark","env":{"KEEP":"1"},"modelSettings":{"x":{"effortLevel":"low","maxEffortLevel":"high"}}}"#,
         )
         .unwrap();
-        let adapter = ClaudeAdapter::new_with_dir(dir.path());
-        let provider = Provider {
-            name: "relay".to_string(),
-            base_url: "https://new.example.com".to_string(),
-            api_key: "sk-new".to_string(),
-            model: "claude-fable-5.1".to_string(),
-            wire_api: String::new(),
-            remark: None,
-            last_test: None,
-            latency_ms: None,
-            last_ok: None,
-            claude_models: None,
-            grok_web_search: None,
-            reasoning_effort: Some("none".to_string()),
-            plan_reasoning_effort: None,
-            context_length: None,
-            compact_ratio: None,
-        };
-        adapter.write_provider(&provider).unwrap();
+        ClaudeAdapter::new()
+            .apply(&supplier(), &key(), &config(), Some(dir.path()), Env::Wsl)
+            .unwrap();
 
-        let data = fs::read_to_string(adapter.settings_path()).unwrap();
-        let got: serde_json::Value = serde_json::from_str(&data).unwrap();
-        assert!(got.get("effortLevel").is_none());
-        assert!(got["env"].get("CLAUDE_CODE_EFFORT_LEVEL").is_none());
-        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["effortLevel"], "low");
-        assert_eq!(got["modelSettings"]["claude-fable-5.1"]["maxEffortLevel"], "max");
+        let settings: Value =
+            serde_json::from_str(&fs::read_to_string(dir.path().join("settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(settings["theme"], "dark");
+        assert_eq!(settings["env"]["KEEP"], "1");
+        assert_eq!(
+            settings["env"]["ANTHROPIC_BASE_URL"],
+            "https://api.example.com/v1"
+        );
+        assert_eq!(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-ant-test");
+        assert_eq!(settings["env"]["ANTHROPIC_MODEL"], "claude-sonnet[1m]");
+        assert_eq!(
+            settings["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"],
+            "claude-opus[1m]"
+        );
+        assert_eq!(
+            settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "claude-sonnet[1m]"
+        );
+        assert_eq!(
+            settings["env"]["CLAUDE_CODE_SUBAGENT_MODEL"],
+            "claude-sub[1m]"
+        );
+        assert_eq!(settings["env"]["CLAUDE_CODE_EFFORT_LEVEL"], "high");
+        assert_eq!(settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "800000");
+        assert!(settings.get("effortLevel").is_none());
+        assert!(settings["modelSettings"]["x"].get("effortLevel").is_none());
+        assert_eq!(settings["modelSettings"]["x"]["maxEffortLevel"], "high");
+    }
+
+    #[test]
+    fn rejects_non_messages_protocol() {
+        let dir = TempDir::new().unwrap();
+        let mut config = config();
+        config.protocol = Protocol::Responses;
+        assert!(
+            ClaudeAdapter::new()
+                .apply(&supplier(), &key(), &config, Some(dir.path()), Env::Wsl)
+                .is_err()
+        );
     }
 }

@@ -1,17 +1,12 @@
 [package]
 name = "cxc-desktop"
-version = "0.1.1"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.2.0"
+description = "CXC desktop application"
+authors = ["CXC"]
 edition = "2021"
 repository = "https://github.com/zhang3say/cxc"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "cxc_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -28,3 +23,4 @@ cxc-core = { path = "../../cxc-core" }
 tokio = { version = "1.38", features = ["full"] }
 notify-rust = "4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+chrono = { version = "0.4", features = ["serde"] }

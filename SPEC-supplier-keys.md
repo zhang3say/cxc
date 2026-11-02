@@ -140,17 +140,17 @@ https://openrouter.ai/api/v1
 
 ## Tech Stack
 
-不变：Tauri 2、React 19、TypeScript、Vite 7、Tailwind 4、Radix UI；核心 `cxc-v2-core`（Rust edition 2024）。不新增依赖。
+不变：Tauri 2、React 19、TypeScript、Vite 7、Tailwind 4、Radix UI；核心 `cxc-core`（Rust edition 2024）。不新增依赖。
 
 ## Commands
 
 ```bash
-cd cxc-v2
-cargo test -p cxc-v2-core
-cargo clippy -p cxc-v2-core -p cxc-v2-desktop --all-targets -- -D warnings
+cd cxc
+cargo test -p cxc-core
+cargo clippy -p cxc-core -p cxc-desktop --all-targets -- -D warnings
 cargo fmt --all -- --check
 
-cd cxc-v2/cxc-v2-desktop
+cd cxc-desktop
 npx tsc --noEmit
 npm run build
 npm run dev          # 浏览器预览（mock IPC）
@@ -159,7 +159,7 @@ npm run dev          # 浏览器预览（mock IPC）
 ## Project Structure
 
 ```text
-cxc-v2/cxc-v2-core/src/
+cxc-core/src/
   supplier.rs          → SupplierKey、账号 CRUD 校验、effective_key、删除保护
   agent.rs             → AgentConfig.key_id、写入时解析账号
   config.rs            → 版本 5、v4 → v5 迁移
@@ -168,7 +168,7 @@ cxc-v2/cxc-v2-core/src/
   connectivity.rs      → 测试接收显式 api_key
   sync/mod.rs、merge.rs → 载荷版本 5、读取 v4 及更早
 
-cxc-v2/cxc-v2-desktop/src/
+cxc-desktop/src/
   components/suppliers/SupplierDialog.tsx      → 账号列表编辑
   components/suppliers/SupplierPage.tsx        → 账号数、测试账号选择、结果带账号名
   components/agents/BindingDialog.tsx          → 账号下拉
@@ -235,7 +235,7 @@ pub fn effective_key<'a>(supplier: &'a Supplier, key_id: Option<&str>) -> Option
 
 ## 状态
 
-已实现。实现位置：`cxc-v2/cxc-v2-core/src/supplier.rs`（`SupplierKey`、`effective_key`、账号 CRUD 与删除保护）、`agent.rs`（`key_id` 与写入时解析）、`config.rs`（版本 5 与 v4 迁移）、`sync/`（载荷版本 5）；界面见 `cxc-v2/cxc-v2-desktop/src/components/suppliers/` 与 `components/agents/`。
+已实现。实现位置：`cxc-core/src/supplier.rs`（`SupplierKey`、`effective_key`、账号 CRUD 与删除保护）、`agent.rs`（`key_id` 与写入时解析）、`config.rs`（版本 5 与 v4 迁移）、`sync/`（载荷版本 5）；界面见 `cxc-desktop/src/components/suppliers/` 与 `components/agents/`。
 
 ## Open Questions
 

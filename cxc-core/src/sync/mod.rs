@@ -4,34 +4,35 @@ pub mod merge;
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
-use crate::config::{backup_config_file, save, Config, Provider};
-use crypto::{decrypt_aes_gcm, encrypt_aes_gcm, CryptoError};
+use crate::agent::{AgentKind, Agents};
+use crate::config::{self, Config};
+use crate::supplier::{Supplier, SupplierModel};
+use crypto::{decrypt_aes_gcm, encrypt_aes_gcm};
 pub use gist::{GistClient, GistError};
-use merge::merge_providers;
 
-pub const CURRENT_SYNC_VERSION: u32 = 1;
+pub const CURRENT_SYNC_VERSION: u32 = 5;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
-    #[error("Gist operation failed: {0}")]
+    #[error("Gist 操作失败：{0}")]
     Gist(#[from] GistError),
-    #[error("Crypto operation failed: {0}")]
-    Crypto(#[from] CryptoError),
-    #[error("JSON serialization or deserialization failed: {0}")]
+    #[error("加解密失败：{0}")]
+    Crypto(#[from] crypto::CryptoError),
+    #[error("JSON 序列化或解析失败：{0}")]
     Json(#[from] serde_json::Error),
-    #[error("Sync payload is encrypted, but no secret key was provided")]
+    #[error("同步载荷已加密，但没有提供口令")]
     MissingSecretKey,
-    #[error("Missing Gist Token: Please provide a valid GitHub Personal Access Token")]
+    #[error("缺少 Gist Token")]
     MissingToken,
-    #[error("Missing Gist ID: Please provide an existing Gist ID or choose to create one")]
+    #[error("缺少 Gist ID")]
     MissingGistId,
-    #[error("Config error: {0}")]
+    #[error("配置错误：{0}")]
     Config(#[from] crate::config::ConfigError),
 }
 
-/// User's persistent sync settings stored in config.yaml
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct SyncConfig {
     #[serde(default)]
@@ -44,24 +45,20 @@ pub struct SyncConfig {
     pub last_synced_at: Option<DateTime<Local>>,
 }
 
-/// The actual payload exchanged between devices across GitHub Gist.
-/// Note: strictly contains cross-platform Provider definitions.
-/// Local platform paths (WSL UNC paths), environment sources, and active selections remain on the local machine.
+/// 跨设备载荷：全局中转站 + 每个 Agent 每个环境的一份配置。
+/// 不含自定义目录与本机测试结果。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SyncPayload {
     pub version: u32,
     pub updated_at: DateTime<Local>,
     #[serde(default)]
-    pub codex_providers: Vec<Provider>,
+    pub suppliers: Vec<Supplier>,
     #[serde(default)]
-    pub claude_providers: Vec<Provider>,
-    #[serde(default)]
-    pub grok_providers: Vec<Provider>,
+    pub agents: Agents,
 }
 
-/// The JSON envelope stored in `cxc_sync.json` on GitHub Gist.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SyncEnvelope {
+struct SyncEnvelope {
     pub version: u32,
     pub encrypted: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -69,30 +66,93 @@ pub struct SyncEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ciphertext: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub payload: Option<SyncPayload>,
+    pub payload: Option<Value>,
 }
 
-/// Builds a SyncPayload from current Config (extracts all Providers).
+#[derive(Deserialize)]
+struct LegacySyncPayloadV4 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: Agents,
+}
+
+#[derive(Deserialize)]
+struct LegacySyncPayloadV3 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: config::LegacyAgentsV3,
+}
+
+#[derive(Deserialize)]
+struct LegacySyncPayloadV2 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    suppliers: Vec<crate::supplier::LegacySupplier>,
+    #[serde(default)]
+    agents: config::LegacyAgentsV2,
+}
+
+#[derive(Deserialize)]
+struct LegacySyncPayloadV1 {
+    #[serde(default)]
+    updated_at: Option<DateTime<Local>>,
+    #[serde(default)]
+    codex_providers: Vec<crate::migration::LegacyProvider>,
+    #[serde(default)]
+    claude_providers: Vec<crate::migration::LegacyProvider>,
+    #[serde(default)]
+    grok_providers: Vec<crate::migration::LegacyProvider>,
+}
+
 pub fn build_payload(cfg: &Config) -> SyncPayload {
     SyncPayload {
         version: CURRENT_SYNC_VERSION,
         updated_at: Local::now(),
-        codex_providers: cfg.codex_providers.clone(),
-        claude_providers: cfg.claude_providers.clone(),
-        grok_providers: cfg.grok_providers.clone(),
+        suppliers: cfg.suppliers.iter().map(sanitize_supplier).collect(),
+        agents: cfg.agents.clone(),
     }
 }
 
-/// Packs a SyncPayload into a JSON string for cloud upload.
-/// If `secret_key` is provided and non-empty, payload is encrypted with AES-256-GCM.
+fn sanitize_supplier(supplier: &Supplier) -> Supplier {
+    Supplier {
+        id: supplier.id.clone(),
+        name: supplier.name.clone(),
+        base_url: supplier.base_url.clone(),
+        keys: supplier.keys.clone(),
+        default_key_id: supplier.default_key_id.clone(),
+        protocols: supplier.protocols.clone(),
+        remark: supplier.remark.clone(),
+        last_probe: None,
+        models: supplier
+            .models
+            .iter()
+            .map(|model| SupplierModel {
+                model: model.model.clone(),
+                protocols: model.protocols.clone(),
+                last_test: None,
+                latency_ms: None,
+                last_ok: None,
+                last_error: None,
+                tested_key_id: None,
+            })
+            .collect(),
+    }
+}
+
 pub fn pack_payload(payload: &SyncPayload, secret_key: Option<&str>) -> Result<String, SyncError> {
-    let has_key = secret_key.map(|k| !k.trim().is_empty()).unwrap_or(false);
-
+    let has_key = secret_key
+        .map(|key| !key.trim().is_empty())
+        .unwrap_or(false);
     if has_key {
-        let key = secret_key.unwrap().trim();
-        let json_bytes = serde_json::to_vec(payload)?;
-        let (ciphertext, nonce) = encrypt_aes_gcm(key, &json_bytes)?;
-
+        let json = serde_json::to_vec(payload)?;
+        let (ciphertext, nonce) = encrypt_aes_gcm(secret_key.unwrap().trim(), &json)?;
         let envelope = SyncEnvelope {
             version: CURRENT_SYNC_VERSION,
             encrypted: true,
@@ -107,248 +167,352 @@ pub fn pack_payload(payload: &SyncPayload, secret_key: Option<&str>) -> Result<S
             encrypted: false,
             nonce: None,
             ciphertext: None,
-            payload: Some(payload.clone()),
+            payload: Some(serde_json::to_value(payload)?),
         };
         Ok(serde_json::to_string_pretty(&envelope)?)
     }
 }
 
-/// Unpacks raw JSON string from cloud Gist into a SyncPayload.
-/// Decrypts if the envelope was encrypted.
-pub fn unpack_payload(raw_json: &str, secret_key: Option<&str>) -> Result<SyncPayload, SyncError> {
-    let envelope: SyncEnvelope = serde_json::from_str(raw_json)?;
-
-    if envelope.encrypted {
-        let key = match secret_key {
-            Some(k) if !k.trim().is_empty() => k.trim(),
-            _ => return Err(SyncError::MissingSecretKey),
-        };
-
-        let ciphertext = envelope
-            .ciphertext
-            .ok_or(CryptoError::DecryptError)?;
-        let nonce = envelope
-            .nonce
-            .ok_or(CryptoError::DecryptError)?;
-
-        let decrypted_bytes = decrypt_aes_gcm(key, &ciphertext, &nonce)?;
-        let payload: SyncPayload = serde_json::from_slice(&decrypted_bytes)?;
-        Ok(payload)
+pub fn unpack_payload(raw: &str, secret_key: Option<&str>) -> Result<SyncPayload, SyncError> {
+    let envelope: SyncEnvelope = serde_json::from_str(raw)?;
+    let value = if envelope.encrypted {
+        let key = secret_key
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .ok_or(SyncError::MissingSecretKey)?;
+        let ciphertext = envelope.ciphertext.ok_or(SyncError::MissingSecretKey)?;
+        let nonce = envelope.nonce.ok_or(SyncError::MissingSecretKey)?;
+        let plaintext = decrypt_aes_gcm(key, &ciphertext, &nonce)?;
+        serde_json::from_slice::<Value>(&plaintext)?
     } else {
-        // Plaintext envelope
-        envelope
-            .payload
-            .ok_or_else(|| SyncError::Json(serde::de::Error::custom("Missing payload in unencrypted envelope")))
-    }
-}
-
-/// Overwrites local providers with the downloaded payload providers.
-/// Note: Active selections and custom dirs are preserved.
-pub fn apply_payload_overwrite(cfg: &mut Config, payload: SyncPayload) {
-    cfg.codex_providers = payload.codex_providers;
-    cfg.claude_providers = payload.claude_providers;
-    cfg.grok_providers = payload.grok_providers;
-}
-
-/// Intelligently merges downloaded payload providers into local providers.
-pub fn apply_payload_merge(cfg: &mut Config, payload: SyncPayload) {
-    cfg.codex_providers = merge_providers(&cfg.codex_providers, &payload.codex_providers);
-    cfg.claude_providers = merge_providers(&cfg.claude_providers, &payload.claude_providers);
-    cfg.grok_providers = merge_providers(&cfg.grok_providers, &payload.grok_providers);
-}
-
-/// Validates GitHub Token and optionally verifies accessibility of an existing Gist.
-/// Returns the authenticated GitHub username on success.
-pub async fn test_gist_connection(token: &str, gist_id: Option<&str>) -> Result<String, SyncError> {
-    let token = token.trim();
-    if token.is_empty() {
-        return Err(SyncError::MissingToken);
-    }
-    let client = GistClient::new(token.to_string());
-    let username = client.validate_token().await?;
-
-    if let Some(id) = gist_id {
-        let id = id.trim();
-        if !id.is_empty() {
-            // Check if the gist can be fetched
-            let _ = client.get_sync_gist(id).await?;
-        }
-    }
-
-    Ok(username)
-}
-
-/// Uploads the current local configuration to GitHub Gist.
-/// If `gist_id` is empty, a new secret Gist is created and the returned ID is saved into `sync_config`.
-pub async fn push_to_gist(
-    cfg: &mut Config,
-    sync_config: &mut SyncConfig,
-) -> Result<String, SyncError> {
-    let token = sync_config.gist_token.trim();
-    if token.is_empty() {
-        return Err(SyncError::MissingToken);
-    }
-
-    let client = GistClient::new(token.to_string());
-    let payload = build_payload(cfg);
-    let content = pack_payload(&payload, sync_config.secret_key.as_deref())?;
-
-    let final_gist_id = if sync_config.gist_id.trim().is_empty() {
-        // Create new Secret Gist
-        let id = client.create_sync_gist(&content).await?;
-        sync_config.gist_id = id.clone();
-        id
-    } else {
-        let id = sync_config.gist_id.trim().to_string();
-        client.update_sync_gist(&id, &content).await?;
-        id
+        envelope.payload.ok_or_else(|| {
+            SyncError::Json(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "同步载荷为空",
+            )))
+        })?
     };
 
-    sync_config.last_synced_at = Some(Local::now());
-    cfg.sync = Some(sync_config.clone());
-    save(cfg)?;
-
-    Ok(final_gist_id)
+    parse_payload_value(value)
 }
 
-/// Pulls payload from GitHub Gist and overwrites local providers.
-/// Backs up the local config before overwriting.
-pub async fn pull_from_gist(
-    cfg: &mut Config,
-    sync_config: &mut SyncConfig,
-) -> Result<SyncPayload, SyncError> {
-    let token = sync_config.gist_token.trim();
-    if token.is_empty() {
-        return Err(SyncError::MissingToken);
-    }
-    let gist_id = sync_config.gist_id.trim();
-    if gist_id.is_empty() {
-        return Err(SyncError::MissingGistId);
+fn parse_payload_value(value: Value) -> Result<SyncPayload, SyncError> {
+    let version = value.get("version").and_then(Value::as_u64).unwrap_or(1) as u32;
+
+    if version >= CURRENT_SYNC_VERSION {
+        return Ok(serde_json::from_value(value)?);
     }
 
-    let client = GistClient::new(token.to_string());
-    let raw_content = client.get_sync_gist(gist_id).await?;
-    let payload = unpack_payload(&raw_content, sync_config.secret_key.as_deref())?;
+    if version == 4 {
+        let legacy: LegacySyncPayloadV4 = serde_json::from_value(value)?;
+        let cfg = Config {
+            suppliers: legacy
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: legacy.agents,
+            ..Config::default()
+        };
+        let mut payload = build_payload(&cfg);
+        payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
+        return Ok(payload);
+    }
 
-    // Create a local backup before overwriting
-    backup_config_file()?;
+    if version == 3 {
+        let legacy: LegacySyncPayloadV3 = serde_json::from_value(value)?;
+        let cfg = Config {
+            suppliers: legacy
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: config::agents_from_v3(&legacy.agents),
+            ..Config::default()
+        };
+        let mut payload = build_payload(&cfg);
+        payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
+        return Ok(payload);
+    }
 
-    apply_payload_overwrite(cfg, payload.clone());
-    sync_config.last_synced_at = Some(Local::now());
-    cfg.sync = Some(sync_config.clone());
-    save(cfg)?;
+    if version == 2 {
+        let legacy: LegacySyncPayloadV2 = serde_json::from_value(value)?;
+        let cfg = Config {
+            suppliers: legacy
+                .suppliers
+                .into_iter()
+                .map(crate::supplier::LegacySupplier::into_supplier)
+                .collect(),
+            agents: config::agents_from_v2(&legacy.agents, None),
+            ..Config::default()
+        };
+        let mut payload = build_payload(&cfg);
+        payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
+        return Ok(payload);
+    }
 
+    let legacy: LegacySyncPayloadV1 = serde_json::from_value(value)?;
+    let mut cfg = Config::default();
+    let mut report = crate::migration::ImportReport::default();
+    let mut supplier_ids = std::collections::HashMap::new();
+    crate::migration::import_agent(
+        &mut cfg,
+        AgentKind::Codex,
+        &legacy.codex_providers,
+        "",
+        "",
+        &mut supplier_ids,
+        &mut report,
+    );
+    crate::migration::import_agent(
+        &mut cfg,
+        AgentKind::Claude,
+        &legacy.claude_providers,
+        "",
+        "",
+        &mut supplier_ids,
+        &mut report,
+    );
+    crate::migration::import_agent(
+        &mut cfg,
+        AgentKind::Grok,
+        &legacy.grok_providers,
+        "",
+        "",
+        &mut supplier_ids,
+        &mut report,
+    );
+    let mut payload = build_payload(&cfg);
+    payload.updated_at = legacy.updated_at.unwrap_or_else(Local::now);
     Ok(payload)
 }
 
-/// Bidirectionally merges local and remote providers, then pushes merged result back to Gist.
-/// Backs up the local config before merging.
-pub async fn sync_and_merge(
-    cfg: &mut Config,
-    sync_config: &mut SyncConfig,
-) -> Result<String, SyncError> {
-    let token = sync_config.gist_token.trim();
-    if token.is_empty() {
+pub async fn test_gist_connection(token: &str, gist_id: Option<&str>) -> Result<String, SyncError> {
+    if token.trim().is_empty() {
         return Err(SyncError::MissingToken);
     }
-
     let client = GistClient::new(token.to_string());
-
-    if sync_config.gist_id.trim().is_empty() {
-        // No gist ID yet: directly push local to newly created gist
-        return push_to_gist(cfg, sync_config).await;
+    let login = client.validate_token().await?;
+    if let Some(gist_id) = gist_id.map(str::trim).filter(|id| !id.is_empty()) {
+        client.get_sync_gist(gist_id).await?;
     }
+    Ok(login)
+}
 
-    let gist_id = sync_config.gist_id.trim();
-    // Pull remote content
-    let raw_content = client.get_sync_gist(gist_id).await?;
-    let remote_payload = unpack_payload(&raw_content, sync_config.secret_key.as_deref())?;
+pub async fn push_to_gist(cfg: &Config, sync: &mut SyncConfig) -> Result<(), SyncError> {
+    if sync.gist_token.trim().is_empty() {
+        return Err(SyncError::MissingToken);
+    }
+    let client = GistClient::new(sync.gist_token.clone());
+    let payload = build_payload(cfg);
+    let content = pack_payload(&payload, sync.secret_key.as_deref())?;
 
-    // Backup local config before merging
-    backup_config_file()?;
+    if sync.gist_id.trim().is_empty() {
+        sync.gist_id = client.create_sync_gist(&content).await?;
+    } else {
+        client.update_sync_gist(&sync.gist_id, &content).await?;
+    }
+    sync.last_synced_at = Some(Local::now());
+    Ok(())
+}
 
-    // Perform merge locally
-    apply_payload_merge(cfg, remote_payload);
-
-    // Build merged payload and push to Gist
-    let merged_payload = build_payload(cfg);
-    let packed = pack_payload(&merged_payload, sync_config.secret_key.as_deref())?;
-    client.update_sync_gist(gist_id, &packed).await?;
-
-    sync_config.last_synced_at = Some(Local::now());
-    cfg.sync = Some(sync_config.clone());
-    save(cfg)?;
-
-    Ok(gist_id.to_string())
+pub async fn pull_from_gist(
+    cfg: &mut Config,
+    sync: &mut SyncConfig,
+    mode: merge::SyncMode,
+) -> Result<merge::MergeReport, SyncError> {
+    if sync.gist_token.trim().is_empty() {
+        return Err(SyncError::MissingToken);
+    }
+    if sync.gist_id.trim().is_empty() {
+        return Err(SyncError::MissingGistId);
+    }
+    let client = GistClient::new(sync.gist_token.clone());
+    let raw = client.get_sync_gist(&sync.gist_id).await?;
+    let payload = unpack_payload(&raw, sync.secret_key.as_deref())?;
+    let report = match mode {
+        merge::SyncMode::Merge => merge::merge_payload(cfg, payload),
+        merge::SyncMode::Overwrite => merge::overwrite_payload(cfg, payload),
+    };
+    sync.last_synced_at = Some(Local::now());
+    Ok(report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::{AgentConfig, AgentKind, AgentSlot};
+    use crate::config::Env;
+    use crate::protocol::Protocol;
+    use crate::supplier::{SupplierInput, add_supplier};
 
-    #[test]
-    fn test_pack_and_unpack_plaintext() {
-        let payload = SyncPayload {
-            version: 1,
-            updated_at: Local::now(),
-            codex_providers: vec![],
-            claude_providers: vec![],
-            grok_providers: vec![],
-        };
+    fn binding(id: &str, model: &str) -> AgentConfig {
+        AgentConfig {
+            id: id.to_string(),
+            supplier_id: "s1".to_string(),
+            key_id: None,
+            protocol: Protocol::Responses,
+            model: model.to_string(),
+            reasoning_effort: None,
+            plan_reasoning_effort: None,
+            context_length: None,
+            compact_ratio: None,
+            claude_models: None,
+            grok_web_search: None,
+        }
+    }
 
-        let packed = pack_payload(&payload, None).unwrap();
-        let unpacked = unpack_payload(&packed, None).unwrap();
-        assert_eq!(payload.version, unpacked.version);
+    fn sample_config() -> Config {
+        let mut cfg = Config::default();
+        let supplier = add_supplier(
+            &mut cfg,
+            SupplierInput::single_key(
+                "relay".to_string(),
+                "https://api.example.com/v1".to_string(),
+                "sk-1".to_string(),
+                None,
+                Some(vec![Protocol::Responses]),
+            ),
+        )
+        .unwrap();
+        let mut first = binding("b1", "gpt-5");
+        first.supplier_id = supplier.id.clone();
+        let mut second = binding("b2", "gpt-5-mini");
+        second.supplier_id = supplier.id;
+        cfg.agent_mut(AgentKind::Codex).set(
+            Env::Wsl,
+            Some(AgentSlot {
+                active: Some("b1".to_string()),
+                bindings: vec![first, second],
+            }),
+        );
+        cfg
     }
 
     #[test]
-    fn test_pack_and_unpack_encrypted() {
-        let payload = SyncPayload {
-            version: 1,
-            updated_at: Local::now(),
-            codex_providers: vec![Provider {
-                name: "test-p".to_string(),
-                base_url: "https://api.openai.com/v1".to_string(),
-                api_key: "sk-12345678".to_string(),
-                model: "gpt-4o".to_string(),
-                wire_api: "responses".to_string(),
-                remark: Some("primary".to_string()),
-                last_test: None,
-                latency_ms: None,
-                last_ok: None,
-                claude_models: None,
-                grok_web_search: None,
-                reasoning_effort: None,
-                plan_reasoning_effort: None,
-                context_length: None,
-                compact_ratio: None,
-            }],
-            claude_providers: vec![],
-            grok_providers: vec![],
-        };
+    fn payload_roundtrip_without_encryption() {
+        let cfg = sample_config();
+        let payload = build_payload(&cfg);
+        let raw = pack_payload(&payload, None).unwrap();
+        let restored = unpack_payload(&raw, None).unwrap();
+        assert_eq!(restored.version, 5);
+        assert_eq!(restored.suppliers.len(), 1);
+        let slot = restored.agents.codex.wsl.as_ref().unwrap();
+        assert_eq!(slot.bindings.len(), 2);
+        assert_eq!(slot.active.as_deref(), Some("b1"));
+    }
 
-        let password = "my_safe_password";
-        let packed = pack_payload(&payload, Some(password)).unwrap();
+    #[test]
+    fn payload_roundtrip_with_encryption() {
+        let cfg = sample_config();
+        let payload = build_payload(&cfg);
+        let raw = pack_payload(&payload, Some("secret")).unwrap();
+        assert!(raw.contains("\"encrypted\": true"));
+        let restored = unpack_payload(&raw, Some("secret")).unwrap();
+        assert_eq!(restored.suppliers.len(), 1);
+    }
 
-        // Ensure sensitive key is not exposed in plaintext json
-        assert!(!packed.contains("sk-12345678"));
-        assert!(!packed.contains("test-p"));
+    #[test]
+    fn payload_excludes_test_results_and_custom_dirs() {
+        let mut cfg = sample_config();
+        cfg.suppliers[0].models.push(SupplierModel {
+            model: "gpt-5".to_string(),
+            last_ok: Some(true),
+            latency_ms: Some(100),
+            ..SupplierModel::default()
+        });
+        cfg.custom_dirs.codex.wsl = "/tmp/codex".to_string();
+        let payload = build_payload(&cfg);
+        assert!(payload.suppliers[0].models[0].last_ok.is_none());
+        let raw = serde_json::to_string(&payload).unwrap();
+        assert!(!raw.contains("/tmp/codex"));
+    }
 
-        // Unpack with correct password
-        let unpacked = unpack_payload(&packed, Some(password)).unwrap();
-        assert_eq!(unpacked.codex_providers.len(), 1);
-        assert_eq!(unpacked.codex_providers[0].api_key, "sk-12345678");
+    #[test]
+    fn reads_v3_payload_as_single_binding() {
+        let raw = r#"{
+            "version": 3,
+            "updated_at": "2026-10-30T12:00:00+08:00",
+            "suppliers": [
+                {
+                    "id": "s1",
+                    "name": "relay",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-1",
+                    "protocols": ["responses"],
+                    "models": []
+                }
+            ],
+            "agents": {
+                "codex": {
+                    "wsl": {
+                        "supplier_id": "s1",
+                        "protocol": "responses",
+                        "model": "gpt-5"
+                    }
+                },
+                "claude": {},
+                "grok": {},
+                "opencode": {}
+            }
+        }"#;
+        let payload = unpack_payload(
+            &format!(r#"{{"version":3,"encrypted":false,"payload":{raw}}}"#),
+            None,
+        )
+        .unwrap();
+        assert_eq!(payload.version, 5);
+        let slot = payload.agents.codex.wsl.as_ref().unwrap();
+        assert_eq!(slot.bindings.len(), 1);
+        assert_eq!(slot.active_binding().unwrap().model, "gpt-5");
+    }
 
-        // Unpack without password fails
-        assert!(matches!(
-            unpack_payload(&packed, None),
-            Err(SyncError::MissingSecretKey)
-        ));
-
-        // Unpack with wrong password fails
-        assert!(matches!(
-            unpack_payload(&packed, Some("wrong_pass")),
-            Err(SyncError::Crypto(CryptoError::DecryptError))
-        ));
+    #[test]
+    fn reads_v2_payload_and_keeps_catalog() {
+        let raw = r#"{
+            "version": 2,
+            "updated_at": "2026-10-30T12:00:00+08:00",
+            "suppliers": [
+                {
+                    "id": "s1",
+                    "name": "relay",
+                    "base_url": "https://api.example.com/v1",
+                    "api_key": "sk-1",
+                    "protocols": ["responses"],
+                    "models": []
+                }
+            ],
+            "agents": {
+                "codex": {
+                    "active_wsl": "b1",
+                    "bindings": [
+                        {
+                            "id": "b1",
+                            "supplier_id": "s1",
+                            "protocol": "responses",
+                            "model": "gpt-5"
+                        },
+                        {
+                            "id": "b2",
+                            "supplier_id": "s1",
+                            "protocol": "responses",
+                            "model": "gpt-5-mini"
+                        }
+                    ]
+                },
+                "claude": { "bindings": [] },
+                "grok": { "bindings": [] },
+                "opencode": { "bindings": [] }
+            }
+        }"#;
+        let payload = unpack_payload(
+            &format!(r#"{{"version":2,"encrypted":false,"payload":{raw}}}"#),
+            None,
+        )
+        .unwrap();
+        assert_eq!(payload.version, 5);
+        let slot = payload.agents.codex.wsl.as_ref().unwrap();
+        assert_eq!(slot.bindings.len(), 2);
+        assert_eq!(slot.active_binding().unwrap().model, "gpt-5");
     }
 }

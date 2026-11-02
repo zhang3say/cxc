@@ -2,84 +2,115 @@
 
 [简体中文](README.md) | English
 
-> Quickly switch API relay endpoints for AI coding tools like Codex, Claude, and Grok.
+> One place to manage API relays for Codex, Claude Code, Grok CLI and OpenCode — configure once, switch per agent.
 
 [![Rust Version](https://img.shields.io/badge/rust-1.96%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ![CXC Desktop Preview](docs/images/cxc.webp)
 
-CXC is a desktop GUI application for managing multiple API relay endpoint configurations for AI coding tools. Instead of manually editing complex TOML and JSON configuration files, use CXC to easily add, test, and switch between providers within an intuitive graphical interface.
+CXC is a desktop app for managing API relay endpoints used by AI coding tools. Relays, accounts and models are stored once; each agent picks which relay, which account and which model to use, and one click writes it into that tool's config file.
 
 ## Features
 
-- **Intuitive GUI** — Elegant translucent glassmorphism design with a dark mode theme for a premium user experience.
-- **Global App / WSL Switching** — A single App/WSL toggle now applies globally, while Codex, Claude CLI, and Grok still keep separate Active Provider records for their App and WSL contexts.
-- **Provider Management** — Easily add, edit, test, delete, and add remarks to providers.
-- **Model Discovery** — Automatically fetch and pick available models from a provider's endpoint instead of typing them manually.
-- **Connectivity Test** — Performs a real API connectivity request (not just a network ping) and measures latency to ensure the provider is functional.
-- **System Tray** — Sits in the system tray for quick-access Codex provider switching without opening the main window.
-- **Safe Switching** — Automatically creates `.bak` backups of target config files before applying any changes.
-- **Multi-Tool Integration** — Automatically manages configurations and seamlessly integrates with Codex (`~/.codex/config.toml`), Claude CLI (`~/.claude/settings.json`), and Grok (`~/.grok/config.toml`).
+- **Agent = tool + environment** — Codex, Claude Code, Grok CLI and OpenCode are separate agents under WSL and Windows, with independent configuration. Install state is detected from `PATH`; unreachable environments are hidden.
+- **Global relays** — One record per endpoint: base URL, protocol set, model catalog, remark.
+- **Multiple accounts** — A relay can hold several API keys (personal / team / spare). A binding either picks a specific account or follows the relay default.
+- **Binding list** — Each agent keeps multiple bindings (relay + account + model + reasoning effort + context length + compact ratio). Exactly one is active; activating it writes the target config file.
+- **Three-protocol probing** — Probes Anthropic Messages, OpenAI Chat Completions and OpenAI Responses separately to detect what a relay supports.
+- **Model picker** — Searchable, keyboard-driven, with an inline refresh for the relay's model list. Retired models are dropped; surviving models keep their test results.
+- **Connectivity tests** — Sends a real inference request per model and records latency, per relay or per model, attributed to the account used.
+- **Card / list views** — The relay page switches between cards and a table; list is the default.
+- **Safe writes** — A `.bak` backup is created before touching any target config; a failed write leaves CXC's own config unchanged.
+- **Also included** — System tray, optional Gist sync (AES-256-GCM), light/dark themes, Chinese/English UI, custom config directories.
 
-## Setup and Development
+## Install
 
-### Running Development Server
+Download the installer for your platform from [Releases](https://github.com/zhang3say/cxc/releases).
 
-To run the desktop application locally in development mode:
+Existing configuration is taken over automatically on first launch — see [Configuration migration](#configuration-migration).
+
+## Development
 
 ```bash
-# Clone the repository
 git clone https://github.com/zhang3say/cxc
 cd cxc
 
-# Navigate to the desktop directory and install dependencies
 cd cxc-desktop
 npm install
 
-# Start development environment
 npm run tauri dev
 ```
 
-### Production Build
-
-To build production-ready packages:
+Browser preview (built-in mock IPC, no Tauri required):
 
 ```bash
 cd cxc-desktop
+npm run dev
+```
+
+## Build and test
+
+```bash
+cargo test -p cxc-core
+
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
+
+cd cxc-desktop
+npx tsc --noEmit
+npm run build
+
 npm run tauri build
 ```
 
-The compiled binaries and installers will be saved in `cxc-desktop/src-tauri/target/release/bundle/`.
+Installers are written to `cxc-desktop/src-tauri/target/release/bundle/`.
 
-## How it works
+## Automated packaging
 
-CXC stores its own provider list and settings in the system-specific config directory:
-- Windows: `%USERPROFILE%\.config\cxc\config.yaml`
+Pushing a `cxc-desktop-v*` tag triggers [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml), which builds installers on macOS (arm64 / x64) and Windows and opens a **draft** release for review.
+
+```bash
+git tag cxc-desktop-v0.2.0
+git push origin cxc-desktop-v0.2.0
+```
+
+## Configuration
+
+CXC keeps its own config in the system config directory:
+
 - Linux / WSL: `~/.config/cxc/config.yaml`
+- Windows: `%APPDATA%\cxc\config.yaml`
 
-When switching providers, CXC updates:
-- **Codex** — Updates `config.toml` (sets model, base_url, wire_api) and `auth.json` (sets API Key) in the Codex config directory.
-- **Claude CLI** — Updates the `env` object (sets API Key, Base URL, and optional model mappings) in `settings.json`.
-- **Grok** — Updates `[models].default` and `[model_providers.<relay name>]` in `config.toml` (endpoint and `api_backend` live on the relay block), and points the current model at it with `model_provider`. `[models].web_search` defaults to that same model, or follows the relay's policy to pin, keep, or clear it.
+Writing to a target tool updates these files:
 
-Each relay can store one reasoning effort. Activating the card writes that level; leaving it unset removes the corresponding key. Codex sets the normal session and plan mode separately. Claude writes only `CLAUDE_CODE_EFFORT_LEVEL`, so every later model inherits it.
+| Tool | WSL / Linux | Windows |
+|---|---|---|
+| Codex | `~/.codex/config.toml` + `auth.json` | `%USERPROFILE%\.codex\config.toml` + `auth.json` |
+| Claude Code | `~/.claude/settings.json` | `%USERPROFILE%\.claude\settings.json` |
+| Grok CLI | `~/.grok/config.toml` | `%USERPROFILE%\.grok\config.toml` |
+| OpenCode | `~/.config/opencode/opencode.json` | `%APPDATA%\opencode\opencode.json` |
 
-Each relay can also store a context length and a compact ratio. Claude offers only unset and `1m`; choosing `1m` appends `[1m]` to the model name, and connectivity tests do not add that suffix. Codex and Grok also accept `200k`, `500k`, and custom sizes. The compact ratio is an integer percent from 70 to 100.
+Each tool has one binding list per environment; the active binding is written to that environment's config file. A `.bak` backup is created first.
 
-Before making any modifications, target config files are automatically backed up as `.bak` files.
+### Configuration migration
+
+CXC 0.2.0 replaces the old `cxc-desktop`. On first launch data is taken over in this order, and any file that would be overwritten is first backed up as `config.yaml.backup.<timestamp>`:
+
+1. The main path already holds the new format → used as-is.
+2. A previous-generation `cxc-v2` config exists (`~/.config/cxc-v2/config.yaml`) → taken over, because it is newer than the legacy data.
+3. The main path holds the legacy v1 format (`codex_providers` etc.) → backed up and migrated in place.
+4. Nothing found → empty configuration.
+
+Migration merges the old per-tool provider lists into global relays keyed by address + API key, turning each key into an account on that relay.
 
 ## Architecture
 
-- **Backend (Rust)**: Built on [Tauri](https://github.com/tauri-apps/tauri) (v2) and powered by [Tokio](https://github.com/tokio-rs/tokio) and [Reqwest](https://github.com/seanmonstar/reqwest) for highly concurrent, non-blocking API tests and file operations.
-- **Frontend (React)**: Developed with React 19, TypeScript, and [Vite](https://github.com/vitejs/vite). Styled with [Tailwind CSS v4](https://tailwindcss.com) and [Radix UI](https://www.radix-ui.com) for a responsive, modern, and polished interface.
-- **Format-Preserving AST Mutation**: Employs [toml_edit](https://github.com/toml-rs/toml) when editing Codex / Grok TOML config files, ensuring all original formatting and comments are preserved.
+- **Backend (Rust)** — Tauri 2 + Tokio + Reqwest for probing, connectivity tests, config file I/O and sync.
+- **Frontend (React)** — React 19 + TypeScript + Vite 7, Tailwind CSS 4 + Radix UI.
+- **Format-preserving AST edits** — Codex / Grok TOML files are edited with `toml_edit`, keeping formatting and comments.
 
-See [docs/adr/](docs/adr/) for architectural decision records.
-
-## Community
-
-This repo has been shared as open source on [Linux.do](https://linux.do/).
+Architecture decisions live in [docs/adr/](docs/adr/).
 
 ## License
 

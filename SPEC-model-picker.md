@@ -70,17 +70,17 @@
 
 ## Tech Stack
 
-不变：Tauri 2、React 19、TypeScript、Vite 7、Tailwind 4、Radix UI；核心 `cxc-v2-core`。不新增依赖（不引入虚拟列表库）。
+不变：Tauri 2、React 19、TypeScript、Vite 7、Tailwind 4、Radix UI；核心 `cxc-core`。不新增依赖（不引入虚拟列表库）。
 
 ## Commands
 
 ```bash
-cd cxc-v2
-cargo test -p cxc-v2-core
-cargo clippy -p cxc-v2-core -p cxc-v2-desktop --all-targets -- -D warnings
+cd cxc
+cargo test -p cxc-core
+cargo clippy -p cxc-core -p cxc-desktop --all-targets -- -D warnings
 cargo fmt --all -- --check
 
-cd cxc-v2/cxc-v2-desktop
+cd cxc-desktop
 npx tsc --noEmit
 npm run build
 npm run dev          # 浏览器预览（mock IPC）
@@ -89,11 +89,11 @@ npm run dev          # 浏览器预览（mock IPC）
 ## Project Structure
 
 ```text
-cxc-v2/cxc-v2-core/src/
+cxc-core/src/
   supplier.rs                             → 新增 replace_discovered_models（保留存活模型的测试结果）
   connectivity.rs                         → 不变
 
-cxc-v2/cxc-v2-desktop/src/
+cxc-desktop/src/
   components/ui/model-picker.tsx          → 新增：可搜索下拉 + 刷新按钮
   components/agents/BindingDialog.tsx     → 模型字段换成 ModelPicker
   lib/api.ts                              → 复用 fetchSupplierModels
@@ -165,7 +165,7 @@ cxc-v2/cxc-v2-desktop/src/
 
 ## 状态
 
-已实现（提交见 git log）。实现位置：`cxc-v2/cxc-v2-desktop/src/components/ui/model-picker.tsx`、`cxc-v2/cxc-v2-core/src/supplier.rs` 的 `replace_discovered_models`。
+已实现（提交见 git log）。实现位置：`cxc-desktop/src/components/ui/model-picker.tsx`、`cxc-core/src/supplier.rs` 的 `replace_discovered_models`。
 
 ## Open Questions
 

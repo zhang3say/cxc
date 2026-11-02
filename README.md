@@ -2,83 +2,121 @@
 
 简体中文 | [English](README_en.md)
 
-> 为 Codex、Claude、Grok 等 AI 编程工具快速切换 API 中转站/代理端点。
-
-> 第二代桌面端正在 `cxc-v2/` 并行开发：全局中转站、Agent 按「工具 + 环境」拆分、三协议探测、按模型测连通性。见 [cxc-v2/README.md](cxc-v2/README.md)。
+> 为 Codex、Claude Code、Grok CLI、OpenCode 统一管理 API 中转站，一次配置，按 Agent 切换。
 
 [![Rust Version](https://img.shields.io/badge/rust-1.96%2B-orange)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ![CXC Desktop Preview](docs/images/cxc.webp)
 
-CXC 是一个用于管理 AI 编程工具的多个 API 中转端点配置的桌面端 GUI 应用。无需手动编辑复杂的 TOML 和 JSON 配置文件，使用 CXC 即可在直观的图形界面中轻松添加、测试和一键切换服务商。
+CXC 是一个管理 AI 编程工具 API 中转端点的桌面应用。中转站、账号、模型只维护一份，每个 Agent 各自选择用哪个中转站、哪个账号、哪个模型，点一下即可写入目标工具的配置文件。
 
 ## 功能特性
 
-- **直观的 GUI 界面** — 基于极简优雅的毛玻璃与暗色调视觉设计，操作直观。
-- **全局环境切换 (App / WSL)** — App / WSL 写入环境一次切换即可全局生效，同时 Codex、Claude CLI 与 Grok 仍分别记录各自在 App、WSL 下的 Active Provider。
-- **服务商管理** — 支持轻松添加、编辑、测试、删除服务商，还可以为服务商添加备注（Remark）。
-- **模型发现 (Model Discovery)** — 一键从服务商端点自动拉取并选择可用模型，无需手动记忆或盲打输入。
-- **连通性测试** — 采用真实的 API 连通性请求（并非简单的 ping）并测量延迟，确保服务有效。
-- **系统托盘** — 支持常驻系统托盘，可一键快速切换当前激活的 Codex Provider，无需唤醒主界面。
-- **安全切换** — 在修改目标工具配置文件之前自动创建 `.bak` 备份，防止配置丢失。
-- **多目标工具集成** — 自动配置并无缝集成 Codex (`~/.codex/config.toml`)、Claude CLI (`~/.claude/settings.json`) 和 Grok (`~/.grok/config.toml`)。
+- **Agent = 工具 + 环境** — Codex、Claude Code、Grok CLI、OpenCode 在 WSL 与 Windows 下是各自独立的 Agent，配置互不影响。按 PATH 自动探测安装状态，不可达的环境不显示。
+- **全局中转站** — 一个端点只保存一份：Base URL、协议集合、模型目录、备注。
+- **多账号** — 一个中转站可以保存多个 API Key（个人 / 团队 / 备用），绑定可以选择具体账号或跟随默认账号。
+- **绑定列表** — 每个 Agent 可保存多条绑定（中转站 + 账号 + 模型 + 推理档位 + 上下文 + 压缩比例），同一时刻只有一条使用中，点「启用」即切换并写入。
+- **三协议探测** — 分别探测 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses，自动识别中转站支持哪些协议。
+- **模型选择器** — 绑定对话框内可搜索、可键盘选择、可一键刷新该中转站的模型列表；下架模型会被移除，存活模型保留测试结果。
+- **连通性测试** — 对单个模型发真实推理请求并测量延迟，支持按中转站批量测试，结果记录到具体账号。
+- **卡片 / 列表双视图** — 中转站页可在卡片与列表之间切换，默认列表。
+- **安全写入** — 修改目标工具配置前自动生成 `.bak` 备份，写入失败时 CXC 侧配置保持不变。
+- **其他** — 系统托盘、Gist 同步（可选 AES-256-GCM 加密）、明暗主题、中英文界面、自定义配置目录。
 
-## 安装与开发构建
+## 安装
 
-### 开发调试
+从 [Releases](https://github.com/zhang3say/cxc/releases) 下载对应平台的安装包。
 
-在本地运行开发版本的桌面端应用：
+首次启动会自动接管旧版配置，详见下方「配置迁移」。
+
+## 开发
 
 ```bash
-# 克隆仓库
 git clone https://github.com/zhang3say/cxc
 cd cxc
 
-# 进入桌面端目录并安装依赖
+# 前端依赖
 cd cxc-desktop
 npm install
 
-# 启动开发调试环境
+# 启动桌面端开发环境
 npm run tauri dev
 ```
 
-### 生产打包
-
-在本地构建发布版本的桌面端安装包：
+浏览器预览（内置 mock IPC，不依赖 Tauri）：
 
 ```bash
 cd cxc-desktop
+npm run dev
+```
+
+## 构建与测试
+
+```bash
+# 核心单元测试
+cargo test -p cxc-core
+
+# 静态检查
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
+
+# 前端类型检查与构建
+cd cxc-desktop
+npx tsc --noEmit
+npm run build
+
+# 本地打包
 npm run tauri build
 ```
 
-构建生成的安装包将位于 `cxc-desktop/src-tauri/target/release/bundle/` 下。
+安装包输出在 `cxc-desktop/src-tauri/target/release/bundle/`。
 
-## 工作原理
+## 自动打包
 
-CXC 将其自身的服务商列表和配置存储在系统特定的配置目录中：
-- Windows: `%USERPROFILE%\.config\cxc\config.yaml`
-- Linux / WSL: `~/.config/cxc/config.yaml`
+推送 `cxc-desktop-v*` 形式的标签会触发 [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml)，在 macOS（arm64 / x64）与 Windows 上构建安装包，并创建一个**草稿** Release 供人工确认后发布。
 
-当您在 CXC 中切换服务商时，它会自动更新目标工具的配置：
-- **Codex** — 更新配置目录下的 `config.toml` (设置 model, base_url, wire_api) 和 `auth.json` (设置 API Key)
-- **Claude CLI** — 更新 `settings.json` 中的 `env` 对象 (设置 API Key、Base URL 及多模型映射关系)
-- **Grok** — 更新 `config.toml` 中的 `[models].default` 与 `[model_providers.<中转站名称>]`（端点与 `api_backend` 收拢在中转站块），当前模型通过 `model_provider` 引用它；`[models].web_search` 缺省写成同一个模型，也可按中转站的策略指定、保持或清除
+```bash
+git tag cxc-desktop-v0.2.0
+git push origin cxc-desktop-v0.2.0
+```
 
-每个中转站可以选一个推理档位。启用时写入该工具的当前档位；选不设置则删掉对应的键。Codex 的普通会话和计划模式分开设置。Claude 只写入 `CLAUDE_CODE_EFFORT_LEVEL`，之后换任何模型都继承这一档。
+## 配置文件
 
-每个中转站还可以设置上下文长度和压缩比例。Claude 只提供不设置和 `1m`，选 `1m` 会在模型名后加 `[1m]`，连通性测试不会加这个后缀。Codex 和 Grok 还可以用 `200k`、`500k` 或自定义长度。压缩比例是 70–100 的整数百分比。
+CXC 自身的配置存放在系统配置目录：
 
-在进行任何写入之前，目标配置文件都会被自动备份为 `.bak` 文件。
+- Linux / WSL：`~/.config/cxc/config.yaml`
+- Windows：`%APPDATA%\cxc\config.yaml`
+
+写入目标工具时，会更新这些文件：
+
+| 工具 | WSL / Linux | Windows |
+|---|---|---|
+| Codex | `~/.codex/config.toml` + `auth.json` | `%USERPROFILE%\.codex\config.toml` + `auth.json` |
+| Claude Code | `~/.claude/settings.json` | `%USERPROFILE%\.claude\settings.json` |
+| Grok CLI | `~/.grok/config.toml` | `%USERPROFILE%\.grok\config.toml` |
+| OpenCode | `~/.config/opencode/opencode.json` | `%APPDATA%\opencode\opencode.json` |
+
+每个工具在 WSL 与 Windows 下各有一份绑定列表，使用中的那条写入对应环境的配置文件。写入前都会生成 `.bak` 备份。
+
+### 配置迁移
+
+CXC 0.2.0 取代了旧的 `cxc-desktop`。首次启动按以下优先级接管数据，覆盖任何文件前都会先备份为 `config.yaml.backup.<时间戳>`：
+
+1. 主路径已是新格式 → 直接使用。
+2. 存在上一代 `cxc-v2` 配置（`~/.config/cxc-v2/config.yaml`）→ 优先接管它，因为它比旧版数据新。
+3. 主路径是旧版 v1 格式（含 `codex_providers` 等字段）→ 备份后原地迁移。
+4. 都没有 → 使用空配置。
+
+迁移会把旧版三份列表按「地址 + Key」合并成全局中转站，每个 Key 变成中转站下的一个账号。
 
 ## 系统架构
 
-- **后端 (Rust)**: 基于 [Tauri](https://github.com/tauri-apps/tauri) (v2) 框架，配合 [Tokio](https://github.com/tokio-rs/tokio) 异步运行时和 [Reqwest](https://github.com/seanmonstar/reqwest) 执行高性能、非阻塞 of API 连通性测试和文件读写操作。
-- **前端 (React)**: 基于 React 19 和 TypeScript，采用 [Vite](https://github.com/vitejs/vite) 作为构建工具，样式库采用 [Tailwind CSS v4](https://tailwindcss.com) 结合 [Radix UI](https://www.radix-ui.com) 实现极具现代感、响应式且顺滑的交互界面。
-- **保持格式的 AST 修改**: 读写 Codex / Grok 的 TOML 文件时使用 [toml_edit](https://github.com/toml-rs/toml)，能够精准修改目标值而保留原配置文件中的所有格式和注释。
+- **后端（Rust）** — Tauri 2 + Tokio + Reqwest，负责探测、连通性测试、配置文件读写与同步。
+- **前端（React）** — React 19 + TypeScript + Vite 7，Tailwind CSS 4 + Radix UI。
+- **保留格式的 AST 修改** — Codex / Grok 的 TOML 用 `toml_edit` 修改，保留原有格式与注释。
 
-关于详细的架构决策记录，请参见 [docs/adr/](docs/adr/)。
-
+架构决策记录见 [docs/adr/](docs/adr/)。
 
 ## 许可证
 

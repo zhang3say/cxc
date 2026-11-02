@@ -82,17 +82,17 @@
 
 ## Tech Stack
 
-不变：Tauri 2、React 19、TypeScript、Vite 7、Tailwind 4、Radix UI；核心 `cxc-v2-core`（Rust edition 2024）。不新增依赖。
+不变：Tauri 2、React 19、TypeScript、Vite 7、Tailwind 4、Radix UI；核心 `cxc-core`（Rust edition 2024）。不新增依赖。
 
 ## Commands
 
 ```bash
-cd cxc-v2
-cargo test -p cxc-v2-core
-cargo clippy -p cxc-v2-core -p cxc-v2-desktop --all-targets -- -D warnings
+cd cxc
+cargo test -p cxc-core
+cargo clippy -p cxc-core -p cxc-desktop --all-targets -- -D warnings
 cargo fmt --all -- --check
 
-cd cxc-v2/cxc-v2-desktop
+cd cxc-desktop
 npx tsc --noEmit
 npm run build
 npm run dev          # 浏览器预览（mock IPC）
@@ -101,14 +101,14 @@ npm run dev          # 浏览器预览（mock IPC）
 ## Project Structure
 
 ```text
-cxc-v2/cxc-v2-core/src/
+cxc-core/src/
   agent.rs              → AgentConfig 增加 id；AgentSlot { active, bindings }；绑定 CRUD 与启用
   config.rs             → 配置版本 4；v3 → v4 升级
   migration.rs          → 旧版导入落到 bindings[0] 并设为 active
   sync/mod.rs           → 载荷版本 4；读取 v3 / v2 / v1
   sync/merge.rs         → 按 (工具, 环境, 绑定 id) 合并
 
-cxc-v2/cxc-v2-desktop/src/
+cxc-desktop/src/
   components/agents/AgentPage.tsx        → 工具 + 环境 + 绑定列表
   components/agents/BindingRow.tsx       → 单行绑定（新增）
   components/agents/BindingDialog.tsx    → 编辑对话框（新增）
@@ -208,7 +208,7 @@ pub fn activate_binding(
 
 ## Testing Strategy
 
-核心单元测试（`cargo test -p cxc-v2-core`）：
+核心单元测试（`cargo test -p cxc-core`）：
 
 - 绑定 CRUD：新增、编辑、删除；删除 active 拒绝；active 指向不存在的 id 时视为无。
 - 启用：写入失败时 active 不变、配置不变；写入成功时 active 更新。
