@@ -255,7 +255,9 @@ export default function App() {
     const result = await api.testSupplierModel(supplierId, model, protocol, keyId);
     setConfig(result.config);
     showToast(
-      `${model} · ${result.result.ok ? t.success : t.failed} · ${result.result.latency_ms} ms`,
+      result.result.ok
+        ? `${model} · ${t.success} · ${result.result.latency_ms} ms`
+        : `${model} · ${t.failed}`,
       result.result.ok ? "success" : "error",
     );
     return result.result;

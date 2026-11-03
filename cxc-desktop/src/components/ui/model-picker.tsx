@@ -289,7 +289,9 @@ export function ModelPicker({
                     }`}
                     title={entry.last_error}
                   >
-                    {entry.last_ok ? t.success : t.failed} · {entry.latency_ms ?? 0} ms
+                    {entry.last_ok
+                      ? `${t.success} · ${entry.latency_ms ?? 0} ms`
+                      : t.failed}
                   </span>
                 ) : null}
               </button>

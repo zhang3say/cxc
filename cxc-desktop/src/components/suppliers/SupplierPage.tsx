@@ -81,7 +81,28 @@ function statusDotClass(status: "ok" | "fail" | "unknown") {
 }
 
 function lastLatencyOf(supplier: Supplier): number | undefined {
-  return supplier.models.find((model) => model.latency_ms != null)?.latency_ms;
+  // 测试失败时不再展示延迟毫秒，仅以成功结果作为端点延迟。
+  return supplier.models.find(
+    (model) => model.last_ok === true && model.latency_ms != null,
+  )?.latency_ms;
+}
+
+/** 中转站延迟列文案：有成功结果显示毫秒，测试过但全失败显示「失败」。 */
+function latencyText(supplier: Supplier, t: Messages): string {
+  const latency = lastLatencyOf(supplier);
+  if (latency != null) return `${latency} ms`;
+  return supplier.models.some((model) => model.last_ok != null)
+    ? t.failed
+    : t.never;
+}
+
+/** 中转站延迟列配色：成功按延迟分档，全部失败标红，未测试置灰。 */
+function latencyColorClass(supplier: Supplier): string {
+  const latency = lastLatencyOf(supplier);
+  if (latency != null) return latencyClass(latency);
+  return supplier.models.some((model) => model.last_ok != null)
+    ? "text-red-500"
+    : "text-muted-foreground/60";
 }
 
 function formatTime(value?: string) {
@@ -208,7 +229,6 @@ function SupplierCard({
   onDelete: () => void;
 }) {
   const status = statusOf(supplier);
-  const latency = lastLatencyOf(supplier);
 
   return (
     <div
@@ -241,8 +261,8 @@ function SupplierCard({
           <span className="font-medium text-muted-foreground/80">
             {supplier.models.length} {t.modelsCount}
           </span>
-          <span className={`font-bold ${latencyClass(latency)}`}>
-            {latency != null ? `${latency} ms` : t.never}
+          <span className={`font-bold ${latencyColorClass(supplier)}`}>
+            {latencyText(supplier, t)}
           </span>
         </div>
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
@@ -292,7 +312,6 @@ function SupplierListRow({
   onDelete: () => void;
 }) {
   const status = statusOf(supplier);
-  const latency = lastLatencyOf(supplier);
 
   return (
     <tr
@@ -328,8 +347,8 @@ function SupplierListRow({
       <td className="px-3 py-2.5 text-center font-mono text-[10.5px] text-muted-foreground">
         {supplier.models.length}
       </td>
-      <td className={`px-3 py-2.5 text-right font-mono text-[10.5px] font-bold ${latencyClass(latency)}`}>
-        {latency != null ? `${latency} ms` : t.never}
+      <td className={`px-3 py-2.5 text-right font-mono text-[10.5px] font-bold ${latencyColorClass(supplier)}`}>
+        {latencyText(supplier, t)}
       </td>
       <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
         <div className="flex justify-end">
@@ -702,7 +721,7 @@ function ModelRow({
           <span className="text-[10.5px] text-muted-foreground">
             {model.last_ok == null ? t.never : model.last_ok ? t.success : t.failed}
           </span>
-          {model.latency_ms != null ? (
+          {model.last_ok === true && model.latency_ms != null ? (
             <span
               className={`font-mono text-[10px] font-bold tabular-nums ${latencyClass(model.latency_ms)}`}
             >

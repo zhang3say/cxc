@@ -80,7 +80,9 @@ export function BindingRow({
               }`}
               title={test.last_error}
             >
-              {test.last_ok ? t.success : t.failed} · {test.latency_ms} ms
+                            {test.last_ok
+                ? `${t.success} · ${test.latency_ms} ms`
+                : t.failed}
             </span>
           ) : null}
         </div>
