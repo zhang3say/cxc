@@ -115,6 +115,13 @@ export interface DetectedAgent {
   configured: boolean;
 }
 
+export interface EnvInfo {
+  env: Env;
+  label: string;
+  /** 当前进程直接运行在这个环境里。 */
+  host: boolean;
+}
+
 export interface AgentCapabilities {
   protocols: Protocol[];
   reasoning_effort: boolean;

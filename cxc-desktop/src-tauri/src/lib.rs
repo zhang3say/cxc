@@ -83,6 +83,11 @@ fn get_envs() -> Vec<Env> {
 }
 
 #[tauri::command]
+fn get_env_infos() -> Vec<detect::EnvInfo> {
+    detect::env_infos()
+}
+
+#[tauri::command]
 fn detect_agents() -> Result<Vec<DetectedAgent>, String> {
     let cfg = load_config()?;
     Ok(detect::detect_all(&cfg.custom_dirs))
@@ -673,6 +678,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_envs,
+            get_env_infos,
             detect_agents,
             get_path_env,
             add_supplier,

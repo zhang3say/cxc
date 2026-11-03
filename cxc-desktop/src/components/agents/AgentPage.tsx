@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertCircle, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Messages } from "@/lib/i18n";
 import type {
@@ -9,22 +9,22 @@ import type {
   Config,
   DetectedAgent,
   Env,
+  EnvInfo,
   ModelTestResult,
   Protocol,
 } from "@/lib/types";
-import { AGENT_KINDS, AGENT_LABELS, ENV_LABELS, slotOf } from "@/lib/types";
+import { AGENT_KINDS, AGENT_LABELS, slotOf } from "@/lib/types";
 import { BindingRow } from "./BindingRow";
 import { BindingDialog } from "./BindingDialog";
 
 interface AgentPageProps {
   config: Config;
   detected: DetectedAgent[];
-  envs: Env[];
+  envInfos: EnvInfo[];
   agent: AgentKind;
   env: Env;
   search: string;
-  onAgent: (agent: AgentKind) => void;
-  onEnv: (env: Env) => void;
+  onSelect: (agent: AgentKind, env: Env) => void;
   t: Messages;
   busy: boolean;
   onAdd: (input: AgentConfigInput, activate: boolean) => Promise<void>;
@@ -57,15 +57,19 @@ function AgentMark({ agent }: { agent: AgentKind }) {
   );
 }
 
+/** 宿主环境不加后缀；WSL 等间接环境带上发行版，避免同名 Agent 混在一起。 */
+function agentTitle(kind: AgentKind, info: EnvInfo): string {
+  return info.host ? AGENT_LABELS[kind] : `${AGENT_LABELS[kind]} ${info.label}`;
+}
+
 export function AgentPage({
   config,
   detected,
-  envs,
+  envInfos,
   agent,
   env,
   search,
-  onAgent,
-  onEnv,
+  onSelect,
   t,
   busy,
   onAdd,
@@ -86,20 +90,47 @@ export function AgentPage({
   const bindings = slot?.bindings ?? [];
   const activeId = slot?.active ?? null;
   const detection = detected.find((item) => item.kind === agent && item.env === env);
+  const orderedInfos = useMemo(
+    () => [...envInfos].sort((a, b) => Number(b.host) - Number(a.host)),
+    [envInfos],
+  );
+  const selectedInfo = orderedInfos.find((info) => info.env === env);
+  const selectedTitle = selectedInfo
+    ? agentTitle(agent, selectedInfo)
+    : AGENT_LABELS[agent];
+
+  const navigation = useMemo(
+    () =>
+      AGENT_KINDS.flatMap((kind) =>
+        orderedInfos.map((info) => {
+          const slot = slotOf(config, kind, info.env);
+          const itemDetection = detected.find(
+            (item) => item.kind === kind && item.env === info.env,
+          );
+          return {
+            key: `${kind}:${info.env}`,
+            kind,
+            info,
+            count: slot?.bindings.length ?? 0,
+            installed: itemDetection?.installed ?? false,
+          };
+        }),
+      ),
+    [config, detected, orderedInfos],
+  );
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return bindings;
+    const agentTerms = `${AGENT_LABELS[agent]} ${selectedInfo?.label ?? ""}`;
     return bindings.filter((binding) => {
       const supplier = config.suppliers.find((item) => item.id === binding.supplier_id);
-      return [binding.model, supplier?.name ?? "", AGENT_LABELS[agent], ENV_LABELS[env]]
+      return [binding.model, supplier?.name ?? "", agentTerms]
         .join(" ")
         .toLowerCase()
         .includes(query);
     });
-  }, [bindings, search, config.suppliers, agent, env]);
-
-  const visibleEnvs = envs.length ? envs : (["wsl"] as Env[]);
+  }, [bindings, search, config.suppliers, agent, selectedInfo]);
 
   const submit = async (input: AgentConfigInput, activate: boolean) => {
     setSaving(true);
@@ -130,90 +161,96 @@ export function AgentPage({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {AGENT_KINDS.map((kind) => {
-          const installed = detected.some(
-            (item) => item.kind === kind && item.installed,
-          );
-          const selected = agent === kind;
-          return (
-            <button
-              key={kind}
-              onClick={() => onAgent(kind)}
-              className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all ${
-                selected
-                  ? "border-primary/40 bg-primary/[0.05] text-primary shadow-sm"
-                  : "border-border/40 bg-card/40 text-muted-foreground backdrop-blur-md hover:bg-card/60 hover:text-foreground"
+    <div className="flex flex-col gap-4 md:flex-row md:items-start">
+      <nav aria-label={t.sectionAgents} className="shrink-0 md:w-56">
+        <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm">
+          {navigation.map((item) => {
+            const selected = item.kind === agent && item.info.env === env;
+            const itemName = item.info.host
+              ? AGENT_LABELS[item.kind]
+              : `${AGENT_LABELS[item.kind]} ${item.info.label}`;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onSelect(item.kind, item.info.env)}
+                aria-label={`${itemName}, ${
+                  item.installed ? t.agentInstalled : t.agentMissing
+                }, ${t.bindings} ${item.count}`}
+                aria-current={selected ? "true" : undefined}
+                className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  selected
+                    ? "border-primary/35 bg-primary/[0.06] shadow-[inset_0_0_0_1px_rgba(0,117,222,0.06)]"
+                    : "border-transparent text-muted-foreground hover:border-border/30 hover:bg-card/40 hover:text-foreground"
+                }`}
+              >
+                <AgentMark agent={item.kind} />
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block truncate text-xs font-semibold">
+                    {AGENT_LABELS[item.kind]}
+                  </span>
+                  {item.info.host ? null : (
+                    <span
+                      className="mt-0.5 block truncate text-[10px] font-medium text-muted-foreground/70"
+                      title={item.info.label}
+                    >
+                      {item.info.label}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground/55">
+                  {item.count}
+                </span>
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${
+                    item.installed
+                      ? "bg-sticker-green"
+                      : "bg-muted-foreground/30"
+                  }`}
+                  title={item.installed ? t.agentInstalled : t.agentMissing}
+                />
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="px-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="truncate text-sm font-bold tracking-tight">
+              {selectedTitle}
+            </h2>
+            <span
+              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                detection?.installed
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-border bg-muted/30 text-muted-foreground"
               }`}
             >
-              <AgentMark agent={kind} />
-              <span>{AGENT_LABELS[kind]}</span>
-              <span
-                className={`size-1.5 rounded-full ${
-                  installed ? "bg-sticker-green" : "bg-muted-foreground/30"
-                }`}
-                title={installed ? t.agentInstalled : t.agentMissing}
-              />
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {visibleEnvs.length > 1 ? (
-            <div className="flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
-              {visibleEnvs.map((item) => (
-                <button
-                  key={item}
-                  onClick={() => onEnv(item)}
-                  className={`rounded-md px-3 py-1 text-[11px] font-bold transition-all ${
-                    env === item
-                      ? "border border-border/10 bg-card/70 text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {ENV_LABELS[item]}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
-              <AlertCircle className="size-3" />
-              {ENV_LABELS[env]}
+              {detection?.installed ? t.agentInstalled : t.agentMissing}
             </span>
-          )}
-          <span className="hidden truncate font-mono text-[10px] text-muted-foreground/60 sm:inline">
+          </div>
+          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/60">
             {detection?.config_dir ?? ""}
-          </span>
+          </p>
         </div>
-        <span
-          className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-            detection?.installed
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-border bg-muted/30 text-muted-foreground"
-          }`}
-        >
-          {detection?.installed ? t.agentInstalled : t.agentMissing}
-        </span>
-      </div>
 
-      <div className="overflow-hidden rounded-xl">
-        <div className="flex items-center justify-between border-b border-border/30 px-4 py-2.5">
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70">
-            {t.bindings} {bindings.length}
-          </span>
-          <Button
-            size="xs"
-            onClick={() => setDialog({ open: true, binding: null })}
-            disabled={busy || saving}
-            className={bindings.length === 0 ? "invisible" : ""}
-          >
-            <Plus className="size-3" />
-            {t.newBinding}
-          </Button>
-        </div>
+        <div className="overflow-hidden rounded-xl">
+          <div className="flex items-center justify-between border-b border-border/30 px-4 py-2.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70">
+              {t.bindings} {bindings.length}
+            </span>
+            <Button
+              size="xs"
+              onClick={() => setDialog({ open: true, binding: null })}
+              disabled={busy || saving}
+              className={bindings.length === 0 ? "invisible" : ""}
+            >
+              <Plus className="size-3" />
+              {t.newBinding}
+            </Button>
+          </div>
 
         {bindings.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-12 text-center">
@@ -260,12 +297,14 @@ export function AgentPage({
             );
           })
         )}
+        </div>
       </div>
 
       <BindingDialog
         open={dialog.open}
         agent={agent}
         env={env}
+        envLabel={selectedInfo?.label}
         binding={dialog.binding}
         suppliers={config.suppliers}
         isActive={dialog.binding?.id === activeId}

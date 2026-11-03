@@ -7,6 +7,7 @@ import type {
   CustomDirs,
   DetectedAgent,
   Env,
+  EnvInfo,
   MergeReport,
   ModelTestOutcome,
   ModelTestResult,
@@ -28,6 +29,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 export const api = {
   getConfig: () => call<Config>("get_config"),
   getEnvs: () => call<Env[]>("get_envs"),
+  getEnvInfos: () => call<EnvInfo[]>("get_env_infos"),
   detectAgents: () => call<DetectedAgent[]>("detect_agents"),
   getPathEnv: () => call<string>("get_path_env"),
 

@@ -441,6 +441,12 @@ export async function mockInvoke<T>(
     case "get_envs":
       return ["wsl", "windows"] as T;
 
+    case "get_env_infos":
+      return [
+        { env: "windows", label: "Windows", host: true },
+        { env: "wsl", label: "WSL (Ubuntu)", host: false },
+      ] as T;
+
     case "get_path_env":
       return "/home/leezi/.local/bin:/home/leezi/.grok/bin:/usr/local/bin:/usr/bin:/bin" as T;
 

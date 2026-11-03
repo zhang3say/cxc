@@ -38,6 +38,7 @@ interface BindingDialogProps {
   open: boolean;
   agent: AgentKind;
   env: Env;
+  envLabel?: string;
   binding: AgentConfig | null;
   suppliers: Config["suppliers"];
   isActive: boolean;
@@ -57,6 +58,7 @@ export function BindingDialog({
   open,
   agent,
   env,
+  envLabel,
   binding,
   suppliers,
   isActive,
@@ -239,7 +241,7 @@ export function BindingDialog({
             {binding ? t.editBinding : t.newBinding}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            {AGENT_LABELS[agent]} · {ENV_LABELS[env]}
+            {AGENT_LABELS[agent]} · {envLabel ?? ENV_LABELS[env]}
             {isActive ? ` · ${t.inUse}` : ""}
           </DialogDescription>
         </DialogHeader>

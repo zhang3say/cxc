@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertCircle, CheckCircle2, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import type {
   CustomDirs,
   DetectedAgent,
   Env,
+  EnvInfo,
   ModelTestResult,
   Protocol,
   Supplier,
@@ -50,7 +51,8 @@ interface ConfirmState {
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [detected, setDetected] = useState<DetectedAgent[]>([]);
-  const [envs, setEnvs] = useState<Env[]>(["wsl"]);
+  const [envInfos, setEnvInfos] = useState<EnvInfo[]>([]);
+  const envInitialized = useRef(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("suppliers");
@@ -79,6 +81,7 @@ export default function App() {
   });
 
   const t = messages[lang];
+  const envs = useMemo(() => envInfos.map((info) => info.env), [envInfos]);
 
   const showToast = useCallback((message: string, kind: ToastKind = "info") => {
     const id = Date.now() + Math.random();
@@ -88,24 +91,33 @@ export default function App() {
     }, 4000);
   }, []);
 
+  const selectAgent = useCallback((nextAgent: AgentKind, nextEnv: Env) => {
+    setAgent(nextAgent);
+    setEnv(nextEnv);
+  }, []);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [nextConfig, nextEnvs, nextDetected, nextVersion, nextPath] =
+      const [nextConfig, nextEnvInfos, nextDetected, nextVersion, nextPath] =
         await Promise.all([
           api.getConfig(),
-          api.getEnvs(),
+          api.getEnvInfos(),
           api.detectAgents(),
           api.getAppVersion(),
           api.getPathEnv(),
         ]);
       setConfig(nextConfig);
-      setEnvs(nextEnvs);
+      setEnvInfos(nextEnvInfos);
       setDetected(nextDetected);
       setVersion(nextVersion);
       setPathEnv(nextPath);
-      setEnv((current) => (nextEnvs.includes(current) ? current : (nextEnvs[0] ?? "wsl")));
+      setEnv((current) =>
+        nextEnvInfos.some((info) => info.env === current)
+          ? current
+          : (nextEnvInfos[0]?.env ?? "wsl"),
+      );
     } catch (error) {
       setLoadError(errorText(error));
     } finally {
@@ -116,6 +128,14 @@ export default function App() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // 首次加载默认选中宿主机环境；之后保留用户的选择。
+  useEffect(() => {
+    if (envInitialized.current || envInfos.length === 0) return;
+    envInitialized.current = true;
+    const host = envInfos.find((info) => info.host)?.env ?? envInfos[0]?.env;
+    if (host) setEnv(host);
+  }, [envInfos]);
 
   useEffect(() => {
     localStorage.setItem("cxc-lang", lang);
@@ -411,12 +431,11 @@ export default function App() {
         <AgentPage
           config={config}
           detected={detected}
-          envs={envs}
+          envInfos={envInfos}
           agent={agent}
           env={env}
           search={search}
-          onAgent={setAgent}
-          onEnv={setEnv}
+          onSelect={selectAgent}
           t={t}
           busy={saving}
           onAdd={addBinding}
@@ -450,12 +469,13 @@ export default function App() {
     section,
     agent,
     env,
-    envs,
+    envInfos,
     detected,
     search,
     busy,
     saving,
     t,
+    selectAgent,
     reload,
   ]);
 

@@ -15,6 +15,77 @@ pub struct DetectedAgent {
     pub configured: bool,
 }
 
+/// 界面上环境的展示信息。`host` 表示当前进程直接运行在这个环境里。
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct EnvInfo {
+    pub env: Env,
+    pub label: String,
+    pub host: bool,
+}
+
+pub fn env_infos() -> Vec<EnvInfo> {
+    let envs = reachable_envs();
+    let distro = if envs.contains(&Env::Wsl) {
+        wsl_distro_name()
+    } else {
+        None
+    };
+    envs.into_iter()
+        .map(|env| EnvInfo {
+            env,
+            label: env_label(env, distro.as_deref()),
+            host: is_host_env(env),
+        })
+        .collect()
+}
+
+fn is_host_env(env: Env) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        env == Env::Windows
+    }
+    #[cfg(target_os = "linux")]
+    {
+        env == Env::Wsl
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        env == Env::Wsl
+    }
+}
+
+fn env_label(env: Env, distro: Option<&str>) -> String {
+    match env {
+        Env::Windows => "Windows".to_string(),
+        Env::Wsl => match distro.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(name) => format!("WSL ({name})"),
+            None => "WSL".to_string(),
+        },
+    }
+}
+
+fn wsl_distro_name() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = crate::process::command("wsl")
+            .args(["-e", "sh", "-lc", "printf %s \"$WSL_DISTRO_NAME\""])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return (!name.is_empty()).then_some(name);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("WSL_DISTRO_NAME")
+            .ok()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+    }
+}
+
 /// 当前机器能访问到的环境。不可达的环境不会出现在界面上。
 pub fn reachable_envs() -> Vec<Env> {
     #[cfg(target_os = "linux")]
@@ -267,5 +338,13 @@ mod tests {
         let bin = bin_dir.join("grok");
         std::fs::write(&bin, b"not a binary").unwrap();
         assert_eq!(find_in_candidates("grok", temp.path()), None);
+    }
+
+    #[test]
+    fn env_label_includes_wsl_distro() {
+        assert_eq!(env_label(Env::Wsl, Some("Ubuntu")), "WSL (Ubuntu)");
+        assert_eq!(env_label(Env::Wsl, Some("  ")), "WSL");
+        assert_eq!(env_label(Env::Wsl, None), "WSL");
+        assert_eq!(env_label(Env::Windows, Some("Ubuntu")), "Windows");
     }
 }
