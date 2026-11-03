@@ -146,9 +146,10 @@ export default function App() {
     localStorage.setItem("cxc-theme", theme);
   }, [theme]);
 
-  const submitSupplier = async (input: SupplierInput, probeAfterSave: boolean) => {
+  const submitSupplier = async (input: SupplierInput, _probeAfterSave: boolean) => {
     setSaving(true);
     try {
+      const isNew = !supplierDialog.supplier;
       const updated = supplierDialog.supplier
         ? await api.editSupplier(supplierDialog.supplier.id, input)
         : await api.addSupplier(input);
@@ -156,15 +157,42 @@ export default function App() {
       setSupplierDialog({ open: false, supplier: null });
       showToast(supplierDialog.supplier ? t.editSupplier : t.addSupplier, "success");
 
-      if (probeAfterSave) {
-        const saved = updated.suppliers.find((supplier) => supplier.name === input.name.trim());
+      // 新建的中转站协议完全由探测决定，保存后在后台探测并拉取模型。
+      if (isNew) {
+        const saved = updated.suppliers.find(
+          (supplier) => supplier.name === input.name.trim(),
+        );
         if (saved) {
-          const result = await api.probeSupplier(saved.id);
-          setConfig(result.config);
-          const added = result.report.added.length
-            ? result.report.added.join(", ")
-            : "—";
-          showToast(`${t.probeDone}: +${added}`, "success");
+          const id = saved.id;
+          setBusy((current) => ({ ...current, [id]: "probe" }));
+          void (async () => {
+            try {
+              const probed = await api.probeSupplier(id);
+              setConfig(probed.config);
+              const protocols = probed.report.protocols
+                .map((protocol) => PROTOCOL_LABELS[protocol])
+                .join(" / ");
+              showToast(
+                protocols
+                  ? `${t.probeDone}: ${protocols}`
+                  : `${t.probeDone}: ${t.probeNone}`,
+                probed.report.protocols.length ? "success" : "error",
+              );
+
+              const fetched = await api.fetchSupplierModels(id);
+              setConfig(fetched.config);
+              if (fetched.models.length) {
+                showToast(`${t.modelsFetched}: ${fetched.models.length}`, "success");
+              }
+            } catch (error) {
+              showToast(errorText(error), "error");
+            } finally {
+              setBusy((current) => {
+                const { [id]: _removed, ...rest } = current;
+                return rest;
+              });
+            }
+          })();
         }
       }
     } finally {

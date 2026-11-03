@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2, Plus, RefreshCw, Star, Trash2 } from "lucide-react";
+import { Check, Loader2, Plus, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -295,35 +295,43 @@ export function SupplierDialog({
             <Label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
               {t.protocols}
             </Label>
-            <div className="grid gap-2">
-              {protocols.map((protocol) => {
-                const active = selected.includes(protocol);
-                return (
-                  <button
-                    key={protocol}
-                    type="button"
-                    onClick={() => toggle(protocol)}
-                    className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-all ${
-                      active
-                        ? "border-primary/50 bg-primary/[0.04] text-primary"
-                        : "border-border/40 bg-muted/10 text-foreground hover:bg-muted/20"
-                    }`}
-                  >
-                    <span className="text-xs font-semibold">
-                      {PROTOCOL_FULL_LABELS[protocol]}
-                    </span>
-                    <span
-                      className={`size-2 rounded-full ${
-                        active ? "bg-primary" : "bg-muted-foreground/25"
-                      }`}
-                    />
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] leading-normal text-muted-foreground/70">
-              {t.protocolHint}
-            </p>
+            {supplier ? (
+              <>
+                <div className="grid gap-2">
+                  {protocols.map((protocol) => {
+                    const active = selected.includes(protocol);
+                    return (
+                      <button
+                        key={protocol}
+                        type="button"
+                        onClick={() => toggle(protocol)}
+                        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-all ${
+                          active
+                            ? "border-primary/50 bg-primary/[0.04] text-primary"
+                            : "border-border/40 bg-muted/10 text-foreground hover:bg-muted/20"
+                        }`}
+                      >
+                        <span className="text-xs font-semibold">
+                          {PROTOCOL_FULL_LABELS[protocol]}
+                        </span>
+                        <span
+                          className={`size-2 rounded-full ${
+                            active ? "bg-primary" : "bg-muted-foreground/25"
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] leading-normal text-muted-foreground/70">
+                  {t.protocolHint}
+                </p>
+              </>
+            ) : (
+              <p className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-[10px] leading-normal text-muted-foreground/70">
+                {t.protocolAutoProbe}
+              </p>
+            )}
           </div>
 
         </div>
@@ -337,19 +345,6 @@ export function SupplierDialog({
         <DialogFooter className="mt-4 shrink-0 gap-2 border-t border-border/30 pt-4">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             {t.cancel}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void submit(true)}
-            disabled={saving}
-          >
-            {saving ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3" />
-            )}
-            {t.save} + {t.probe}
           </Button>
           <Button size="sm" onClick={() => void submit(false)} disabled={saving}>
             {saving ? <Loader2 className="size-3 animate-spin" /> : null}
