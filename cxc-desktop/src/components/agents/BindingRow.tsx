@@ -56,10 +56,10 @@ export function BindingRow({
 
   return (
     <div
-      className={`group relative flex flex-wrap items-start justify-between gap-3 px-4 py-3 transition-colors ${
+      className={`group relative flex flex-wrap items-start justify-between gap-3 px-4 py-3 transition-all duration-200 ${
         isActive
-          ? "bg-primary/[0.04] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary"
-          : "hover:bg-muted/10"
+          ? "my-1 rounded-xl bg-primary/[0.06] shadow-[inset_0_0_0_1px_rgba(0,117,222,0.45),inset_0_0_12px_rgba(0,117,222,0.08)] dark:bg-primary/[0.09] dark:shadow-[inset_0_0_0_1px_rgba(46,170,220,0.4),inset_0_0_12px_rgba(46,170,220,0.1)]"
+          : "hover:bg-white/25 dark:hover:bg-white/[0.04]"
       }`}
     >
       <div className="min-w-0 flex-1">
@@ -68,7 +68,7 @@ export function BindingRow({
             {model || t.notConfigured}
           </span>
           {isActive ? (
-            <span className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary">
+            <span className="flex items-center gap-1 rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary">
               <Check className="size-2.5" />
               {t.inUse}
             </span>

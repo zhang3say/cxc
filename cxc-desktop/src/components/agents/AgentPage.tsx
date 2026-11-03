@@ -228,28 +228,37 @@ export function AgentPage({
             {t.emptySearch}
           </div>
         ) : (
-          visible.map((binding, index) => (
-            <div
-              key={binding.id}
-              className={index > 0 ? "border-t border-border/30" : ""}
-            >
-              <BindingRow
-                binding={binding}
-                supplier={config.suppliers.find(
-                  (item) => item.id === binding.supplier_id,
-                )}
-                agent={agent}
-                isActive={binding.id === activeId}
-                busy={busy || saving}
-                testing={testingId === binding.id}
-                t={t}
-                onActivate={() => void onActivate(binding)}
-                onEdit={() => setDialog({ open: true, binding })}
-                onDelete={() => void onDelete(binding)}
-                onTest={() => void test(binding)}
-              />
-            </div>
-          ))
+          visible.map((binding, index) => {
+            const isActive = binding.id === activeId;
+            const previousActive =
+              index > 0 && visible[index - 1].id === activeId;
+            return (
+              <div
+                key={binding.id}
+                className={
+                  index > 0 && !isActive && !previousActive
+                    ? "border-t border-border/30"
+                    : ""
+                }
+              >
+                <BindingRow
+                  binding={binding}
+                  supplier={config.suppliers.find(
+                    (item) => item.id === binding.supplier_id,
+                  )}
+                  agent={agent}
+                  isActive={isActive}
+                  busy={busy || saving}
+                  testing={testingId === binding.id}
+                  t={t}
+                  onActivate={() => void onActivate(binding)}
+                  onEdit={() => setDialog({ open: true, binding })}
+                  onDelete={() => void onDelete(binding)}
+                  onTest={() => void test(binding)}
+                />
+              </div>
+            );
+          })
         )}
       </div>
 
