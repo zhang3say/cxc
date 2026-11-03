@@ -71,8 +71,8 @@ Installers are written to `cxc-desktop/src-tauri/target/release/bundle/`.
 Pushing a `cxc-desktop-v*` tag triggers [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml), which builds installers on macOS (arm64 / x64) and Windows and opens a **draft** release for review.
 
 ```bash
-git tag cxc-desktop-v0.2.1
-git push origin cxc-desktop-v0.2.1
+git tag cxc-desktop-v0.2.2
+git push origin cxc-desktop-v0.2.2
 ```
 
 ## Configuration
