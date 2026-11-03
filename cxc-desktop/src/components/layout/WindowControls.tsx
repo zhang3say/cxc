@@ -2,7 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { isTauri } from "@/lib/api";
 
-const isMac =
+export const isMac =
   typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("mac");
 
 function run(action: "close" | "minimize" | "maximize") {

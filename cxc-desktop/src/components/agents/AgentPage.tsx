@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { CircleCheck, CircleSlash, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Messages } from "@/lib/i18n";
 import type {
@@ -146,8 +146,8 @@ export function AgentPage({
 
   return (
     <div className="flex flex-col gap-4 md:flex-row md:items-start">
-      <nav aria-label={t.sectionAgents} className="shrink-0 md:w-56">
-        <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm">
+      <nav aria-label={t.sectionAgents} className="shrink-0 md:sticky md:top-0 md:w-56">
+        <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm [scrollbar-width:thin] md:max-h-[calc(100vh-6.5rem)] md:overflow-y-auto md:overscroll-contain">
           {navigation.map((item) => {
             const selected = item.kind === agent && item.info.env === env;
             const itemName = item.info.host
@@ -189,13 +189,17 @@ export function AgentPage({
                   {item.count}
                 </span>
                 <span
-                  className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-bold leading-none ${
-                    item.installed
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-border/50 bg-muted/20 text-muted-foreground"
-                  }`}
+                  className="flex shrink-0 items-center"
+                  title={item.installed ? t.agentInstalled : t.agentMissing}
                 >
-                  {item.installed ? t.agentInstalled : t.agentMissing}
+                  {item.installed ? (
+                    <CircleCheck className="size-3.5 text-sticker-green" aria-hidden="true" />
+                  ) : (
+                    <CircleSlash
+                      className="size-3.5 text-muted-foreground/35"
+                      aria-hidden="true"
+                    />
+                  )}
                 </span>
               </button>
             );
