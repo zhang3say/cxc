@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CircleCheck, CircleSlash, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Messages } from "@/lib/i18n";
 import type {
@@ -46,6 +46,9 @@ function agentTitle(kind: AgentKind, info: EnvInfo): string {
   return info.host ? AGENT_LABELS[kind] : `${AGENT_LABELS[kind]} ${info.label}`;
 }
 
+const COLLAPSED_KEY = "cxc.agents.sidebar-collapsed";
+const ENV_SHORT = (label: string) => label.split(/[\s(]/)[0];
+
 export function AgentPage({
   config,
   detected,
@@ -69,44 +72,72 @@ export function AgentPage({
   });
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(COLLAPSED_KEY) === "1",
+  );
 
-  const slot = slotOf(config, agent, env);
-  const bindings = slot?.bindings ?? [];
-  const activeId = slot?.active ?? null;
-  const detection = detected.find((item) => item.kind === agent && item.env === env);
+  const toggleCollapsed = () => {
+    setCollapsed((value) => {
+      localStorage.setItem(COLLAPSED_KEY, value ? "0" : "1");
+      return !value;
+    });
+  };
+
   const orderedInfos = useMemo(
     () => [...envInfos].sort((a, b) => Number(b.host) - Number(a.host)),
     [envInfos],
   );
-  const selectedInfo = orderedInfos.find((info) => info.env === env);
-  const selectedTitle = selectedInfo
-    ? agentTitle(agent, selectedInfo)
-    : AGENT_LABELS[agent];
 
+  // 列表里只放已安装的 Agent；未安装的不展示。
   const navigation = useMemo(
     () =>
       AGENT_KINDS.flatMap((kind) =>
-        orderedInfos.map((info) => {
-          const slot = slotOf(config, kind, info.env);
+        orderedInfos.flatMap((info) => {
           const itemDetection = detected.find(
             (item) => item.kind === kind && item.env === info.env,
           );
-          return {
-            key: `${kind}:${info.env}`,
-            kind,
-            info,
-            count: slot?.bindings.length ?? 0,
-            installed: itemDetection?.installed ?? false,
-          };
+          if (!itemDetection?.installed) return [];
+          const slot = slotOf(config, kind, info.env);
+          return [
+            {
+              key: `${kind}:${info.env}`,
+              kind,
+              info,
+              count: slot?.bindings.length ?? 0,
+            },
+          ];
         }),
       ),
     [config, detected, orderedInfos],
   );
 
+  const currentItem = navigation.find(
+    (item) => item.kind === agent && item.info.env === env,
+  );
+  const activeItem = currentItem ?? navigation[0];
+  const activeAgent = activeItem?.kind ?? agent;
+  const activeEnv = activeItem?.info.env ?? env;
+
+  useEffect(() => {
+    if (currentItem || !activeItem) return;
+    onSelect(activeItem.kind, activeItem.info.env);
+  }, [activeItem, currentItem, onSelect]);
+
+  const slot = slotOf(config, activeAgent, activeEnv);
+  const bindings = slot?.bindings ?? [];
+  const activeId = slot?.active ?? null;
+  const detection = detected.find(
+    (item) => item.kind === activeAgent && item.env === activeEnv,
+  );
+  const selectedInfo = activeItem?.info;
+  const selectedTitle = selectedInfo
+    ? agentTitle(activeAgent, selectedInfo)
+    : AGENT_LABELS[activeAgent];
+
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return bindings;
-    const agentTerms = `${AGENT_LABELS[agent]} ${selectedInfo?.label ?? ""}`;
+    const agentTerms = `${AGENT_LABELS[activeAgent]} ${selectedInfo?.label ?? ""}`;
     return bindings.filter((binding) => {
       const supplier = config.suppliers.find((item) => item.id === binding.supplier_id);
       return [binding.model, supplier?.name ?? "", agentTerms]
@@ -114,7 +145,7 @@ export function AgentPage({
         .toLowerCase()
         .includes(query);
     });
-  }, [bindings, search, config.suppliers, agent, selectedInfo]);
+  }, [bindings, search, config.suppliers, activeAgent, selectedInfo]);
 
   const submit = async (input: AgentConfigInput, activate: boolean) => {
     setSaving(true);
@@ -144,12 +175,55 @@ export function AgentPage({
     }
   };
 
+  if (navigation.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
+        <p className="text-xs text-muted-foreground">{t.noInstalledAgents}</p>
+        <p className="text-[10px] text-muted-foreground/50">
+          {t.noInstalledAgentsHint}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4 md:flex-row md:items-start">
-      <nav aria-label={t.sectionAgents} className="shrink-0 md:sticky md:top-0 md:w-56">
+      <nav
+        aria-label={t.sectionAgents}
+        className={`shrink-0 transition-[width] duration-200 md:sticky md:top-0 ${
+          collapsed ? "md:w-16" : "md:w-56"
+        }`}
+      >
         <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm [scrollbar-width:thin] md:max-h-[calc(100vh-6.5rem)] md:overflow-y-auto md:overscroll-contain">
+          <div
+            className={`flex items-center px-1.5 py-1 ${
+              collapsed ? "md:justify-center" : "justify-between"
+            }`}
+          >
+            <span
+              className={`text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70 ${
+                collapsed ? "md:hidden" : ""
+              }`}
+            >
+              {t.sectionAgents}
+            </span>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? t.expandAgents : t.collapseAgents}
+              aria-expanded={!collapsed}
+              title={collapsed ? t.expandAgents : t.collapseAgents}
+              className="hidden shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-card/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:block"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="size-3.5" />
+              ) : (
+                <PanelLeftClose className="size-3.5" />
+              )}
+            </button>
+          </div>
           {navigation.map((item) => {
-            const selected = item.kind === agent && item.info.env === env;
+            const selected = item.key === activeItem?.key;
             const itemName = item.info.host
               ? AGENT_LABELS[item.kind]
               : `${AGENT_LABELS[item.kind]} ${item.info.label}`;
@@ -158,18 +232,23 @@ export function AgentPage({
                 key={item.key}
                 type="button"
                 onClick={() => onSelect(item.kind, item.info.env)}
-                aria-label={`${itemName}, ${
-                  item.installed ? t.agentInstalled : t.agentMissing
-                }, ${t.bindings} ${item.count}`}
+                aria-label={`${itemName}, ${t.bindings} ${item.count}`}
                 aria-current={selected ? "true" : undefined}
+                title={itemName}
                 className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  collapsed ? "md:flex-col md:justify-center md:gap-1 md:px-1" : ""
+                } ${
                   selected
                     ? "border-primary/35 bg-primary/[0.06] shadow-[inset_0_0_0_1px_rgba(0,117,222,0.06)]"
                     : "border-transparent text-muted-foreground hover:border-border/30 hover:bg-card/40 hover:text-foreground"
                 }`}
               >
                 <AgentMark agent={item.kind} />
-                <span className="min-w-0 flex-1 leading-tight">
+                <span
+                  className={`min-w-0 flex-1 leading-tight ${
+                    collapsed ? "md:hidden" : ""
+                  }`}
+                >
                   <span className="block truncate text-xs font-semibold">
                     {AGENT_LABELS[item.kind]}
                   </span>
@@ -183,24 +262,18 @@ export function AgentPage({
                   )}
                 </span>
                 <span
-                  className="shrink-0 font-mono text-[10px] text-muted-foreground/55"
+                  className={`shrink-0 font-mono text-[10px] text-muted-foreground/55 ${
+                    collapsed ? "md:hidden" : ""
+                  }`}
                   title={`${t.bindings} ${item.count}`}
                 >
                   {item.count}
                 </span>
-                <span
-                  className="flex shrink-0 items-center"
-                  title={item.installed ? t.agentInstalled : t.agentMissing}
-                >
-                  {item.installed ? (
-                    <CircleCheck className="size-3.5 text-sticker-green" aria-hidden="true" />
-                  ) : (
-                    <CircleSlash
-                      className="size-3.5 text-muted-foreground/35"
-                      aria-hidden="true"
-                    />
-                  )}
-                </span>
+                {collapsed && !item.info.host ? (
+                  <span className="hidden text-[8px] font-semibold uppercase tracking-wide text-muted-foreground/60 md:block">
+                    {ENV_SHORT(item.info.label)}
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -210,7 +283,7 @@ export function AgentPage({
       <div className="min-w-0 flex-1 space-y-3">
         <div className="px-1">
           <div className="flex flex-wrap items-center gap-2">
-            <AgentMark agent={agent} />
+            <AgentMark agent={activeAgent} />
             <h2 className="truncate text-sm font-bold tracking-tight">
               {selectedTitle}
             </h2>
@@ -267,7 +340,7 @@ export function AgentPage({
                   supplier={config.suppliers.find(
                     (item) => item.id === binding.supplier_id,
                   )}
-                  agent={agent}
+                  agent={activeAgent}
                   isActive={isActive}
                   busy={busy || saving}
                   testing={testingId === binding.id}
@@ -286,8 +359,8 @@ export function AgentPage({
 
       <BindingDialog
         open={dialog.open}
-        agent={agent}
-        env={env}
+        agent={activeAgent}
+        env={activeEnv}
         envLabel={selectedInfo?.label}
         binding={dialog.binding}
         suppliers={config.suppliers}
