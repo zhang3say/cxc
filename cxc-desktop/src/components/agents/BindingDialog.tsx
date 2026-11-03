@@ -135,6 +135,7 @@ export function BindingDialog({
 
   const chooseProtocol = (next: Protocol) => {
     setProtocol(next);
+    setTestResult(null);
     if (!supplier?.protocols.includes(next)) {
       const fallback = suppliers.find((item) => item.protocols.includes(next));
       setSupplierId(fallback?.id ?? "");
@@ -146,6 +147,7 @@ export function BindingDialog({
 
   const chooseSupplier = (nextId: string) => {
     setSupplierId(nextId);
+    setTestResult(null);
     // 换中转站后账号列表整体变化，回到「跟随默认」。
     setKeyId("");
     const next = suppliers.find((item) => item.id === nextId);
@@ -318,7 +320,10 @@ export function BindingDialog({
               disabled={saving || !supplierId}
               refreshing={refreshing}
               refreshError={refreshError}
-              onChange={setModel}
+              onChange={(next) => {
+                setModel(next);
+                setTestResult(null);
+              }}
               onOpenChange={setPickerOpen}
               onRefresh={async () => {
                 if (!supplierId) return;
@@ -335,6 +340,21 @@ export function BindingDialog({
               t={t}
             />
           </div>
+
+          {testResult ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`rounded-md border px-3 py-2 text-[11px] ${
+                testResult.ok
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-600"
+              }`}
+            >
+              {testResult.ok ? t.success : t.failed} · {testResult.latency_ms} ms
+              {testResult.error ? ` · ${testResult.error}` : ""}
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -454,19 +474,6 @@ export function BindingDialog({
                   className="h-8 rounded-md border-border/30 bg-card font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
                 />
               ) : null}
-            </div>
-          ) : null}
-
-          {testResult ? (
-            <div
-              className={`rounded-md border px-3 py-2 text-[11px] ${
-                testResult.ok
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-red-200 bg-red-50 text-red-600"
-              }`}
-            >
-              {testResult.ok ? t.success : t.failed} · {testResult.latency_ms} ms
-              {testResult.error ? ` · ${testResult.error}` : ""}
             </div>
           ) : null}
 
