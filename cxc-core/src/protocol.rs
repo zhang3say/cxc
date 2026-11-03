@@ -77,9 +77,7 @@ impl Protocol {
     }
 
     pub fn request_body(self, model: &str, probe: bool) -> Value {
-        // 测试预算要给推理类模型留足输出空间：预算太小时思考就把额度耗完，
-        // Responses 会返回没有正文也没有摘要的 200，被误判为「响应中没有文本或思考内容」。
-        let max_tokens = if probe { 1 } else { 64 };
+        let max_tokens = if probe { 1 } else { 16 };
         match self {
             Protocol::ChatCompletions => json!({
                 "model": model,
@@ -90,7 +88,7 @@ impl Protocol {
             Protocol::Responses => json!({
                 "model": model,
                 "input": "hi",
-                "max_output_tokens": if probe { 16 } else { 512 },
+                "max_output_tokens": if probe { 16 } else { 32 },
                 "stream": false
             }),
             Protocol::Messages => json!({
