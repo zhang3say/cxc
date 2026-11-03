@@ -144,7 +144,7 @@ export function AgentPage({
               className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all ${
                 selected
                   ? "border-primary/40 bg-primary/[0.05] text-primary shadow-sm"
-                  : "border-border/50 bg-card text-muted-foreground hover:bg-muted/20 hover:text-foreground"
+                  : "border-border/40 bg-card/40 text-muted-foreground backdrop-blur-md hover:bg-card/60 hover:text-foreground"
               }`}
             >
               <AgentMark agent={kind} />
@@ -170,7 +170,7 @@ export function AgentPage({
                   onClick={() => onEnv(item)}
                   className={`rounded-md px-3 py-1 text-[11px] font-bold transition-all ${
                     env === item
-                      ? "border border-border/10 bg-card text-foreground shadow-sm"
+                      ? "border border-border/10 bg-card/70 text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -199,8 +199,8 @@ export function AgentPage({
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
-        <div className="flex items-center justify-between border-b border-border/40 px-4 py-2.5">
+      <div className="overflow-hidden rounded-xl">
+        <div className="flex items-center justify-between border-b border-border/30 px-4 py-2.5">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70">
             {t.bindings} {bindings.length}
           </span>
@@ -231,7 +231,7 @@ export function AgentPage({
           visible.map((binding, index) => (
             <div
               key={binding.id}
-              className={index > 0 ? "border-t border-border/40" : ""}
+              className={index > 0 ? "border-t border-border/30" : ""}
             >
               <BindingRow
                 binding={binding}

@@ -99,7 +99,7 @@ export function Header({
           variant="outline"
           size="icon"
           onClick={onToggleTheme}
-          className="size-8 shrink-0 border-border bg-card text-foreground shadow-sm"
+          className="size-8 shrink-0 border-border bg-card/50 text-foreground shadow-sm backdrop-blur-md hover:bg-card/70"
           title={theme === "dark" ? "Light" : "Dark"}
         >
           {theme === "dark" ? (
@@ -112,7 +112,7 @@ export function Header({
           variant="outline"
           size="icon"
           onClick={onSettings}
-          className="size-8 shrink-0 border-border bg-card text-foreground shadow-sm"
+          className="size-8 shrink-0 border-border bg-card/50 text-foreground shadow-sm backdrop-blur-md hover:bg-card/70"
           title={t.settingsTitle}
         >
           <Settings2 className="size-4 text-muted-foreground" />

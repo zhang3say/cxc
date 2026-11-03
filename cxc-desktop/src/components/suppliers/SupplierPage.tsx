@@ -212,7 +212,7 @@ function SupplierCard({
 
   return (
     <div
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:border-border hover:shadow-sm"
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-white/60 bg-card/30 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-all hover:border-white/80 hover:bg-card/40 dark:border-white/[0.06] dark:hover:border-white/10"
       onClick={onOpen}
     >
       <div className="flex items-start justify-between gap-3 p-4 pb-3">
@@ -252,7 +252,7 @@ function SupplierCard({
       </div>
 
       <div
-        className="mt-auto flex items-center justify-end border-t border-border/50 bg-background/40 px-3 py-2"
+        className="mt-auto flex items-center justify-end border-t border-white/40 bg-white/10 px-3 py-2 dark:border-white/[0.05] dark:bg-white/[0.02]"
         onClick={(event) => event.stopPropagation()}
       >
         <SupplierActions
@@ -296,7 +296,7 @@ function SupplierListRow({
 
   return (
     <tr
-      className="group cursor-pointer border-t border-border/40 transition-colors first:border-t-0 hover:bg-muted/40"
+      className="group cursor-pointer border-t border-border/25 transition-colors first:border-t-0 hover:bg-white/30 dark:hover:bg-white/[0.04]"
       onClick={onOpen}
     >
       <td className="border-l-2 border-transparent px-4 py-2.5 transition-colors group-hover:border-primary/60">
@@ -416,7 +416,7 @@ export function SupplierPage({
 
   if (config.suppliers.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card py-20">
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/40 bg-card/10 py-20">
         <Server className="size-9 text-muted-foreground/40" />
         <div className="text-center">
           <p className="text-sm font-bold text-foreground/85">{t.noSuppliers}</p>
@@ -463,7 +463,7 @@ export function SupplierPage({
               aria-pressed={view === key}
               className={`flex h-full items-center gap-1 rounded-md px-2 text-[10px] font-bold transition-all ${
                 view === key
-                  ? "border border-border/10 bg-card text-foreground shadow-sm"
+                  ? "border border-border/10 bg-card/70 text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -475,7 +475,7 @@ export function SupplierPage({
       </div>
 
       {suppliers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center text-xs text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border/40 bg-card/10 py-12 text-center text-xs text-muted-foreground">
           {t.emptySearch}
         </div>
       ) : view === "cards" ? (
@@ -485,9 +485,9 @@ export function SupplierPage({
           ))}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        <div className="overflow-hidden rounded-xl">
           <table className="w-full text-left">
-            <thead className="border-b border-border/50 bg-muted/20 text-[9px] uppercase tracking-wider text-muted-foreground">
+            <thead className="border-b border-border/30 bg-transparent text-[9px] uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-bold">{t.supplierName}</th>
                 <th className="px-3 py-2 font-bold">{t.protocols}</th>
