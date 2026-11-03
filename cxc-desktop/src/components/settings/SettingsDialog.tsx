@@ -68,6 +68,10 @@ export function SettingsDialog({
   const [syncing, setSyncing] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -75,7 +79,15 @@ export function SettingsDialog({
     setSync(config.sync ?? { gist_token: "", gist_id: "" });
     setMessage(null);
     setError(null);
-  }, [open, config]);
+    setSyncNotice(null);
+    // 只在下拉打开时初始化，同步更新 config 时不要覆盖用户正在编辑的内容。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const updateSync = (patch: Partial<SyncConfig>) => {
+    setSync((current) => ({ ...current, ...patch }));
+    setSyncNotice(null);
+  };
 
   const visibleEnvs = envs.length ? envs : (["wsl"] as Env[]);
 
@@ -95,13 +107,12 @@ export function SettingsDialog({
 
   const test = async () => {
     setTesting(true);
-    setError(null);
-    setMessage(null);
+    setSyncNotice(null);
     try {
       const login = await onTestGist(sync.gist_token, sync.gist_id);
-      setMessage(`GitHub: ${login}`);
+      setSyncNotice({ kind: "success", text: `GitHub: ${login}` });
     } catch (testError) {
-      setError(errorText(testError));
+      setSyncNotice({ kind: "error", text: errorText(testError) });
     } finally {
       setTesting(false);
     }
@@ -109,14 +120,17 @@ export function SettingsDialog({
 
   const runSync = async (action: "push" | "pull" | "merge") => {
     setSyncing(action);
-    setError(null);
-    setMessage(null);
+    setSyncNotice(null);
     try {
       await onSyncSave(sync);
       await onSyncAction(action);
-      setMessage(t.syncDone);
+      setSync((current) => ({
+        ...current,
+        last_synced_at: new Date().toISOString(),
+      }));
+      setSyncNotice({ kind: "success", text: t.syncDone });
     } catch (syncError) {
-      setError(errorText(syncError));
+      setSyncNotice({ kind: "error", text: errorText(syncError) });
     } finally {
       setSyncing(null);
     }
@@ -197,7 +211,7 @@ export function SettingsDialog({
               <Input
                 value={sync.gist_token}
                 onChange={(event) =>
-                  setSync((current) => ({ ...current, gist_token: event.target.value }))
+                  updateSync({ gist_token: event.target.value })
                 }
                 placeholder={t.gistToken}
                 type="password"
@@ -206,7 +220,7 @@ export function SettingsDialog({
               <Input
                 value={sync.gist_id}
                 onChange={(event) =>
-                  setSync((current) => ({ ...current, gist_id: event.target.value }))
+                  updateSync({ gist_id: event.target.value })
                 }
                 placeholder={t.gistId}
                 className="h-8 rounded-md border-border/30 bg-muted/10 font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
@@ -215,7 +229,7 @@ export function SettingsDialog({
             <Input
               value={sync.secret_key ?? ""}
               onChange={(event) =>
-                setSync((current) => ({ ...current, secret_key: event.target.value }))
+                updateSync({ secret_key: event.target.value })
               }
               placeholder={t.secretKey}
               type="password"
@@ -270,6 +284,19 @@ export function SettingsDialog({
                 {t.merge}
               </Button>
             </div>
+            {syncNotice ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className={`rounded-md border px-2.5 py-1.5 text-[10px] ${
+                  syncNotice.kind === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-red-200 bg-red-50 text-red-600"
+                }`}
+              >
+                {syncNotice.text}
+              </p>
+            ) : null}
             {sync.last_synced_at ? (
               <p className="text-[10px] text-muted-foreground/60">
                 {t.lastSynced}: {new Date(sync.last_synced_at).toLocaleString()}
@@ -306,6 +333,9 @@ export function SettingsDialog({
             </div>
           </section>
 
+          </div>
+
+        <div className="shrink-0 space-y-2">
           {message ? (
             <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
               {message}
@@ -316,9 +346,7 @@ export function SettingsDialog({
               {error}
             </p>
           ) : null}
-        </div>
-
-        <DialogFooter className="mt-4 shrink-0 gap-2 border-t border-border/30 pt-4">
+          <DialogFooter className="mt-0 shrink-0 gap-2 border-t border-border/30 pt-4">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             {t.close}
           </Button>
@@ -327,6 +355,7 @@ export function SettingsDialog({
             {saving ? t.saving : t.save}
           </Button>
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
