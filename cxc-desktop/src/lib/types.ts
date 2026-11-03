@@ -183,6 +183,7 @@ export interface SupplierInput {
   name: string;
   base_url: string;
   remark?: string;
+  /** `undefined` 表示保留原有协议集合；协议现在只由探测写入。 */
   protocols?: Protocol[];
   keys: SupplierKeyInput[];
   default_key_id?: string;

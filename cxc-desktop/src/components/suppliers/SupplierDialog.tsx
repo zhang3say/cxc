@@ -13,8 +13,7 @@ import { Input } from "@/components/ui/input";
 import { errorText } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import type { Messages } from "@/lib/i18n";
-import type { Protocol, Supplier, SupplierInput, SupplierKeyInput } from "@/lib/types";
-import { PROTOCOL_FULL_LABELS } from "@/lib/types";
+import type { Supplier, SupplierInput, SupplierKeyInput } from "@/lib/types";
 
 interface SupplierDialogProps {
   open: boolean;
@@ -24,8 +23,6 @@ interface SupplierDialogProps {
   onClose: () => void;
   onSubmit: (input: SupplierInput, probeAfterSave: boolean) => Promise<void>;
 }
-
-const protocols: Protocol[] = ["chat_completions", "responses", "messages"];
 
 interface KeyDraft {
   id?: string;
@@ -53,7 +50,6 @@ export function SupplierDialog({
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [remark, setRemark] = useState("");
-  const [selected, setSelected] = useState<Protocol[]>([]);
   const [keys, setKeys] = useState<KeyDraft[]>([]);
   const [defaultKeyId, setDefaultKeyId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +59,6 @@ export function SupplierDialog({
     setName(supplier?.name ?? "");
     setBaseUrl(supplier?.base_url ?? "");
     setRemark(supplier?.remark ?? "");
-    setSelected(supplier?.protocols ?? []);
     setKeys(
       supplier && supplier.keys.length
         ? supplier.keys.map((key) => ({
@@ -78,14 +73,6 @@ export function SupplierDialog({
     setDefaultKeyId(supplier?.default_key_id ?? undefined);
     setError(null);
   }, [open, supplier]);
-
-  const toggle = (protocol: Protocol) => {
-    setSelected((current) =>
-      current.includes(protocol)
-        ? current.filter((item) => item !== protocol)
-        : [...current, protocol],
-    );
-  };
 
   const updateKey = (index: number, patch: Partial<KeyDraft>) => {
     setKeys((current) =>
@@ -146,7 +133,6 @@ export function SupplierDialog({
           name: name.trim(),
           base_url: baseUrl.trim(),
           remark: remark.trim() || undefined,
-          protocols: selected,
           keys: payloadKeys,
           default_key_id: defaultKeyId,
         },
@@ -295,43 +281,9 @@ export function SupplierDialog({
             <Label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
               {t.protocols}
             </Label>
-            {supplier ? (
-              <>
-                <div className="grid gap-2">
-                  {protocols.map((protocol) => {
-                    const active = selected.includes(protocol);
-                    return (
-                      <button
-                        key={protocol}
-                        type="button"
-                        onClick={() => toggle(protocol)}
-                        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition-all ${
-                          active
-                            ? "border-primary/50 bg-primary/[0.04] text-primary"
-                            : "border-border/40 bg-muted/10 text-foreground hover:bg-muted/20"
-                        }`}
-                      >
-                        <span className="text-xs font-semibold">
-                          {PROTOCOL_FULL_LABELS[protocol]}
-                        </span>
-                        <span
-                          className={`size-2 rounded-full ${
-                            active ? "bg-primary" : "bg-muted-foreground/25"
-                          }`}
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] leading-normal text-muted-foreground/70">
-                  {t.protocolHint}
-                </p>
-              </>
-            ) : (
-              <p className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-[10px] leading-normal text-muted-foreground/70">
-                {t.protocolAutoProbe}
-              </p>
-            )}
+            <p className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-[10px] leading-normal text-muted-foreground/70">
+              {t.protocolAutoProbe}
+            </p>
           </div>
 
         </div>
