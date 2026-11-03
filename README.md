@@ -77,8 +77,8 @@ npm run tauri build
 推送 `cxc-desktop-v*` 形式的标签会触发 [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml)，在 macOS（arm64 / x64）与 Windows 上构建安装包，并创建一个**草稿** Release 供人工确认后发布。
 
 ```bash
-git tag cxc-desktop-v1.0.1
-git push origin cxc-desktop-v1.0.1
+git tag cxc-desktop-v1.0.0
+git push origin cxc-desktop-v1.0.0
 ```
 
 ## 配置文件
