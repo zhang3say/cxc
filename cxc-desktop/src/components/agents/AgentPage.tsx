@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   GripVertical,
   PanelLeftClose,
@@ -104,6 +105,14 @@ export function AgentPage({
     key: string;
     after: boolean;
   } | null>(null);
+  const pointerDrag = useRef<{
+    key: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    target: { key: string; after: boolean } | null;
+  } | null>(null);
 
   const saveOrder = (keys: string[]) => {
     setOrder(keys);
@@ -164,6 +173,14 @@ export function AgentPage({
     onSelect(activeItem.kind, activeItem.info.env);
   }, [activeItem, currentItem, onSelect]);
 
+  useEffect(
+    () => () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    },
+    [],
+  );
+
   const slot = slotOf(config, activeAgent, activeEnv);
   const bindings = slot?.bindings ?? [];
   const activeId = slot?.active ?? null;
@@ -207,6 +224,95 @@ export function AgentPage({
     const next = [...keys];
     [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
     saveOrder(next);
+  };
+
+  const resetPointerDrag = () => {
+    pointerDrag.current = null;
+    setDraggingKey(null);
+    setDropTarget(null);
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  };
+
+  const findDropTargetAt = (clientX: number, clientY: number) => {
+    const dragged = pointerDrag.current;
+    if (!dragged) return null;
+    const element = document.elementFromPoint(clientX, clientY);
+    const row = element?.closest<HTMLElement>("[data-agent-key]");
+    const key = row?.dataset.agentKey;
+    if (!row || !key || key === dragged.key) return null;
+    const rect = row.getBoundingClientRect();
+    return { key, after: clientY > rect.top + rect.height / 2 };
+  };
+
+  const startPointerDrag = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    key: string,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pointerDrag.current = {
+      key,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      target: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingKey(key);
+    setDropTarget(null);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+  };
+
+  const movePointerDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const dragged = pointerDrag.current;
+    if (!dragged || dragged.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    if (!dragged.moved) {
+      const distance = Math.hypot(
+        event.clientX - dragged.startX,
+        event.clientY - dragged.startY,
+      );
+      if (distance < 4) return;
+      dragged.moved = true;
+    }
+
+    const scroller = document.getElementById("agent-nav-items")?.parentElement;
+    if (scroller) {
+      const rect = scroller.getBoundingClientRect();
+      if (event.clientY < rect.top + 32) {
+        scroller.scrollTop -= 10;
+      } else if (event.clientY > rect.bottom - 32) {
+        scroller.scrollTop += 10;
+      }
+    }
+
+    const target = findDropTargetAt(event.clientX, event.clientY);
+    dragged.target = target;
+    setDropTarget((current) =>
+      current?.key === target?.key && current?.after === target?.after
+        ? current
+        : target,
+    );
+  };
+
+  const endPointerDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const dragged = pointerDrag.current;
+    if (!dragged || dragged.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (dragged.moved && dragged.target) {
+      moveItem(dragged.key, dragged.target.key, dragged.target.after);
+    }
+    resetPointerDrag();
+  };
+
+  const cancelPointerDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (pointerDrag.current?.pointerId !== event.pointerId) return;
+    resetPointerDrag();
   };
 
   const submit = async (input: AgentConfigInput, activate: boolean) => {
@@ -298,40 +404,7 @@ export function AgentPage({
                       <button
                         type="button"
                         onClick={() => onSelect(item.kind, item.info.env)}
-                        onDragOver={(event) => {
-                          if (!draggingKey || draggingKey === item.key) return;
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = "move";
-                          const rect =
-                            event.currentTarget.getBoundingClientRect();
-                          const after =
-                            event.clientY > rect.top + rect.height / 2;
-                          setDropTarget((current) =>
-                            current?.key === item.key &&
-                            current.after === after
-                              ? current
-                              : { key: item.key, after },
-                          );
-                        }}
-                        onDragLeave={(event) => {
-                          const next = event.relatedTarget as Node | null;
-                          if (next && event.currentTarget.contains(next)) return;
-                          setDropTarget((current) =>
-                            current?.key === item.key ? null : current,
-                          );
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          if (draggingKey) {
-                            const rect =
-                              event.currentTarget.getBoundingClientRect();
-                            const after =
-                              event.clientY > rect.top + rect.height / 2;
-                            moveItem(draggingKey, item.key, after);
-                          }
-                          setDraggingKey(null);
-                          setDropTarget(null);
-                        }}
+                        data-agent-key={item.key}
                         onKeyDown={(event) => {
                           if (
                             !event.altKey ||
@@ -393,24 +466,28 @@ export function AgentPage({
                           {item.count}
                         </span>
                         <span
-                          draggable
-                          onDragStart={(event) => {
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData("text/plain", item.key);
-                            setDraggingKey(item.key);
-                            setDropTarget(null);
+                          onPointerDown={(event) =>
+                            startPointerDrag(event, item.key)
+                          }
+                          onPointerMove={movePointerDrag}
+                          onPointerUp={endPointerDrag}
+                          onPointerCancel={cancelPointerDrag}
+                          onLostPointerCapture={cancelPointerDrag}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
                           }}
-                          onDragEnd={() => {
-                            setDraggingKey(null);
-                            setDropTarget(null);
-                          }}
-                          className={`shrink-0 cursor-grab items-center rounded p-1 active:cursor-grabbing ${
+                          className={`shrink-0 cursor-grab touch-none select-none items-center rounded p-1 active:cursor-grabbing ${
                             collapsed ? "hidden" : "hidden md:flex"
                           }`}
                           title={t.dragToReorder}
                         >
                           <GripVertical
-                            className="size-3 text-muted-foreground/35 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                            className={`size-3 text-muted-foreground/35 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${
+                              draggingKey === item.key
+                                ? "opacity-100"
+                                : "opacity-0"
+                            }`}
                             aria-hidden="true"
                           />
                         </span>
