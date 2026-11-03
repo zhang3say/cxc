@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Messages } from "@/lib/i18n";
 import type {
   AgentConfig,
@@ -188,97 +194,118 @@ export function AgentPage({
 
   return (
     <div className="flex flex-col gap-4 md:flex-row md:items-start">
-      <nav
-        aria-label={t.sectionAgents}
-        className={`shrink-0 transition-[width] duration-200 md:sticky md:top-0 ${
-          collapsed ? "md:w-16" : "md:w-56"
-        }`}
-      >
-        <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm [scrollbar-width:thin] md:max-h-[calc(100vh-6.5rem)] md:overflow-y-auto md:overscroll-contain">
-          <div
-            className={`flex items-center px-1.5 py-1 ${
-              collapsed ? "md:justify-center" : "justify-between"
-            }`}
-          >
-            <span
-              className={`text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70 ${
-                collapsed ? "md:hidden" : ""
+      <TooltipProvider delayDuration={200}>
+        <nav
+          aria-label={t.sectionAgents}
+          className={`shrink-0 transition-[width] duration-200 md:sticky md:top-0 ${
+            collapsed ? "md:w-16" : "md:w-56"
+          }`}
+        >
+          <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm [scrollbar-width:thin] md:max-h-[calc(100vh-6.5rem)] md:overflow-y-auto md:overscroll-contain">
+            <div
+              className={`flex items-center px-1.5 py-1 ${
+                collapsed ? "md:justify-center" : "justify-between"
               }`}
             >
-              {t.sectionAgents}
-            </span>
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-label={collapsed ? t.expandAgents : t.collapseAgents}
-              aria-expanded={!collapsed}
-              title={collapsed ? t.expandAgents : t.collapseAgents}
-              className="hidden shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-card/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:block"
-            >
-              {collapsed ? (
-                <PanelLeftOpen className="size-3.5" />
-              ) : (
-                <PanelLeftClose className="size-3.5" />
-              )}
-            </button>
-          </div>
-          {navigation.map((item) => {
-            const selected = item.key === activeItem?.key;
-            const itemName = item.info.host
-              ? AGENT_LABELS[item.kind]
-              : `${AGENT_LABELS[item.kind]} ${item.info.label}`;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onSelect(item.kind, item.info.env)}
-                aria-label={`${itemName}, ${t.bindings} ${item.count}`}
-                aria-current={selected ? "true" : undefined}
-                title={itemName}
-                className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                  collapsed ? "md:flex-col md:justify-center md:gap-1 md:px-1" : ""
-                } ${
-                  selected
-                    ? "border-primary/35 bg-primary/[0.06] shadow-[inset_0_0_0_1px_rgba(0,117,222,0.06)]"
-                    : "border-transparent text-muted-foreground hover:border-border/30 hover:bg-card/40 hover:text-foreground"
+              <span
+                className={`text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70 ${
+                  collapsed ? "md:hidden" : ""
                 }`}
               >
-                <AgentMark agent={item.kind} />
-                <span
-                  className={`min-w-0 flex-1 leading-tight ${
-                    collapsed ? "md:hidden" : ""
-                  }`}
-                >
-                  <span className="block truncate text-xs font-semibold">
-                    {AGENT_LABELS[item.kind]}
-                  </span>
-                  {item.info.host ? null : (
-                    <span
-                      className="mt-0.5 block truncate text-[10px] font-medium text-muted-foreground/70"
-                      title={item.info.label}
-                    >
-                      {item.info.label}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className={`shrink-0 font-mono text-[10px] text-muted-foreground/55 ${
-                    collapsed ? "md:hidden" : ""
-                  }`}
-                  title={`${t.bindings} ${item.count}`}
-                >
-                  {item.count}
-                </span>
-                {collapsed && !item.info.host ? (
-                  <span className="hidden text-[8px] font-semibold uppercase tracking-wide text-muted-foreground/60 md:block">
-                    {ENV_SHORT(item.info.label)}
-                  </span>
-                ) : null}
+                {t.sectionAgents}
+              </span>
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                aria-label={collapsed ? t.expandAgents : t.collapseAgents}
+                aria-expanded={!collapsed}
+                aria-controls="agent-nav-items"
+                title={collapsed ? t.expandAgents : t.collapseAgents}
+                className="hidden shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-card/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:block"
+              >
+                {collapsed ? (
+                  <PanelLeftOpen className="size-3.5" />
+                ) : (
+                  <PanelLeftClose className="size-3.5" />
+                )}
               </button>
-            );
-          })}
-        </div>
-      </nav>
+            </div>
+            <div id="agent-nav-items" className="space-y-1">
+              {navigation.map((item) => {
+                const selected = item.key === activeItem?.key;
+                const itemName = item.info.host
+                  ? AGENT_LABELS[item.kind]
+                  : `${AGENT_LABELS[item.kind]} ${item.info.label}`;
+                return (
+                  <Tooltip key={item.key}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => onSelect(item.kind, item.info.env)}
+                        aria-label={`${itemName}, ${t.bindings} ${item.count}`}
+                        aria-current={selected ? "true" : undefined}
+                        className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                          collapsed
+                            ? "md:flex-col md:justify-center md:gap-1 md:px-1"
+                            : ""
+                        } ${
+                          selected
+                            ? "border-primary/35 bg-primary/[0.06] shadow-[inset_0_0_0_1px_rgba(0,117,222,0.06)]"
+                            : "border-transparent text-muted-foreground hover:border-border/30 hover:bg-card/40 hover:text-foreground"
+                        }`}
+                      >
+                        <AgentMark agent={item.kind} />
+                        <span
+                          className={`min-w-0 flex-1 leading-tight ${
+                            collapsed ? "md:hidden" : ""
+                          }`}
+                        >
+                          <span className="block truncate text-xs font-semibold">
+                            {AGENT_LABELS[item.kind]}
+                          </span>
+                          {item.info.host ? null : (
+                            <span
+                              className="mt-0.5 block truncate text-[10px] font-medium text-muted-foreground/70"
+                              title={item.info.label}
+                            >
+                              {item.info.label}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={`shrink-0 font-mono text-[10px] text-muted-foreground/55 ${
+                            collapsed ? "md:hidden" : ""
+                          }`}
+                          title={`${t.bindings} ${item.count}`}
+                        >
+                          {item.count}
+                        </span>
+                        {collapsed && !item.info.host ? (
+                          <span className="hidden text-[8px] font-semibold uppercase tracking-wide text-muted-foreground/60 md:block">
+                            {ENV_SHORT(item.info.label)}
+                          </span>
+                        ) : null}
+                      </button>
+                    </TooltipTrigger>
+                    {collapsed ? (
+                      <TooltipContent
+                        side="right"
+                        sideOffset={8}
+                        className="hidden md:inline-flex"
+                      >
+                        <span className="font-semibold">{itemName}</span>
+                        <span className="text-background/70">
+                          {t.bindings} {item.count}
+                        </span>
+                      </TooltipContent>
+                    ) : null}
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </div>
+        </nav>
+      </TooltipProvider>
 
       <div className="min-w-0 flex-1 space-y-3">
         <div className="px-1">
