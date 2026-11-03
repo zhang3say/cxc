@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::agent::{self, AgentConfigInput, AgentKind, AgentSlot, ClaudeModels, GrokWebSearch};
 use crate::config::{self, Config, Env};
 use crate::protocol::Protocol;
-use crate::supplier::{self, SupplierInput};
+use crate::supplier::{self, Supplier, SupplierInput, SupplierKey};
 use crate::sync::SyncConfig;
 
 #[derive(Error, Debug)]
@@ -147,13 +147,14 @@ pub fn import_into_config(
         reason: "已从旧版配置导入".to_string(),
         ..ImportReport::default()
     };
-    let mut supplier_ids: HashMap<(String, String), String> = HashMap::new();
+    // 端点 -> 中转站 ID。同一端点下的多个旧 provider 归并到一个中转站，
+    // 不同的 API Key 变成这个中转站的多个账号。
+    let mut supplier_ids: HashMap<String, String> = HashMap::new();
     for supplier in &cfg.suppliers {
-        if let Some(key) = supplier.default_key() {
-            supplier_ids.insert(
-                (supplier.base_url.clone(), key.api_key.clone()),
-                supplier.id.clone(),
-            );
+        if let Some(key) = endpoint_match_key(&supplier.base_url) {
+            supplier_ids
+                .entry(key)
+                .or_insert_with(|| supplier.id.clone());
         }
     }
 
@@ -224,7 +225,7 @@ pub(crate) fn import_agent(
     providers: &[LegacyProvider],
     active_wsl: &str,
     active_windows: &str,
-    supplier_ids: &mut HashMap<(String, String), String>,
+    supplier_ids: &mut HashMap<String, String>,
     report: &mut ImportReport,
 ) {
     let Some(wsl) = pick(providers, active_wsl, true) else {
@@ -276,7 +277,7 @@ fn build_config(
     cfg: &mut Config,
     kind: AgentKind,
     provider: &LegacyProvider,
-    supplier_ids: &mut HashMap<(String, String), String>,
+    supplier_ids: &mut HashMap<String, String>,
     report: &mut ImportReport,
 ) -> Option<crate::agent::AgentConfig> {
     let base_url = match supplier::normalize_base_url(&provider.base_url) {
@@ -310,8 +311,8 @@ fn build_config(
     }
 
     let protocol = protocol_for(kind, &provider.wire_api);
-    let key = (base_url.clone(), api_key.to_string());
-    let supplier_id = if let Some(id) = supplier_ids.get(&key) {
+    let endpoint = endpoint_match_key(&base_url).unwrap_or_else(|| base_url.clone());
+    let supplier_id = if let Some(id) = supplier_ids.get(&endpoint) {
         id.clone()
     } else {
         let name = unique_supplier_name(cfg, &provider.name, &base_url);
@@ -333,9 +334,18 @@ fn build_config(
                 return None;
             }
         };
-        supplier_ids.insert(key.clone(), supplier.id.clone());
+        supplier_ids.insert(endpoint.clone(), supplier.id.clone());
         report.suppliers += 1;
         supplier.id
+    };
+
+    let Some(key_id) = ensure_supplier_key(cfg, &supplier_id, api_key, provider) else {
+        report.skipped.push(format!(
+            "{}: 归并后的中转站不存在 ({})",
+            kind.display_name(),
+            provider.name
+        ));
+        return None;
     };
 
     if let Some(supplier) = cfg.supplier_mut(&supplier_id) {
@@ -357,7 +367,7 @@ fn build_config(
 
     let input = AgentConfigInput {
         supplier_id: supplier_id.clone(),
-        key_id: None,
+        key_id: Some(key_id),
         protocol,
         model: model.to_string(),
         reasoning_effort: provider.reasoning_effort.clone(),
@@ -377,6 +387,64 @@ fn build_config(
             None
         }
     }
+}
+
+/// 端点比较键：忽略末尾的 `/v1` 与末尾斜杠，主机名按小写比较。
+/// 保存时仍使用用户原本填写的地址。
+fn endpoint_match_key(base_url: &str) -> Option<String> {
+    let url = url::Url::parse(base_url.trim()).ok()?;
+    let host = url.host_str()?.to_ascii_lowercase();
+    let mut path = url.path().trim_end_matches('/').to_string();
+    let last = path.rsplit('/').next().unwrap_or_default();
+    if last.eq_ignore_ascii_case("v1") {
+        let end = path.len() - last.len();
+        path = path[..end].trim_end_matches('/').to_string();
+    }
+
+    let mut key = format!("{}://{host}", url.scheme());
+    if let Some(port) = url.port() {
+        key.push(':');
+        key.push_str(&port.to_string());
+    }
+    key.push_str(&path);
+    if let Some(query) = url.query() {
+        key.push('?');
+        key.push_str(query);
+    }
+    Some(key)
+}
+
+/// 把旧 provider 的 Key 落到中转站里；已有相同 Key 时复用原账号。
+fn ensure_supplier_key(
+    cfg: &mut Config,
+    supplier_id: &str,
+    api_key: &str,
+    provider: &LegacyProvider,
+) -> Option<String> {
+    let supplier = cfg.supplier_mut(supplier_id)?;
+    if let Some(key) = supplier.keys.iter().find(|key| key.api_key == api_key) {
+        return Some(key.id.clone());
+    }
+
+    let key = SupplierKey {
+        id: supplier::new_id(),
+        name: next_key_name(supplier),
+        api_key: api_key.to_string(),
+        remark: supplier::normalize_remark(Some(provider.name.clone())),
+    };
+    let id = key.id.clone();
+    supplier.keys.push(key);
+    Some(id)
+}
+
+fn next_key_name(supplier: &Supplier) -> String {
+    for index in 2.. {
+        let candidate = format!("账号 {index}");
+        if !supplier.keys.iter().any(|key| key.name == candidate) {
+            return candidate;
+        }
+    }
+    unreachable!()
 }
 
 fn protocol_for(kind: AgentKind, wire_api: &str) -> Protocol {
@@ -509,5 +577,110 @@ grok_custom_dir: ''
         assert!(!second.imported);
         let cfg = config::load_from(&config_path).unwrap();
         assert_eq!(cfg.suppliers.len(), 2);
+    }
+
+    const SAME_ENDPOINT: &str = r#"
+codex_active_wsl: relay-a
+codex_providers:
+  - name: relay-a
+    base_url: https://api.example.com/v1
+    api_key: sk-a
+    model: gpt-5
+    wire_api: responses
+claude_active_wsl: relay-b
+claude_providers:
+  - name: relay-b
+    base_url: https://API.example.com/v1/
+    api_key: sk-b
+    model: claude-sonnet
+    wire_api: messages
+grok_active_wsl: relay-c
+grok_providers:
+  - name: relay-c
+    base_url: https://api.example.com
+    api_key: sk-a
+    model: grok-4.5
+    wire_api: chat
+"#;
+
+    #[test]
+    fn endpoint_match_key_ignores_host_case_v1_and_trailing_slash() {
+        let base = endpoint_match_key("https://api.example.com").unwrap();
+        assert_eq!(
+            endpoint_match_key("https://API.example.com/v1/").unwrap(),
+            base
+        );
+        assert_eq!(
+            endpoint_match_key("https://api.example.com:8443/v1").unwrap(),
+            "https://api.example.com:8443"
+        );
+        assert_ne!(
+            endpoint_match_key("https://api.example.com/openai/v1").unwrap(),
+            endpoint_match_key("https://api.example.com/anthropic/v1").unwrap()
+        );
+        assert_ne!(
+            endpoint_match_key("http://api.example.com/v1").unwrap(),
+            base
+        );
+    }
+
+    #[test]
+    fn merges_providers_sharing_endpoint_into_one_supplier() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy_path = dir.path().join("legacy.yaml");
+        let config_path = dir.path().join("config.yaml");
+        fs::write(&legacy_path, SAME_ENDPOINT).unwrap();
+
+        let report = import_if_needed(&config_path, &legacy_path).unwrap();
+        assert_eq!(report.suppliers, 1);
+        assert_eq!(report.configs, 3);
+
+        let cfg = config::load_from(&config_path).unwrap();
+        assert_eq!(cfg.suppliers.len(), 1);
+        let supplier = cfg.suppliers.first().unwrap();
+        assert_eq!(supplier.name, "relay-a");
+        assert_eq!(supplier.base_url, "https://api.example.com/v1");
+        assert_eq!(supplier.keys.len(), 2);
+        assert_eq!(supplier.keys[0].name, "默认");
+        assert_eq!(supplier.keys[0].api_key, "sk-a");
+        assert_eq!(supplier.keys[1].name, "账号 2");
+        assert_eq!(supplier.keys[1].api_key, "sk-b");
+        assert_eq!(supplier.keys[1].remark.as_deref(), Some("relay-b"));
+        assert_eq!(
+            supplier.default_key_id.as_deref(),
+            Some(supplier.keys[0].id.as_str())
+        );
+
+        let expected = [
+            (AgentKind::Codex, Env::Wsl, supplier.keys[0].id.as_str()),
+            (AgentKind::Claude, Env::Wsl, supplier.keys[1].id.as_str()),
+            (AgentKind::Grok, Env::Wsl, supplier.keys[0].id.as_str()),
+        ];
+        for (kind, env, key_id) in expected {
+            let binding = cfg.config_of(kind, env).unwrap();
+            assert_eq!(binding.supplier_id, supplier.id);
+            assert_eq!(binding.key_id.as_deref(), Some(key_id));
+        }
+        assert!(supplier.protocols.contains(&Protocol::Responses));
+        assert!(supplier.protocols.contains(&Protocol::Messages));
+        assert!(supplier.protocols.contains(&Protocol::ChatCompletions));
+    }
+
+    #[test]
+    fn reimport_reuses_supplier_and_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy_path = dir.path().join("legacy.yaml");
+        fs::write(&legacy_path, SAME_ENDPOINT).unwrap();
+
+        let mut cfg = Config::default();
+        let first = import_into_config(&mut cfg, &legacy_path).unwrap();
+        assert_eq!(first.suppliers, 1);
+        let supplier_id = cfg.suppliers[0].id.clone();
+
+        let second = import_into_config(&mut cfg, &legacy_path).unwrap();
+        assert_eq!(second.suppliers, 0);
+        assert_eq!(cfg.suppliers.len(), 1);
+        assert_eq!(cfg.suppliers[0].id, supplier_id);
+        assert_eq!(cfg.suppliers[0].keys.len(), 2);
     }
 }
