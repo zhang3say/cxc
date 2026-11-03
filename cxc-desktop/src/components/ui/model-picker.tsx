@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { RemoveScroll } from "react-remove-scroll";
 import { Check, ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -380,7 +381,12 @@ export function ModelPicker({
         </p>
       ) : null}
 
-      {panel ? createPortal(panel, document.body) : null}
+      {panel
+        ? createPortal(
+            <RemoveScroll allowPinchZoom>{panel}</RemoveScroll>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

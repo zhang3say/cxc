@@ -543,6 +543,21 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+// 与 tauri.conf.json 的 identifier 保持一致，供任务栏分组与系统通知使用。
+// 快捷方式不再写入 AppUserModel.ID（避免 MSI 警告），改由进程显式声明身份。
+#[cfg(target_os = "windows")]
+fn set_app_user_model_id() {
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SetCurrentProcessExplicitAppUserModelID(app_id: *const u16) -> i32;
+    }
+
+    let app_id: Vec<u16> = "com.cxc.desktop\0".encode_utf16().collect();
+    unsafe {
+        let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
+    }
+}
+
 // Tauri 只设置小图标，任务栏按钮读取的是大图标。这里从 exe 资源里再补一次。
 #[cfg(target_os = "windows")]
 fn apply_taskbar_icon(window: &tauri::WebviewWindow) {
@@ -612,6 +627,9 @@ fn rewrite_from_tray(app: &tauri::AppHandle, agent: &str, env: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    set_app_user_model_id();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
