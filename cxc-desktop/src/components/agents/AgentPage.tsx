@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import {
+  GripVertical,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -53,7 +58,19 @@ function agentTitle(kind: AgentKind, info: EnvInfo): string {
 }
 
 const COLLAPSED_KEY = "cxc.agents.sidebar-collapsed";
+const ORDER_KEY = "cxc.agents.order";
 const ENV_SHORT = (label: string) => label.split(/[\s(]/)[0];
+
+function readOrder(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 export function AgentPage({
   config,
@@ -81,6 +98,17 @@ export function AgentPage({
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "1",
   );
+  const [order, setOrder] = useState<string[]>(readOrder);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    key: string;
+    after: boolean;
+  } | null>(null);
+
+  const saveOrder = (keys: string[]) => {
+    setOrder(keys);
+    localStorage.setItem(ORDER_KEY, JSON.stringify(keys));
+  };
 
   const toggleCollapsed = () => {
     setCollapsed((value) => {
@@ -95,27 +123,34 @@ export function AgentPage({
   );
 
   // 列表里只放已安装的 Agent；未安装的不展示。
-  const navigation = useMemo(
-    () =>
-      AGENT_KINDS.flatMap((kind) =>
-        orderedInfos.flatMap((info) => {
-          const itemDetection = detected.find(
-            (item) => item.kind === kind && item.env === info.env,
-          );
-          if (!itemDetection?.installed) return [];
-          const slot = slotOf(config, kind, info.env);
-          return [
-            {
-              key: `${kind}:${info.env}`,
-              kind,
-              info,
-              count: slot?.bindings.length ?? 0,
-            },
-          ];
-        }),
-      ),
-    [config, detected, orderedInfos],
-  );
+  const navigation = useMemo(() => {
+    const items = AGENT_KINDS.flatMap((kind) =>
+      orderedInfos.flatMap((info) => {
+        const itemDetection = detected.find(
+          (item) => item.kind === kind && item.env === info.env,
+        );
+        if (!itemDetection?.installed) return [];
+        const slot = slotOf(config, kind, info.env);
+        return [
+          {
+            key: `${kind}:${info.env}`,
+            kind,
+            info,
+            count: slot?.bindings.length ?? 0,
+          },
+        ];
+      }),
+    );
+    const rank = new Map(order.map((key, index) => [key, index]));
+    return items.sort((a, b) => {
+      const aRank = rank.get(a.key);
+      const bRank = rank.get(b.key);
+      if (aRank === undefined && bRank === undefined) return 0;
+      if (aRank === undefined) return 1;
+      if (bRank === undefined) return -1;
+      return aRank - bRank;
+    });
+  }, [config, detected, orderedInfos, order]);
 
   const currentItem = navigation.find(
     (item) => item.kind === agent && item.info.env === env,
@@ -152,6 +187,27 @@ export function AgentPage({
         .includes(query);
     });
   }, [bindings, search, config.suppliers, activeAgent, selectedInfo]);
+
+  const moveItem = (fromKey: string, toKey: string, after: boolean) => {
+    if (fromKey === toKey) return;
+    const keys = navigation.map((item) => item.key);
+    if (!keys.includes(fromKey) || !keys.includes(toKey)) return;
+    const next = keys.filter((key) => key !== fromKey);
+    const targetIndex = next.indexOf(toKey);
+    if (targetIndex < 0) return;
+    next.splice(targetIndex + (after ? 1 : 0), 0, fromKey);
+    saveOrder(next);
+  };
+
+  const moveBy = (key: string, delta: -1 | 1) => {
+    const keys = navigation.map((item) => item.key);
+    const index = keys.indexOf(key);
+    const nextIndex = index + delta;
+    if (index < 0 || nextIndex < 0 || nextIndex >= keys.length) return;
+    const next = [...keys];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    saveOrder(next);
+  };
 
   const submit = async (input: AgentConfigInput, activate: boolean) => {
     setSaving(true);
@@ -241,12 +297,79 @@ export function AgentPage({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
+                        draggable
                         onClick={() => onSelect(item.kind, item.info.env)}
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", item.key);
+                          setDraggingKey(item.key);
+                          setDropTarget(null);
+                        }}
+                        onDragOver={(event) => {
+                          if (!draggingKey || draggingKey === item.key) return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          const rect =
+                            event.currentTarget.getBoundingClientRect();
+                          const after =
+                            event.clientY > rect.top + rect.height / 2;
+                          setDropTarget((current) =>
+                            current?.key === item.key &&
+                            current.after === after
+                              ? current
+                              : { key: item.key, after },
+                          );
+                        }}
+                        onDragLeave={(event) => {
+                          const next = event.relatedTarget as Node | null;
+                          if (next && event.currentTarget.contains(next)) return;
+                          setDropTarget((current) =>
+                            current?.key === item.key ? null : current,
+                          );
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          if (draggingKey) {
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            const after =
+                              event.clientY > rect.top + rect.height / 2;
+                            moveItem(draggingKey, item.key, after);
+                          }
+                          setDraggingKey(null);
+                          setDropTarget(null);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingKey(null);
+                          setDropTarget(null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            !event.altKey ||
+                            (event.key !== "ArrowUp" &&
+                              event.key !== "ArrowDown")
+                          ) {
+                            return;
+                          }
+                          event.preventDefault();
+                          moveBy(item.key, event.key === "ArrowUp" ? -1 : 1);
+                        }}
                         aria-label={`${itemName}, ${t.bindings} ${item.count}`}
                         aria-current={selected ? "true" : undefined}
-                        className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                        className={`group relative flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:cursor-grab ${
                           collapsed
                             ? "md:flex-col md:justify-center md:gap-1 md:px-1"
+                            : ""
+                        } ${
+                          draggingKey === item.key
+                            ? "cursor-grabbing opacity-40"
+                            : ""
+                        } ${
+                          dropTarget?.key === item.key
+                            ? dropTarget.after
+                              ? "after:absolute after:inset-x-2 after:-bottom-[3px] after:z-10 after:h-[2px] after:rounded-full after:bg-primary"
+                              : "before:absolute before:inset-x-2 before:-top-[3px] before:z-10 before:h-[2px] before:rounded-full before:bg-primary"
                             : ""
                         } ${
                           selected
@@ -279,6 +402,17 @@ export function AgentPage({
                           title={`${t.bindings} ${item.count}`}
                         >
                           {item.count}
+                        </span>
+                        <span
+                          className={`shrink-0 ${
+                            collapsed ? "hidden" : "hidden md:flex"
+                          }`}
+                          title={t.dragToReorder}
+                        >
+                          <GripVertical
+                            className="size-3 text-muted-foreground/35 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                            aria-hidden="true"
+                          />
                         </span>
                         {collapsed && !item.info.host ? (
                           <span className="hidden text-[8px] font-semibold uppercase tracking-wide text-muted-foreground/60 md:block">
