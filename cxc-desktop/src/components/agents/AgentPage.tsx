@@ -297,14 +297,7 @@ export function AgentPage({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        draggable
                         onClick={() => onSelect(item.kind, item.info.env)}
-                        onDragStart={(event) => {
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", item.key);
-                          setDraggingKey(item.key);
-                          setDropTarget(null);
-                        }}
                         onDragOver={(event) => {
                           if (!draggingKey || draggingKey === item.key) return;
                           event.preventDefault();
@@ -339,10 +332,6 @@ export function AgentPage({
                           setDraggingKey(null);
                           setDropTarget(null);
                         }}
-                        onDragEnd={() => {
-                          setDraggingKey(null);
-                          setDropTarget(null);
-                        }}
                         onKeyDown={(event) => {
                           if (
                             !event.altKey ||
@@ -357,7 +346,7 @@ export function AgentPage({
                         aria-label={`${itemName}, ${t.bindings} ${item.count}`}
                         aria-current={selected ? "true" : undefined}
                         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                        className={`group relative flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:cursor-grab ${
+                        className={`group relative flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                           collapsed
                             ? "md:flex-col md:justify-center md:gap-1 md:px-1"
                             : ""
@@ -404,7 +393,18 @@ export function AgentPage({
                           {item.count}
                         </span>
                         <span
-                          className={`shrink-0 ${
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", item.key);
+                            setDraggingKey(item.key);
+                            setDropTarget(null);
+                          }}
+                          onDragEnd={() => {
+                            setDraggingKey(null);
+                            setDropTarget(null);
+                          }}
+                          className={`shrink-0 cursor-grab items-center rounded p-1 active:cursor-grabbing ${
                             collapsed ? "hidden" : "hidden md:flex"
                           }`}
                           title={t.dragToReorder}

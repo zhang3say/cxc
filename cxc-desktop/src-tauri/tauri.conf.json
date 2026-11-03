@@ -20,7 +20,8 @@
         "transparent": true,
         "decorations": false,
         "shadow": true,
-        "skipTaskbar": false
+        "skipTaskbar": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
