@@ -24,6 +24,12 @@ CXC is a desktop app for managing API relay endpoints used by AI coding tools. R
 - **Safe writes** — A `.bak` backup is created before touching any target config; a failed write leaves CXC's own config unchanged.
 - **Also included** — System tray, optional Gist sync (AES-256-GCM), light/dark themes, Chinese/English UI, custom config directories.
 
+## Screenshots
+
+| Relays | Bindings and model tests |
+| --- | --- |
+| ![Relays](docs/images/suppliers.webp) | ![Bindings and model tests](docs/images/binding.webp) |
+
 ## Install
 
 Download the installer for your platform from [Releases](https://github.com/zhang3say/cxc/releases).

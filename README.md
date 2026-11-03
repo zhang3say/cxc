@@ -24,6 +24,12 @@ CXC 是一个管理 AI 编程工具 API 中转端点的桌面应用。中转站�
 - **安全写入** — 修改目标工具配置前自动生成 `.bak` 备份，写入失败时 CXC 侧配置保持不变。
 - **其他** — 系统托盘、Gist 同步（可选 AES-256-GCM 加密）、明暗主题、中英文界面、自定义配置目录。
 
+## 界面预览
+
+| 中转站管理 | 绑定与模型测试 |
+| --- | --- |
+| ![中转站管理](docs/images/suppliers.webp) | ![绑定与模型测试](docs/images/binding.webp) |
+
 ## 安装
 
 从 [Releases](https://github.com/zhang3say/cxc/releases) 下载对应平台的安装包。
