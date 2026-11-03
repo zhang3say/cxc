@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "cxc-core"
-version = "0.2.3"
+version = "1.0.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "cxc-desktop"
-version = "0.2.3"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "cxc-core",

@@ -1,6 +1,6 @@
 [package]
 name = "cxc-desktop"
-version = "0.2.3"
+version = "1.0.0"
 description = "CXC desktop application"
 authors = ["CXC"]
 edition = "2021"
