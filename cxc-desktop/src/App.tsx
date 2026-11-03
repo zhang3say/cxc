@@ -254,11 +254,21 @@ export default function App() {
   ): Promise<ModelTestResult> => {
     const result = await api.testSupplierModel(supplierId, model, protocol, keyId);
     setConfig(result.config);
+    const { ok, latency_ms, error } = result.result;
+    const protocolLabel = PROTOCOL_LABELS[protocol];
+    const account = keyId
+      ? result.config.suppliers
+          .find((item) => item.id === supplierId)
+          ?.keys.find((item) => item.id === keyId)?.name
+      : undefined;
+    const accountSuffix = account ? ` · ${account}` : "";
     showToast(
-      result.result.ok
-        ? `${model} · ${t.success} · ${result.result.latency_ms} ms`
-        : `${model} · ${t.failed}`,
-      result.result.ok ? "success" : "error",
+      ok
+        ? `${model}${accountSuffix} · ${protocolLabel} · ${t.success} · ${latency_ms} ms`
+        : `${model}${accountSuffix} · ${protocolLabel} · ${t.failed}${
+            error ? ` · ${error}` : ""
+          }`,
+      ok ? "success" : "error",
     );
     return result.result;
   };
