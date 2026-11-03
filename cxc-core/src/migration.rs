@@ -228,6 +228,12 @@ pub(crate) fn import_agent(
     supplier_ids: &mut HashMap<String, String>,
     report: &mut ImportReport,
 ) {
+    // 旧版每个 provider 都会落成一个中转站账号，未激活的 Key 也保留下来，
+    // 这样按端点归并后仍然可以在账号列表里切换。
+    for provider in providers {
+        ensure_supplier_for_provider(cfg, kind, provider, supplier_ids, report);
+    }
+
     let Some(wsl) = pick(providers, active_wsl, true) else {
         return;
     };
@@ -273,13 +279,14 @@ fn pick<'a>(
         .or_else(|| fallback_first.then(|| providers.first()).flatten())
 }
 
-fn build_config(
+/// 把旧 provider 落成一个中转站账号；同一端点复用同一个中转站。
+fn ensure_supplier_for_provider(
     cfg: &mut Config,
     kind: AgentKind,
     provider: &LegacyProvider,
     supplier_ids: &mut HashMap<String, String>,
     report: &mut ImportReport,
-) -> Option<crate::agent::AgentConfig> {
+) -> Option<(String, String)> {
     let base_url = match supplier::normalize_base_url(&provider.base_url) {
         Ok(url) => url,
         Err(_) => {
@@ -300,15 +307,6 @@ fn build_config(
         ));
         return None;
     }
-    let model = provider.model.trim();
-    if model.is_empty() {
-        report.skipped.push(format!(
-            "{}: 模型为空 ({})",
-            kind.display_name(),
-            provider.name
-        ));
-        return None;
-    }
 
     let protocol = protocol_for(kind, &provider.wire_api);
     let endpoint = endpoint_match_key(&base_url).unwrap_or_else(|| base_url.clone());
@@ -316,16 +314,20 @@ fn build_config(
         id.clone()
     } else {
         let name = unique_supplier_name(cfg, &provider.name, &base_url);
-        let supplier = match supplier::add_supplier(
-            cfg,
-            SupplierInput::single_key(
-                name,
-                base_url.clone(),
-                api_key.to_string(),
-                provider.remark.clone(),
-                Some(vec![protocol]),
-            ),
-        ) {
+        let mut input = SupplierInput::single_key(
+            name,
+            base_url.clone(),
+            api_key.to_string(),
+            provider.remark.clone(),
+            Some(vec![protocol]),
+        );
+        if let Some(first) = input.keys.first_mut() {
+            let account = provider.name.trim();
+            if !account.is_empty() {
+                first.name = account.to_string();
+            }
+        }
+        let supplier = match supplier::add_supplier(cfg, input) {
             Ok(supplier) => supplier,
             Err(error) => {
                 report
@@ -353,20 +355,54 @@ fn build_config(
             supplier.protocols.push(protocol);
             supplier.protocols = Protocol::normalize_all(supplier.protocols.iter().copied());
         }
-        supplier::merge_discovered_models(supplier, vec![model.to_string()]);
-        if let Some(entry) = supplier
-            .models
-            .iter_mut()
-            .find(|entry| entry.model == model)
-            && !entry.protocols.contains(&protocol)
-        {
-            entry.protocols.push(protocol);
-            entry.protocols = Protocol::normalize_all(entry.protocols.iter().copied());
+        let model = provider.model.trim();
+        if !model.is_empty() {
+            supplier::merge_discovered_models(supplier, vec![model.to_string()]);
+            if let Some(entry) = supplier
+                .models
+                .iter_mut()
+                .find(|entry| entry.model == model)
+                && !entry.protocols.contains(&protocol)
+            {
+                entry.protocols.push(protocol);
+                entry.protocols = Protocol::normalize_all(entry.protocols.iter().copied());
+            }
         }
     }
 
+    Some((supplier_id, key_id))
+}
+
+/// 只为旧版当前激活的 provider 建绑定；中转站账号已在前一步全部导入。
+fn build_config(
+    cfg: &mut Config,
+    kind: AgentKind,
+    provider: &LegacyProvider,
+    supplier_ids: &mut HashMap<String, String>,
+    report: &mut ImportReport,
+) -> Option<crate::agent::AgentConfig> {
+    let model = provider.model.trim();
+    if model.is_empty() {
+        report.skipped.push(format!(
+            "{}: 模型为空 ({})",
+            kind.display_name(),
+            provider.name
+        ));
+        return None;
+    }
+
+    let base_url = supplier::normalize_base_url(&provider.base_url).ok()?;
+    let api_key = provider.api_key.trim();
+    if api_key.is_empty() {
+        return None;
+    }
+    let endpoint = endpoint_match_key(&base_url).unwrap_or_else(|| base_url.clone());
+    let supplier_id = supplier_ids.get(&endpoint)?.clone();
+    let key_id = ensure_supplier_key(cfg, &supplier_id, api_key, provider)?;
+    let protocol = protocol_for(kind, &provider.wire_api);
+
     let input = AgentConfigInput {
-        supplier_id: supplier_id.clone(),
+        supplier_id,
         key_id: Some(key_id),
         protocol,
         model: model.to_string(),
@@ -428,13 +464,31 @@ fn ensure_supplier_key(
 
     let key = SupplierKey {
         id: supplier::new_id(),
-        name: next_key_name(supplier),
+        name: unique_key_name(supplier, &provider.name),
         api_key: api_key.to_string(),
         remark: supplier::normalize_remark(Some(provider.name.clone())),
     };
     let id = key.id.clone();
     supplier.keys.push(key);
     Some(id)
+}
+
+/// 优先沿用旧版 provider 名称，重名时追加序号。
+fn unique_key_name(supplier: &Supplier, provider_name: &str) -> String {
+    let base = provider_name.trim();
+    if base.is_empty() {
+        return next_key_name(supplier);
+    }
+    if !supplier.keys.iter().any(|key| key.name == base) {
+        return base.to_string();
+    }
+    for index in 2.. {
+        let candidate = format!("{base} ({index})");
+        if !supplier.keys.iter().any(|key| key.name == candidate) {
+            return candidate;
+        }
+    }
+    unreachable!()
 }
 
 fn next_key_name(supplier: &Supplier) -> String {
@@ -641,9 +695,9 @@ grok_providers:
         assert_eq!(supplier.name, "relay-a");
         assert_eq!(supplier.base_url, "https://api.example.com/v1");
         assert_eq!(supplier.keys.len(), 2);
-        assert_eq!(supplier.keys[0].name, "默认");
+        assert_eq!(supplier.keys[0].name, "relay-a");
         assert_eq!(supplier.keys[0].api_key, "sk-a");
-        assert_eq!(supplier.keys[1].name, "账号 2");
+        assert_eq!(supplier.keys[1].name, "relay-b");
         assert_eq!(supplier.keys[1].api_key, "sk-b");
         assert_eq!(supplier.keys[1].remark.as_deref(), Some("relay-b"));
         assert_eq!(
@@ -664,6 +718,86 @@ grok_providers:
         assert!(supplier.protocols.contains(&Protocol::Responses));
         assert!(supplier.protocols.contains(&Protocol::Messages));
         assert!(supplier.protocols.contains(&Protocol::ChatCompletions));
+    }
+
+    const SHARED_ENDPOINT_MULTI: &str = r#"
+codex_active_app: relay-a
+codex_active_wsl: relay-a
+codex_providers:
+  - name: relay-a
+    base_url: https://api.example.com/v1
+    api_key: sk-a
+    model: gpt-5
+    wire_api: responses
+  - name: relay-b
+    base_url: https://api.example.com
+    api_key: sk-b
+    model: gpt-5-mini
+    wire_api: responses
+claude_providers: []
+grok_active_wsl: relay-c
+grok_providers:
+  - name: relay-c
+    base_url: https://API.example.com/v1/
+    api_key: sk-c
+    model: grok-4.5
+    wire_api: chat
+  - name: relay-d
+    base_url: https://api.example.com/v1
+    api_key: sk-d
+    model: grok-4.5
+    wire_api: chat
+  - name: relay-a
+    base_url: https://api.example.com/v1
+    api_key: sk-a
+    model: grok-4.5
+    wire_api: responses
+"#;
+
+    #[test]
+    fn imports_inactive_providers_as_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy_path = dir.path().join("legacy.yaml");
+        let config_path = dir.path().join("config.yaml");
+        fs::write(&legacy_path, SHARED_ENDPOINT_MULTI).unwrap();
+
+        let report = import_if_needed(&config_path, &legacy_path).unwrap();
+        assert_eq!(report.suppliers, 1);
+        assert_eq!(report.configs, 3);
+
+        let cfg = config::load_from(&config_path).unwrap();
+        assert_eq!(cfg.suppliers.len(), 1);
+        let supplier = cfg.suppliers.first().unwrap();
+        assert_eq!(supplier.name, "relay-a");
+        assert_eq!(supplier.keys.len(), 4);
+        let names: Vec<&str> = supplier.keys.iter().map(|key| key.name.as_str()).collect();
+        assert_eq!(names, ["relay-a", "relay-b", "relay-c", "relay-d"]);
+
+        // 未激活的 relay-b / relay-d 也要保留成账号。
+        assert_eq!(supplier.keys[1].api_key, "sk-b");
+        assert_eq!(supplier.keys[3].api_key, "sk-d");
+
+        let codex_wsl = cfg.config_of(AgentKind::Codex, Env::Wsl).unwrap();
+        let codex_windows = cfg.config_of(AgentKind::Codex, Env::Windows).unwrap();
+        let grok_wsl = cfg.config_of(AgentKind::Grok, Env::Wsl).unwrap();
+        assert_eq!(
+            codex_wsl.key_id.as_deref(),
+            Some(supplier.keys[0].id.as_str())
+        );
+        assert_eq!(
+            codex_windows.key_id.as_deref(),
+            Some(supplier.keys[0].id.as_str())
+        );
+        assert_eq!(
+            grok_wsl.key_id.as_deref(),
+            Some(supplier.keys[2].id.as_str())
+        );
+        assert!(
+            supplier
+                .models
+                .iter()
+                .any(|entry| entry.model == "gpt-5-mini")
+        );
     }
 
     #[test]
