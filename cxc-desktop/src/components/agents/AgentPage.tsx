@@ -14,6 +14,7 @@ import type {
   Protocol,
 } from "@/lib/types";
 import { AGENT_KINDS, AGENT_LABELS, slotOf } from "@/lib/types";
+import { AgentMark } from "./AgentMark";
 import { BindingRow } from "./BindingRow";
 import { BindingDialog } from "./BindingDialog";
 
@@ -38,23 +39,6 @@ interface AgentPageProps {
     keyId?: string,
   ) => Promise<ModelTestResult>;
   onRefreshModels: (supplierId: string) => Promise<void>;
-}
-
-const agentAccent: Record<AgentKind, string> = {
-  codex: "from-[#B1A7FF] to-[#3941FF]",
-  claude: "from-[#D97757] to-[#B45309]",
-  grok: "from-[#111827] to-[#4B5563]",
-  opencode: "from-[#0EA5E9] to-[#0369A1]",
-};
-
-function AgentMark({ agent }: { agent: AgentKind }) {
-  return (
-    <span
-      className={`flex size-6 items-center justify-center rounded-md bg-gradient-to-br ${agentAccent[agent]} text-[10px] font-black text-white shadow-sm`}
-    >
-      {AGENT_LABELS[agent].slice(0, 1)}
-    </span>
-  );
 }
 
 /** 宿主环境不加后缀；WSL 等间接环境带上发行版，避免同名 Agent 混在一起。 */
@@ -198,17 +182,21 @@ export function AgentPage({
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground/55">
+                <span
+                  className="shrink-0 font-mono text-[10px] text-muted-foreground/55"
+                  title={`${t.bindings} ${item.count}`}
+                >
                   {item.count}
                 </span>
                 <span
-                  className={`size-1.5 shrink-0 rounded-full ${
+                  className={`shrink-0 rounded border px-1 py-0.5 text-[8px] font-bold leading-none ${
                     item.installed
-                      ? "bg-sticker-green"
-                      : "bg-muted-foreground/30"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-border/50 bg-muted/20 text-muted-foreground"
                   }`}
-                  title={item.installed ? t.agentInstalled : t.agentMissing}
-                />
+                >
+                  {item.installed ? t.agentInstalled : t.agentMissing}
+                </span>
               </button>
             );
           })}
@@ -218,18 +206,10 @@ export function AgentPage({
       <div className="min-w-0 flex-1 space-y-3">
         <div className="px-1">
           <div className="flex flex-wrap items-center gap-2">
+            <AgentMark agent={agent} />
             <h2 className="truncate text-sm font-bold tracking-tight">
               {selectedTitle}
             </h2>
-            <span
-              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                detection?.installed
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-border bg-muted/30 text-muted-foreground"
-              }`}
-            >
-              {detection?.installed ? t.agentInstalled : t.agentMissing}
-            </span>
           </div>
           <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/60">
             {detection?.config_dir ?? ""}
