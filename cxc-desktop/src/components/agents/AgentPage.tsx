@@ -201,7 +201,7 @@ export function AgentPage({
             collapsed ? "md:w-16" : "md:w-56"
           }`}
         >
-          <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm [scrollbar-width:thin] md:max-h-[calc(100vh-6.5rem)] md:overflow-y-auto md:overscroll-contain">
+          <div className="space-y-1 rounded-xl border border-border/25 bg-card/10 p-1.5 backdrop-blur-sm md:max-h-[calc(100vh-6.5rem)] md:overflow-y-auto md:overscroll-contain">
             <div
               className={`flex items-center px-1.5 py-1 ${
                 collapsed ? "md:justify-center" : "justify-between"

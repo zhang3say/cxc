@@ -101,7 +101,6 @@ function SelectContent({
           data-position={position}
           className={cn(
             "p-1 max-h-60 overflow-y-auto scroll-smooth",
-            "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border/60 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-border/90",
             position === "popper" && "w-full min-w-[var(--radix-select-trigger-width)]"
           )}
         >

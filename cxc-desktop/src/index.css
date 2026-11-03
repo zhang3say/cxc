@@ -74,6 +74,9 @@
     --input: #ffffff;
     --ring: #0075de;
     --radius: 0.75rem; /* 12px rounded-lg */
+    --scrollbar-thumb: rgba(0, 0, 0, 0.16);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+    --scrollbar-thumb-active: rgba(0, 0, 0, 0.42);
 }
 
 .dark {
@@ -92,6 +95,9 @@
     --border: #2c2c2c; /* Dark hairline */
     --input: #202020;
     --ring: #2eaadc;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+    --scrollbar-thumb-active: rgba(255, 255, 255, 0.4);
 }
 
 @layer base {
@@ -111,5 +117,30 @@
   }
   html {
     @apply font-sans;
+  }
+
+  /* 细窄的悬浮式滚动条：透明轨道、无箭头，滑块悬停时才提亮。 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-color: var(--scrollbar-thumb);
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active);
   }
 }
