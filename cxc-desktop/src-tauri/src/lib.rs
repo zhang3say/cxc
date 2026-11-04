@@ -911,8 +911,10 @@ mod tests {
     #[tokio::test]
     #[ignore = "需要网络，手动执行 cargo test -p cxc-desktop live_check_update -- --ignored"]
     async fn live_check_update() {
-        let info = fetch_update_info("0.9.0").await.expect("请求 GitHub 失败");
-        assert_eq!(info.latest_version, "1.0.1");
+        let info = fetch_update_info("0.1.1").await.expect("请求 GitHub 失败");
+        // 标签可能是 v1.0.0 或 cxc-desktop-v1.0.0，解析后都应是非空版本号。
+        assert!(!info.latest_version.is_empty());
+        assert!(info.latest_version.chars().next().unwrap().is_ascii_digit());
         assert!(info.has_update);
         assert!(!info.release_notes.is_empty());
     }
