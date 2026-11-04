@@ -15,6 +15,7 @@ import { SupplierPage } from "@/components/suppliers/SupplierPage";
 import { SupplierDialog } from "@/components/suppliers/SupplierDialog";
 import { AgentPage } from "@/components/agents/AgentPage";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { UpdateDialog } from "@/components/settings/UpdateDialog";
 import { api, isTauri } from "@/lib/api";
 import { messages, type Lang } from "@/lib/i18n";
 import type {
@@ -31,6 +32,8 @@ import type {
   Supplier,
   SupplierInput,
   SyncConfig,
+  UpdateInfo,
+  UpdateStatus,
 } from "@/lib/types";
 import { AGENT_LABELS, PROTOCOL_LABELS, emptyDirs } from "@/lib/types";
 import { errorText } from "@/lib/utils";
@@ -71,6 +74,10 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [version, setVersion] = useState("0.1.0");
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
   const [pathEnv, setPathEnv] = useState("");
   const [lang, setLang] = useState<Lang>(() => {
     const stored = localStorage.getItem("cxc-lang");
@@ -462,23 +469,31 @@ export default function App() {
   };
 
   const checkUpdate = async () => {
+    setUpdateStatus("checking");
+    setUpdateError(null);
     try {
       const info = await api.checkUpdate();
-      showToast(
-        info.has_update
-          ? `${t.update}: ${info.latest_version}`
-          : `${t.version} ${info.current_version}`,
-        "info",
-      );
-      if (info.has_update && info.download_url) {
-        if (isTauri) {
-          await openUrl(info.download_url);
-        } else {
-          window.open(info.download_url, "_blank");
-        }
-      }
+      setUpdateInfo(info);
+      setUpdateStatus(info.has_update ? "available" : "latest");
     } catch (error) {
-      showToast(errorText(error), "error");
+      setUpdateInfo(null);
+      setUpdateError(errorText(error));
+      setUpdateStatus("error");
+    }
+  };
+
+  const closeSettings = () => {
+    setSettingsOpen(false);
+    setUpdateStatus("idle");
+    setUpdateInfo(null);
+    setUpdateError(null);
+  };
+
+  const openExternal = async (url: string) => {
+    if (isTauri) {
+      await openUrl(url);
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -611,15 +626,27 @@ export default function App() {
         t={t}
         lang={lang}
         onLang={setLang}
-        onClose={() => setSettingsOpen(false)}
+        onClose={closeSettings}
         onSave={saveSettings}
         onSyncSave={saveSync}
         onTestGist={(token, gistId) => api.testGistConnection(token, gistId || undefined)}
         onSyncAction={syncAction}
         version={version}
+        updateStatus={updateStatus}
+        updateInfo={updateInfo}
+        updateError={updateError}
         onCheckUpdate={checkUpdate}
+        onViewUpdate={() => setUpdateOpen(true)}
         pathEnv={pathEnv}
         onRedetect={reload}
+      />
+
+      <UpdateDialog
+        open={updateOpen}
+        info={updateInfo}
+        t={t}
+        onClose={() => setUpdateOpen(false)}
+        onOpenUrl={(url) => void openExternal(url)}
       />
 
       <Dialog open={confirm != null} onOpenChange={(open) => !open && setConfirm(null)}>

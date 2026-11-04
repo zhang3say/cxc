@@ -165,12 +165,27 @@ export interface MergeReport {
   bindings_updated: number;
 }
 
+export interface UpdateAsset {
+  name: string;
+  url: string;
+  size: number;
+}
+
 export interface UpdateInfo {
   current_version: string;
   latest_version: string;
   has_update: boolean;
+  release_name: string;
+  release_url: string;
+  release_notes: string;
+  published_at: string;
+  /** 当前平台最合适的安装包；没有匹配时为空，改用 `release_url`。 */
   download_url?: string;
+  assets: UpdateAsset[];
 }
+
+/** 设置页「检查更新」的状态。 */
+export type UpdateStatus = "idle" | "checking" | "latest" | "available" | "error";
 
 export interface SupplierKeyInput {
   id?: string;

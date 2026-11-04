@@ -725,12 +725,34 @@ export async function mockInvoke<T>(
     case "get_app_version":
       return "0.1.0" as T;
 
-    case "check_update":
+    case "check_update": {
+      await delay(700);
+      const notes = [
+        "## CXC 1.0.2",
+        "",
+        "### 新增",
+        "",
+        "- 中转站编辑时支持一键复制 Key。",
+        "- 设置页新增更新说明弹窗，可直接下载对应平台的安装包。",
+        "",
+        "### 修复",
+        "",
+        "- 修复设置页滚动条没有贴住弹窗右边缘。",
+        "- 修复检查更新在发布标签带 `cxc-desktop-v` 前缀时始终判定为最新版本。",
+      ].join("\n");
       return {
         current_version: "0.1.0",
-        latest_version: "0.1.0",
-        has_update: false,
+        latest_version: "1.0.2",
+        has_update: true,
+        release_name: "CXC 1.0.2",
+        release_url: "https://github.com/zhang3say/cxc/releases/tag/cxc-desktop-v1.0.2",
+        release_notes: notes,
+        published_at: "2026-11-05T02:30:00Z",
+        download_url:
+          "https://github.com/zhang3say/cxc/releases/download/cxc-desktop-v1.0.2/CXC_1.0.2_x64-setup.exe",
+        assets: [],
       } as T;
+    }
 
     default:
       throw new Error(`未实现的演示命令：${command}`);

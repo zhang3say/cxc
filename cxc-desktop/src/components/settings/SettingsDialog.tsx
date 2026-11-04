@@ -24,7 +24,7 @@ import { CxcSelect } from "@/components/ui/select";
 import { errorText } from "@/lib/utils";
 import { isTauri } from "@/lib/api";
 import type { Lang, Messages } from "@/lib/i18n";
-import type { Config, CustomDirs, Env, SyncConfig } from "@/lib/types";
+import type { Config, CustomDirs, Env, SyncConfig, UpdateInfo, UpdateStatus } from "@/lib/types";
 import { AGENT_KINDS, AGENT_LABELS, ENV_LABELS, emptyDirs } from "@/lib/types";
 
 const GITHUB_TOKEN_URL =
@@ -51,7 +51,11 @@ interface SettingsDialogProps {
   onTestGist: (token: string, gistId: string) => Promise<string>;
   onSyncAction: (action: "push" | "pull" | "merge") => Promise<void>;
   version: string;
+  updateStatus: UpdateStatus;
+  updateInfo: UpdateInfo | null;
+  updateError: string | null;
   onCheckUpdate: () => Promise<void>;
+  onViewUpdate: () => void;
   pathEnv: string;
   onRedetect: () => Promise<void>;
 }
@@ -69,7 +73,11 @@ export function SettingsDialog({
   onTestGist,
   onSyncAction,
   version,
+  updateStatus,
+  updateInfo,
+  updateError,
   onCheckUpdate,
+  onViewUpdate,
   pathEnv,
   onRedetect,
 }: SettingsDialogProps) {
@@ -167,7 +175,8 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 space-y-5 overflow-y-auto pr-1">
+        {/* 负外边距让滚动容器贴住弹窗右边缘，正内边距把内容收回原来的留白。 */}
+        <div className="min-h-0 space-y-5 overflow-y-auto -mr-6 pr-6">
           <section className="space-y-2">
             <Label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
               {t.customDirs}
@@ -373,11 +382,53 @@ export function SettingsDialog({
                   {t.version} {version}
                 </p>
               </div>
-              <Button size="xs" variant="outline" onClick={() => void onCheckUpdate()}>
-                <Download className="size-3" />
-                {t.update}
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => void onCheckUpdate()}
+                disabled={updateStatus === "checking"}
+              >
+                {updateStatus === "checking" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Download className="size-3" />
+                )}
+                {updateStatus === "checking" ? t.checkingUpdate : t.update}
               </Button>
             </div>
+            {updateStatus === "latest" ? (
+              <p role="status" aria-live="polite" className="text-[10px] text-muted-foreground">
+                {t.upToDate} · {version}
+              </p>
+            ) : null}
+            {updateStatus === "available" && updateInfo ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5"
+              >
+                <span className="text-[10px] font-semibold text-primary">
+                  {t.newVersion(updateInfo.latest_version)}
+                </span>
+                <Button size="xs" variant="outline" onClick={onViewUpdate}>
+                  {t.viewUpdate}
+                </Button>
+              </div>
+            ) : null}
+            {updateStatus === "error" ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex items-center justify-between gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 dark:border-red-500/30 dark:bg-red-500/10"
+              >
+                <span className="text-[10px] text-red-600 dark:text-red-400">
+                  {t.updateFailed}：{updateError}
+                </span>
+                <Button size="xs" variant="outline" onClick={() => void onCheckUpdate()}>
+                  {t.retry}
+                </Button>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-foreground/80">{t.language}</span>
               <div className="w-36">

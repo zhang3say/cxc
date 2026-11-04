@@ -42,11 +42,155 @@ struct SyncResponse {
 }
 
 #[derive(Serialize)]
+struct UpdateAsset {
+    name: String,
+    url: String,
+    size: u64,
+}
+
+#[derive(Serialize)]
 struct UpdateInfo {
     current_version: String,
     latest_version: String,
     has_update: bool,
+    release_name: String,
+    release_url: String,
+    release_notes: String,
+    published_at: String,
+    /// 当前平台最合适的安装包；没有匹配时为 None。
     download_url: Option<String>,
+    assets: Vec<UpdateAsset>,
+}
+
+const RELEASES_API: &str = "https://api.github.com/repos/zhang3say/cxc/releases/latest";
+
+/// 从 GitHub 标签里取出版本号：`cxc-desktop-v1.0.1` / `v1.0.1` / `1.0.1` → `1.0.1`。
+/// 取第一个数字开始、连续的数字与点；遇到其它字符停止，所以 `v1.0.1-beta.1` → `1.0.1`。
+fn parse_tag_version(tag: &str) -> String {
+    let Some(start) = tag.find(|c: char| c.is_ascii_digit()) else {
+        return String::new();
+    };
+    tag[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect::<String>()
+        .trim_end_matches('.')
+        .to_string()
+}
+
+/// 按平台挑安装包：Windows 优先 `-setup.exe`，macOS 按架构选 dmg，Linux 不发布安装包。
+fn pick_asset_for(assets: &[UpdateAsset], os: &str, arch: &str) -> Option<String> {
+    let find = |suffix: &str| {
+        assets
+            .iter()
+            .find(|asset| asset.name.to_lowercase().ends_with(suffix))
+            .map(|asset| asset.url.clone())
+    };
+    match os {
+        "windows" => find("-setup.exe").or_else(|| find(".msi")),
+        "macos" => match arch {
+            "aarch64" => find("aarch64.dmg").or_else(|| find(".dmg")),
+            _ => find("x64.dmg").or_else(|| find(".dmg")),
+        },
+        _ => None,
+    }
+}
+
+fn version_parts(value: &str) -> Vec<u64> {
+    value
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or(0))
+        .collect()
+}
+
+fn version_gt(left: &str, right: &str) -> bool {
+    let left = version_parts(left);
+    let right = version_parts(right);
+    for index in 0..left.len().max(right.len()) {
+        let a = left.get(index).copied().unwrap_or(0);
+        let b = right.get(index).copied().unwrap_or(0);
+        if a != b {
+            return a > b;
+        }
+    }
+    false
+}
+
+#[derive(serde::Deserialize)]
+struct GithubAsset {
+    name: String,
+    browser_download_url: String,
+    size: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    #[serde(default)]
+    name: Option<String>,
+    html_url: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    published_at: Option<String>,
+    #[serde(default)]
+    assets: Vec<GithubAsset>,
+}
+
+async fn fetch_update_info(current: &str) -> Result<UpdateInfo, String> {
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("CXC/", env!("CARGO_PKG_VERSION")))
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|error| format!("无法创建网络请求：{error}"))?;
+    let response = client
+        .get(RELEASES_API)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| format!("连接 GitHub 失败：{error}"))?;
+    let status = response.status();
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    {
+        return Err("GitHub API 访问受限（未登录每小时 60 次），请稍后再试".to_string());
+    }
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Err("还没有可用的发布版本".to_string());
+    }
+    if !status.is_success() {
+        return Err(format!("HTTP {status}"));
+    }
+
+    let release: GithubRelease = response
+        .json()
+        .await
+        .map_err(|error| format!("解析发布信息失败：{error}"))?;
+    let assets: Vec<UpdateAsset> = release
+        .assets
+        .into_iter()
+        .map(|asset| UpdateAsset {
+            name: asset.name,
+            url: asset.browser_download_url,
+            size: asset.size,
+        })
+        .collect();
+    let latest = parse_tag_version(&release.tag_name);
+    let download_url = pick_asset_for(&assets, std::env::consts::OS, std::env::consts::ARCH);
+    Ok(UpdateInfo {
+        has_update: !latest.is_empty() && version_gt(&latest, current),
+        current_version: current.to_string(),
+        latest_version: if latest.is_empty() {
+            release.tag_name.clone()
+        } else {
+            latest
+        },
+        release_name: release.name.unwrap_or_else(|| release.tag_name.clone()),
+        release_url: release.html_url,
+        release_notes: release.body.unwrap_or_default(),
+        published_at: release.published_at.unwrap_or_default(),
+        download_url,
+        assets,
+    })
 }
 
 fn load_config() -> Result<Config, String> {
@@ -422,51 +566,7 @@ fn get_app_version(app: tauri::AppHandle) -> String {
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     let current = app.package_info().version.to_string();
-    let client = reqwest::Client::builder()
-        .user_agent("CXC-Desktop-App")
-        .build()
-        .map_err(|error| error.to_string())?;
-    let response = client
-        .get("https://api.github.com/repos/zhang3say/cxc/releases/latest")
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
-    }
-
-    #[derive(serde::Deserialize)]
-    struct GithubRelease {
-        tag_name: String,
-        html_url: String,
-    }
-    let release: GithubRelease = response.json().await.map_err(|error| error.to_string())?;
-    let latest = release.tag_name.trim_start_matches('v').to_string();
-    Ok(UpdateInfo {
-        has_update: version_gt(&latest, &current),
-        current_version: current,
-        latest_version: latest,
-        download_url: Some(release.html_url),
-    })
-}
-
-fn version_gt(left: &str, right: &str) -> bool {
-    let parse = |value: &str| -> Vec<u64> {
-        value
-            .split('.')
-            .map(|part| part.parse::<u64>().unwrap_or(0))
-            .collect()
-    };
-    let left = parse(left);
-    let right = parse(right);
-    for index in 0..left.len().max(right.len()) {
-        let a = left.get(index).copied().unwrap_or(0);
-        let b = right.get(index).copied().unwrap_or(0);
-        if a != b {
-            return a > b;
-        }
-    }
-    false
+    fetch_update_info(&current).await
 }
 
 fn agent_label(kind: AgentKind, env: Env) -> String {
@@ -723,4 +823,97 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running CXC");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asset(name: &str) -> UpdateAsset {
+        UpdateAsset {
+            name: name.to_string(),
+            url: format!("https://example.com/{name}"),
+            size: 1,
+        }
+    }
+
+    #[test]
+    fn parses_release_tag_versions() {
+        assert_eq!(parse_tag_version("cxc-desktop-v1.0.1"), "1.0.1");
+        assert_eq!(parse_tag_version("v1.0.1"), "1.0.1");
+        assert_eq!(parse_tag_version("1.0.1"), "1.0.1");
+        assert_eq!(parse_tag_version("v1.0.1-beta.1"), "1.0.1");
+        assert_eq!(parse_tag_version("cxc-desktop-v2.0.0."), "2.0.0");
+        assert_eq!(parse_tag_version("no-version"), "");
+    }
+
+    #[test]
+    fn compares_versions_numerically() {
+        assert!(version_gt("1.0.10", "1.0.9"));
+        assert!(version_gt("1.1.0", "1.0.9"));
+        assert!(!version_gt("1.0.1", "1.0.1"));
+        assert!(!version_gt("1.0", "1.0.0"));
+        assert!(version_gt("1.0.1", "1.0"));
+        assert!(!version_gt("0.9.9", "1.0.0"));
+    }
+
+    #[test]
+    fn picks_windows_installer() {
+        let assets = vec![
+            asset("CXC_1.0.1_x64_en-US.msi"),
+            asset("CXC_1.0.1_x64-setup.exe"),
+            asset("CXC_1.0.1_aarch64.dmg"),
+        ];
+        assert_eq!(
+            pick_asset_for(&assets, "windows", "x86_64").as_deref(),
+            Some("https://example.com/CXC_1.0.1_x64-setup.exe")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_msi_on_windows() {
+        let assets = vec![asset("CXC_1.0.1_x64_en-US.msi")];
+        assert_eq!(
+            pick_asset_for(&assets, "windows", "x86_64").as_deref(),
+            Some("https://example.com/CXC_1.0.1_x64_en-US.msi")
+        );
+    }
+
+    #[test]
+    fn picks_macos_dmg_by_arch() {
+        let assets = vec![asset("CXC_1.0.1_x64.dmg"), asset("CXC_1.0.1_aarch64.dmg")];
+        assert_eq!(
+            pick_asset_for(&assets, "macos", "aarch64").as_deref(),
+            Some("https://example.com/CXC_1.0.1_aarch64.dmg")
+        );
+        assert_eq!(
+            pick_asset_for(&assets, "macos", "x86_64").as_deref(),
+            Some("https://example.com/CXC_1.0.1_x64.dmg")
+        );
+    }
+
+    #[test]
+    fn matches_asset_names_case_insensitively() {
+        let assets = vec![asset("CXC_1.0.1_X64-SETUP.EXE")];
+        assert_eq!(
+            pick_asset_for(&assets, "windows", "x86_64").as_deref(),
+            Some("https://example.com/CXC_1.0.1_X64-SETUP.EXE")
+        );
+    }
+
+    #[test]
+    fn returns_none_without_matching_asset() {
+        let assets = vec![asset("CXC_1.0.1_aarch64.dmg")];
+        assert_eq!(pick_asset_for(&assets, "linux", "x86_64"), None);
+        assert_eq!(pick_asset_for(&[], "windows", "x86_64"), None);
+    }
+
+    #[tokio::test]
+    #[ignore = "需要网络，手动执行 cargo test -p cxc-desktop live_check_update -- --ignored"]
+    async fn live_check_update() {
+        let info = fetch_update_info("0.9.0").await.expect("请求 GitHub 失败");
+        assert_eq!(info.latest_version, "1.0.1");
+        assert!(info.has_update);
+        assert!(!info.release_notes.is_empty());
+    }
 }
