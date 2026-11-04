@@ -67,12 +67,6 @@ export function BindingRow({
           <span className="truncate font-mono text-xs font-bold text-foreground">
             {model || t.notConfigured}
           </span>
-          {isActive ? (
-            <span className="flex items-center gap-1 rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary">
-              <Check className="size-2.5" />
-              {t.inUse}
-            </span>
-          ) : null}
           {test ? (
             <span
               className={`font-mono text-[9px] font-bold ${
@@ -107,16 +101,23 @@ export function BindingRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {!isActive ? (
-          <Button
-            size="xs"
-            disabled={busy}
-            onClick={onActivate}
-            className="bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
-          >
-            {t.activate}
-          </Button>
-        ) : null}
+        <div className="flex w-[4.5rem] shrink-0 justify-end">
+          {isActive ? (
+            <span className="inline-flex h-6 w-full items-center justify-center gap-1 rounded-[min(var(--radius-md),10px)] bg-primary/10 text-xs font-medium text-primary">
+              <Check className="size-3" />
+              {t.inUse}
+            </span>
+          ) : (
+            <Button
+              size="xs"
+              disabled={busy}
+              onClick={onActivate}
+              className="pointer-events-none w-full bg-primary/10 text-primary opacity-0 transition-opacity duration-150 hover:bg-primary hover:text-primary-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+            >
+              {t.activate}
+            </Button>
+          )}
+        </div>
         <Button
           variant="ghost"
           size="icon-sm"
