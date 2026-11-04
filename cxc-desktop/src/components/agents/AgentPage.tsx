@@ -519,34 +519,36 @@ export function AgentPage({
       </TooltipProvider>
 
       <div className="min-w-0 flex-1 space-y-3">
-        <div className="px-1">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+          <div className="flex min-w-0 items-center gap-3">
             <AgentMark agent={activeAgent} />
-            <h2 className="truncate text-sm font-bold tracking-tight">
-              {selectedTitle}
-            </h2>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h2 className="truncate text-sm font-bold tracking-tight">
+                  {selectedTitle}
+                </h2>
+                <span className="shrink-0 rounded-md border border-border/40 bg-muted/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-muted-foreground/80">
+                  {t.bindings} {bindings.length}
+                </span>
+              </div>
+              <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/60">
+                {detection?.config_dir ?? ""}
+              </p>
+            </div>
           </div>
-          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/60">
-            {detection?.config_dir ?? ""}
-          </p>
+          <Button
+            size="icon"
+            onClick={() => setDialog({ open: true, binding: null })}
+            disabled={busy || saving}
+            aria-label={t.newBinding}
+            title={t.newBinding}
+            className="size-8 shrink-0 rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90"
+          >
+            <Plus className="size-4" />
+          </Button>
         </div>
 
         <div className="overflow-hidden rounded-xl">
-          <div className="flex items-center justify-between border-b border-border/30 px-4 py-2.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground/70">
-              {t.bindings} {bindings.length}
-            </span>
-            <Button
-              size="xs"
-              onClick={() => setDialog({ open: true, binding: null })}
-              disabled={busy || saving}
-              className={bindings.length === 0 ? "invisible" : ""}
-            >
-              <Plus className="size-3" />
-              {t.newBinding}
-            </Button>
-          </div>
-
         {bindings.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-12 text-center">
             <p className="text-xs text-muted-foreground">{t.noBindings}</p>
