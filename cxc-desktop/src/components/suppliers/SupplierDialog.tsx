@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2, Plus, Star, Trash2 } from "lucide-react";
+import { Check, Eye, EyeOff, Loader2, Plus, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,6 +31,10 @@ interface KeyDraft {
   remark: string;
   /** 已有账号的 Key 掩码，用于提示「留空保留」。 */
   masked: string;
+  /** 已保存的完整 Key，仅用于点眼睛查看；新建账号为空。 */
+  savedKey: string;
+  /** 当前是否明文显示 Key。 */
+  revealed: boolean;
 }
 
 function maskKey(key: string): string {
@@ -67,8 +71,19 @@ export function SupplierDialog({
             apiKey: "",
             remark: key.remark ?? "",
             masked: maskKey(key.api_key),
+            savedKey: key.api_key,
+            revealed: false,
           }))
-        : [{ name: "默认", apiKey: "", remark: "", masked: "" }],
+        : [
+            {
+              name: "默认",
+              apiKey: "",
+              remark: "",
+              masked: "",
+              savedKey: "",
+              revealed: false,
+            },
+          ],
     );
     setDefaultKeyId(supplier?.default_key_id ?? undefined);
     setError(null);
@@ -85,8 +100,29 @@ export function SupplierDialog({
   const addKey = () => {
     setKeys((current) => [
       ...current,
-      { name: "", apiKey: "", remark: "", masked: "" },
+      {
+        name: "",
+        apiKey: "",
+        remark: "",
+        masked: "",
+        savedKey: "",
+        revealed: false,
+      },
     ]);
+  };
+
+  /** 切换明文查看：显示时填入已保存的 Key，隐藏时若未改动则清空以保留原 Key。 */
+  const toggleReveal = (index: number) => {
+    setKeys((current) =>
+      current.map((key, position) => {
+        if (position !== index) return key;
+        if (!key.revealed) {
+          return { ...key, revealed: true, apiKey: key.apiKey || key.savedKey };
+        }
+        const unchanged = key.apiKey === key.savedKey;
+        return { ...key, revealed: false, apiKey: unchanged ? "" : key.apiKey };
+      }),
+    );
   };
 
   const removeKey = (index: number) => {
@@ -251,17 +287,35 @@ export function SupplierDialog({
                     </div>
 
                     <div className="mt-1.5 flex items-center gap-1.5">
-                      <Input
-                        type="password"
-                        value={key.apiKey}
-                        onChange={(event) =>
-                          updateKey(index, { apiKey: event.target.value })
-                        }
-                        placeholder={
-                          key.masked ? `${key.masked}（${t.keepKeyHint}）` : "sk-..."
-                        }
-                        className="h-8 flex-1 rounded-md border-border/30 bg-card font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
-                      />
+                      <div className="relative flex-1">
+                        <Input
+                          type={key.revealed ? "text" : "password"}
+                          value={key.apiKey}
+                          onChange={(event) =>
+                            updateKey(index, { apiKey: event.target.value })
+                          }
+                          placeholder={
+                            key.masked ? `${key.masked}（${t.keepKeyHint}）` : "sk-..."
+                          }
+                          className="h-8 w-full rounded-md border-border/30 bg-card pr-8 font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
+                        />
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          disabled={saving}
+                          onClick={() => toggleReveal(index)}
+                          aria-label={key.revealed ? t.hideKey : t.showKey}
+                          title={key.revealed ? t.hideKey : t.showKey}
+                          className="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {key.revealed ? (
+                            <EyeOff className="size-3" />
+                          ) : (
+                            <Eye className="size-3" />
+                          )}
+                        </Button>
+                      </div>
                       <Input
                         value={key.remark}
                         onChange={(event) =>
