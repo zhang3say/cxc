@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ import type {
   SupplierInput,
   SyncConfig,
 } from "@/lib/types";
-import { PROTOCOL_LABELS, emptyDirs } from "@/lib/types";
+import { AGENT_LABELS, PROTOCOL_LABELS, emptyDirs } from "@/lib/types";
 import { errorText } from "@/lib/utils";
 
 type ToastKind = "success" | "error" | "info";
@@ -44,7 +44,7 @@ interface Toast {
 
 interface ConfirmState {
   title: string;
-  description: string;
+  description: ReactNode;
   confirmLabel: string;
   blocked?: boolean;
   onConfirm: () => Promise<void>;
@@ -395,10 +395,36 @@ export default function App() {
     }
   };
 
-  const deleteBinding = async (binding: { id: string }) => {
+  const deleteBinding = async (binding: AgentConfig) => {
+    const supplier = config?.suppliers.find(
+      (item) => item.id === binding.supplier_id,
+    );
+    const account = binding.key_id
+      ? (supplier?.keys.find((key) => key.id === binding.key_id)?.name ?? "—")
+      : t.followDefault;
+    const info = envInfos.find((item) => item.env === env);
+    const agentLabel = `${AGENT_LABELS[agent]}${info && !info.host ? ` ${info.label}` : ""}`;
     setConfirm({
-      title: t.delete,
-      description: `${agent} · ${env}`,
+      title: t.deleteBindingTitle,
+      description: (
+        <>
+          <span className="block">{t.deleteBindingConfirm}</span>
+          <span className="mt-2 block rounded-md border border-border/40 bg-muted/20 px-2.5 py-2">
+            <span className="block font-semibold text-foreground">
+              {binding.model || "—"}
+            </span>
+            <span className="mt-0.5 block">
+              {agentLabel} · {supplier?.name ?? binding.supplier_id}
+            </span>
+            <span className="mt-0.5 block">
+              {PROTOCOL_LABELS[binding.protocol]} · {t.accounts}: {account}
+            </span>
+          </span>
+          <span className="mt-2 block text-[10px] text-muted-foreground/80">
+            {t.deleteBindingHint}
+          </span>
+        </>
+      ),
       confirmLabel: t.delete,
       onConfirm: async () => {
         const updated = await api.deleteBinding(agent, env, binding.id);
