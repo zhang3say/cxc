@@ -101,23 +101,21 @@ export function BindingRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <div className="flex w-[4.5rem] shrink-0 justify-end">
-          {isActive ? (
-            <span className="inline-flex h-6 w-full items-center justify-center gap-1 rounded-[min(var(--radius-md),10px)] bg-primary/10 text-xs font-medium text-primary">
-              <Check className="size-3" />
-              {t.inUse}
-            </span>
-          ) : (
-            <Button
-              size="xs"
-              disabled={busy}
-              onClick={onActivate}
-              className="pointer-events-none w-full bg-primary/10 text-primary opacity-0 transition-opacity duration-150 hover:bg-primary hover:text-primary-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
-            >
-              {t.activate}
-            </Button>
-          )}
-        </div>
+        {isActive ? (
+          <span className="inline-flex h-6 items-center gap-1 rounded-[min(var(--radius-md),10px)] bg-primary/10 px-2 text-xs font-medium text-primary">
+            <Check className="size-3" />
+            {t.inUse}
+          </span>
+        ) : (
+          <Button
+            size="xs"
+            disabled={busy}
+            onClick={onActivate}
+            className="pointer-events-none bg-primary/10 text-primary opacity-0 transition-opacity duration-150 hover:bg-primary hover:text-primary-foreground group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          >
+            {t.activate}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
