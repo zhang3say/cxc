@@ -4,9 +4,11 @@ import {
   ArrowUpFromLine,
   Cloud,
   Download,
+  ExternalLink,
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,9 +22,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CxcSelect } from "@/components/ui/select";
 import { errorText } from "@/lib/utils";
+import { isTauri } from "@/lib/api";
 import type { Lang, Messages } from "@/lib/i18n";
 import type { Config, CustomDirs, Env, SyncConfig } from "@/lib/types";
 import { AGENT_KINDS, AGENT_LABELS, ENV_LABELS, emptyDirs } from "@/lib/types";
+
+const GITHUB_TOKEN_URL =
+  "https://github.com/settings/tokens/new?scopes=gist&description=CXC%20Config%20Sync";
+
+function openExternal(url: string) {
+  if (isTauri) {
+    void openUrl(url);
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
 
 interface SettingsDialogProps {
   open: boolean;
@@ -136,6 +150,11 @@ export function SettingsDialog({
     }
   };
 
+  const gistId = sync.gist_id.trim();
+  const gistUrl = /^https?:\/\//.test(gistId)
+    ? gistId
+    : `https://gist.github.com/${gistId}`;
+
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-lg">
@@ -202,39 +221,81 @@ export function SettingsDialog({
             </pre>
           </section>
 
-          <section className="space-y-2 border-t border-border/30 pt-4">
-            <Label className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
-              <Cloud className="size-3.5" />
-              {t.syncTitle}
-            </Label>
-            <div className="grid grid-cols-2 gap-2">
+          <section className="space-y-2.5 border-t border-border/30 pt-4">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground/80">
+                <Cloud className="size-3.5" />
+                {t.syncTitle}
+              </Label>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => openExternal(GITHUB_TOKEN_URL)}
+              >
+                <ExternalLink className="size-3" />
+                {t.createToken}
+              </Button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-muted-foreground/70">
+              {t.syncHint}
+            </p>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground">
+                {t.gistTokenLabel}
+              </Label>
               <Input
                 value={sync.gist_token}
                 onChange={(event) =>
                   updateSync({ gist_token: event.target.value })
                 }
-                placeholder={t.gistToken}
+                placeholder="ghp_..."
                 type="password"
                 className="h-8 rounded-md border-border/30 bg-muted/10 font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-bold text-muted-foreground">
+                  {t.gistIdLabel}
+                </Label>
+                {gistId ? (
+                  <button
+                    type="button"
+                    onClick={() => openExternal(gistUrl)}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"
+                  >
+                    {t.openGist}
+                    <ExternalLink className="size-2.5" />
+                  </button>
+                ) : null}
+              </div>
               <Input
                 value={sync.gist_id}
                 onChange={(event) =>
                   updateSync({ gist_id: event.target.value })
                 }
-                placeholder={t.gistId}
+                placeholder="gist_id"
                 className="h-8 rounded-md border-border/30 bg-muted/10 font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
               />
             </div>
-            <Input
-              value={sync.secret_key ?? ""}
-              onChange={(event) =>
-                updateSync({ secret_key: event.target.value })
-              }
-              placeholder={t.secretKey}
-              type="password"
-              className="h-8 rounded-md border-border/30 bg-muted/10 font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
-            />
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground">
+                {t.secretKey}
+              </Label>
+              <Input
+                value={sync.secret_key ?? ""}
+                onChange={(event) =>
+                  updateSync({ secret_key: event.target.value })
+                }
+                placeholder={t.secretKeyOptional}
+                type="password"
+                className="h-8 rounded-md border-border/30 bg-muted/10 font-mono text-[10px] focus:border-primary/60 focus-visible:ring-primary/40"
+              />
+            </div>
+
             <div className="flex flex-wrap items-center gap-1.5">
               <Button size="xs" variant="outline" onClick={() => void test()} disabled={testing}>
                 {testing ? (
