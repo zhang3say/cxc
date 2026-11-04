@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertCircle, CheckCircle2, Loader2, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +18,7 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { api, isTauri } from "@/lib/api";
 import { messages, type Lang } from "@/lib/i18n";
 import type {
+  AgentConfig,
   AgentConfigInput,
   AgentKind,
   Config,
@@ -45,6 +46,7 @@ interface ConfirmState {
   title: string;
   description: string;
   confirmLabel: string;
+  blocked?: boolean;
   onConfirm: () => Promise<void>;
 }
 
@@ -201,10 +203,22 @@ export default function App() {
   };
 
   const deleteSupplier = (supplier: Supplier) => {
+    const referenced = config
+      ? Object.values(config.agents).some((envs) =>
+          [envs?.wsl, envs?.windows].some((slot) =>
+            slot?.bindings.some(
+              (binding: AgentConfig) => binding.supplier_id === supplier.id,
+            ),
+          ),
+        )
+      : false;
     setConfirm({
       title: `${t.delete} ${supplier.name}`,
-      description: t.supplierReferenced,
+      description: referenced
+        ? t.supplierReferenced
+        : t.deleteSupplierConfirm(supplier.name),
       confirmLabel: t.delete,
+      blocked: referenced,
       onConfirm: async () => {
         const updated = await api.deleteSupplier(supplier.id);
         setConfig(updated);
@@ -583,30 +597,63 @@ export default function App() {
       />
 
       <Dialog open={confirm != null} onOpenChange={(open) => !open && setConfirm(null)}>
-        <DialogContent className="rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-sm">
-          <DialogHeader className="gap-1.5">
-            <DialogTitle className="text-base font-bold">{confirm?.title}</DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              {confirm?.description}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4 gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setConfirm(null)}>
-              {t.cancel}
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                const action = confirm?.onConfirm;
-                setConfirm(null);
-                if (action) {
-                  void action().catch((error) => showToast(errorText(error), "error"));
-                }
-              }}
-            >
-              {confirm?.confirmLabel}
-            </Button>
+        <DialogContent className="gap-0 overflow-hidden rounded-2xl border-border/50 bg-card/95 p-6 shadow-2xl backdrop-blur-xl duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] sm:max-w-md dark:bg-card/90">
+          <div className="flex items-start gap-4">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.12)] dark:bg-red-500/20">
+              <AlertTriangle className="size-5 animate-pulse" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <DialogHeader className="gap-1.5 pb-0">
+                <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                  {confirm?.title}
+                </DialogTitle>
+                <DialogDescription className="pt-1 text-xs leading-relaxed text-muted-foreground">
+                  {confirm?.description}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-6 border-t border-border/30 pt-4">
+            <div className="flex w-full justify-end gap-2">
+              {confirm?.blocked ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirm(null)}
+                  className="h-8 rounded-lg border border-border/40 bg-muted/5 px-4 text-xs font-bold text-muted-foreground transition-all duration-200 hover:bg-muted/15 hover:text-foreground active:scale-[0.98]"
+                >
+                  {t.close}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setConfirm(null)}
+                    className="h-8 rounded-lg border border-border/40 bg-muted/5 px-4 text-xs font-bold text-muted-foreground transition-all duration-200 hover:bg-muted/15 hover:text-foreground active:scale-[0.98]"
+                  >
+                    {t.cancel}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      const action = confirm?.onConfirm;
+                      setConfirm(null);
+                      if (action) {
+                        void action().catch((error) =>
+                          showToast(errorText(error), "error"),
+                        );
+                      }
+                    }}
+                    className="h-8 rounded-lg border border-red-600/30 bg-gradient-to-r from-red-500 to-rose-600 px-4 text-xs font-bold text-white transition-all duration-200 hover:from-red-600 hover:to-rose-700 hover:shadow-lg hover:shadow-red-500/25 active:scale-[0.98]"
+                  >
+                    {confirm?.confirmLabel}
+                  </Button>
+                </>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

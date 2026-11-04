@@ -68,6 +68,7 @@ export const messages = {
     protocolMissing: "该中转站尚未确认支持此协议，请先探测或勾选协议。",
     unsupportedProtocol: "该 Agent 不支持此协议。",
     supplierReferenced: "该中转站仍被 Agent 引用，请先改掉相关 Agent 的配置。",
+    deleteSupplierConfirm: (name: string) => `确定要删除中转站 "${name}" 吗？`,
     imported: "已从旧版导入",
     selectSupplier: "选择中转站",
     selectAccount: "账号",
@@ -222,6 +223,8 @@ export const messages = {
     protocolMissing: "This relay has not confirmed this protocol yet. Probe or select it first.",
     unsupportedProtocol: "This agent does not support this protocol.",
     supplierReferenced: "This relay is still used by an agent. Update those agents first.",
+    deleteSupplierConfirm: (name: string) =>
+      `Are you sure you want to delete relay "${name}"?`,
     imported: "Imported from v1",
     selectSupplier: "Select relay",
     selectAccount: "Account",
