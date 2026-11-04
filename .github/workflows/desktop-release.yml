@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'cxc-desktop-v*'
+      # 一次性桥接标签（v1.0.0）：0.1.x 的检查更新只认开头的 v，用它才能提示老用户升级。
+      - 'v*'
   workflow_dispatch:
 
 jobs:
